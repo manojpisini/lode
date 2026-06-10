@@ -1016,9 +1016,27 @@ fn mcp_lists_tools_resources_and_prompts() {
         .args(["mcp", "--list-tools", "--list-resources", "--list-prompts"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("tools:"))
+        .stdout(predicate::str::contains("\"tools\""))
+        .stdout(predicate::str::contains("lode_config_show"))
         .stdout(predicate::str::contains("lode://config"))
         .stdout(predicate::str::contains("lode-project-review"));
+}
+
+#[test]
+fn mcp_stdio_handles_tool_calls() {
+    lode()
+        .write_stdin(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lode_template_list","arguments":{}}}
+"#,
+        )
+        .arg("mcp")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"serverInfo\""))
+        .stdout(predicate::str::contains("\"tools\""))
+        .stdout(predicate::str::contains("root/README.md"));
 }
 
 #[test]

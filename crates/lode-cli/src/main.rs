@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     env, fs, io,
-    io::IsTerminal,
+    io::{IsTerminal, Read},
     process::{Command as ProcessCommand, ExitCode},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -30,6 +30,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 #[derive(Debug, Parser)]
 #[command(name = "lode", version, about = "Personal coding preference system")]
@@ -2025,45 +2026,234 @@ fn mcp_command(
     list_resources: bool,
     list_prompts: bool,
 ) -> lode_core::Result<()> {
-    if list_tools || (!list_resources && !list_prompts) {
-        println!("tools:");
-        for tool in [
-            "setup",
-            "init",
-            "config.show",
-            "template.list",
-            "profile.list",
-            "snippet.search",
-            "commands.run",
-            "audit",
-            "scan.secrets",
-            "time.report",
-        ] {
-            println!("- {tool}");
-        }
-    }
     if list_resources {
-        println!("resources:");
-        for resource in [
-            "lode://config",
-            "lode://registry",
-            "lode://templates",
-            "lode://profiles",
-            "lode://snippets",
-        ] {
-            println!("- {resource}");
-        }
+        println!("{}", json_pretty(&mcp_resources())?);
     }
     if list_prompts {
-        println!("prompts:");
-        println!("- lode-project-review");
-        println!("- lode-scaffold-plan");
+        println!("{}", json_pretty(&mcp_prompts())?);
+    }
+    if list_tools {
+        println!("{}", json_pretty(&mcp_tools())?);
     }
     if http {
         println!("mcp http mode requested on port {}", port.unwrap_or(3333));
-        println!("server mode is represented by this headless capability listing in this build");
+        println!(
+            "http+sse transport is not active in this build; use stdio JSON-RPC or list flags"
+        );
+        return Ok(());
+    }
+    if list_tools || list_resources || list_prompts {
+        return Ok(());
+    }
+
+    run_mcp_stdio()
+}
+
+fn mcp_tools() -> Value {
+    json!({
+        "tools": [
+            {
+                "name": "lode_config_show",
+                "description": "Return the loaded global Lode configuration.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "lode_template_list",
+                "description": "List embedded/default template paths.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "lode_profile_list",
+                "description": "List embedded/default profile names.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "lode_recipe_list",
+                "description": "List embedded/default recipe names.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "lode_audit",
+                "description": "Audit the current project and return the health report.",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "lode_time_today",
+                "description": "Return total tracked time from .lode/time-log.json for today.",
+                "inputSchema": { "type": "object", "properties": {} }
+            }
+        ]
+    })
+}
+
+fn json_pretty(value: &Value) -> lode_core::Result<String> {
+    serde_json::to_string_pretty(value).map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn mcp_resources() -> Value {
+    json!({
+        "resources": [
+            { "uri": "lode://config", "name": "Global config", "mimeType": "application/toml" },
+            { "uri": "lode://registry", "name": "Project registry", "mimeType": "application/json" },
+            { "uri": "lode://templates", "name": "Template inventory", "mimeType": "application/json" },
+            { "uri": "lode://profiles", "name": "Profile inventory", "mimeType": "application/json" },
+            { "uri": "lode://snippets", "name": "Snippet inventory", "mimeType": "application/json" }
+        ]
+    })
+}
+
+fn mcp_prompts() -> Value {
+    json!({
+        "prompts": [
+            {
+                "name": "lode-project-review",
+                "description": "Review a project against the local Lode preferences."
+            },
+            {
+                "name": "lode-scaffold-plan",
+                "description": "Plan a scaffold using available profiles, recipes, and templates."
+            }
+        ]
+    })
+}
+
+fn run_mcp_stdio() -> lode_core::Result<()> {
+    let mut input = String::new();
+    io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|source| LodeError::Io {
+            path: "stdin".into(),
+            source,
+        })?;
+    for line in input.lines().filter(|line| !line.trim().is_empty()) {
+        let request: Value = serde_json::from_str(line)
+            .map_err(|error| LodeError::Message(format!("invalid MCP request: {error}")))?;
+        println!("{}", mcp_handle_request(&request));
     }
     Ok(())
+}
+
+fn mcp_handle_request(request: &Value) -> String {
+    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let result = match method {
+        "initialize" => Ok(json!({
+            "protocolVersion": "2024-11-05",
+            "serverInfo": { "name": "lode", "version": env!("CARGO_PKG_VERSION") },
+            "capabilities": {
+                "tools": {},
+                "resources": {},
+                "prompts": {}
+            }
+        })),
+        "tools/list" => Ok(mcp_tools()),
+        "resources/list" => Ok(mcp_resources()),
+        "prompts/list" => Ok(mcp_prompts()),
+        "tools/call" => mcp_call_tool(request),
+        "resources/read" => mcp_read_resource(request),
+        _ => Err((-32601, format!("method not found: {method}"))),
+    };
+    match result {
+        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string(),
+        Err((code, message)) => {
+            json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
+                .to_string()
+        }
+    }
+}
+
+fn mcp_call_tool(request: &Value) -> std::result::Result<Value, (i64, String)> {
+    let name = request
+        .pointer("/params/name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| (-32602, "missing params.name".to_string()))?;
+    let value = match name {
+        "lode_config_show" => {
+            serde_json::to_value(load_global_config().unwrap_or_else(|_| default_config()))
+                .map_err(|error| (-32603, error.to_string()))?
+        }
+        "lode_template_list" => json!(template_paths()),
+        "lode_profile_list" => json!(profile_names()),
+        "lode_recipe_list" => json!(recipe_names()),
+        "lode_audit" => {
+            let config = load_global_config().unwrap_or_else(|_| default_config());
+            let cwd = current_dir().map_err(|error| (-32603, error.to_string()))?;
+            serde_json::to_value(
+                audit_project(&cwd, &config).map_err(|error| (-32603, error.to_string()))?,
+            )
+            .map_err(|error| (-32603, error.to_string()))?
+        }
+        "lode_time_today" => {
+            let log = load_time_log().unwrap_or_default();
+            let today = today_utc();
+            let sessions = log
+                .sessions
+                .into_iter()
+                .filter(|session| session.started_at.starts_with(&today))
+                .collect::<Vec<_>>();
+            json!({
+                "date": today,
+                "seconds": total_seconds(&sessions),
+                "duration": format_seconds(total_seconds(&sessions)),
+                "sessions": sessions
+            })
+        }
+        other => return Err((-32602, format!("unknown tool: {other}"))),
+    };
+    Ok(json!({
+        "content": [
+            {
+                "type": "text",
+                "text": serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string())
+            }
+        ],
+        "structuredContent": value
+    }))
+}
+
+fn mcp_read_resource(request: &Value) -> std::result::Result<Value, (i64, String)> {
+    let uri = request
+        .pointer("/params/uri")
+        .and_then(Value::as_str)
+        .ok_or_else(|| (-32602, "missing params.uri".to_string()))?;
+    let text = match uri {
+        "lode://config" => {
+            toml::to_string_pretty(&load_global_config().unwrap_or_else(|_| default_config()))
+                .map_err(|error| (-32603, error.to_string()))?
+        }
+        "lode://registry" => serde_json::to_string_pretty(&load_registry().unwrap_or_default())
+            .map_err(|error| (-32603, error.to_string()))?,
+        "lode://templates" => serde_json::to_string_pretty(template_paths())
+            .map_err(|error| (-32603, error.to_string()))?,
+        "lode://profiles" => serde_json::to_string_pretty(&profile_names())
+            .map_err(|error| (-32603, error.to_string()))?,
+        "lode://snippets" => serde_json::to_string_pretty(&snippet_inventory())
+            .map_err(|error| (-32603, error.to_string()))?,
+        other => return Err((-32602, format!("unknown resource: {other}"))),
+    };
+    Ok(json!({
+        "contents": [
+            {
+                "uri": uri,
+                "mimeType": if uri == "lode://config" { "application/toml" } else { "application/json" },
+                "text": text
+            }
+        ]
+    }))
+}
+
+fn snippet_inventory() -> Vec<String> {
+    let mut snippets = Vec::new();
+    if let Ok(root) = global_dir().map(|root| root.join("snippets")) {
+        let _ = collect_snippet_assets(&root, &mut snippets);
+    }
+    snippets
+        .into_iter()
+        .map(|snippet| format!("{}/{}", snippet.lang, snippet.name))
+        .collect()
 }
 
 fn agent_command(command: AgentCommand) -> lode_core::Result<()> {
