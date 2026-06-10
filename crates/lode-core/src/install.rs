@@ -156,29 +156,7 @@ fn create_dir_all(path: &Utf8PathBuf) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        key: &'static str,
-        previous: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let previous = env::var(key).ok();
-            env::set_var(key, value);
-            Self { key, previous }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(value) = &self.previous {
-                env::set_var(self.key, value);
-            } else {
-                env::remove_var(self.key);
-            }
-        }
-    }
+    use crate::test_support::EnvGuard;
 
     #[test]
     fn global_workspace_path_respects_lode_config() {

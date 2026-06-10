@@ -184,6 +184,7 @@ fn init_creates_default_project_layout() {
     assert!(std::fs::read_to_string(project.join(".gitignore"))
         .unwrap()
         .contains(".env"));
+    assert!(project.join(".git").exists());
 }
 
 #[test]
@@ -367,6 +368,35 @@ fn projects_prune_removes_missing_projects() {
 }
 
 #[test]
+fn projects_cd_and_remove_use_registry() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let project = temp.path().join("manual-app");
+    std::fs::create_dir_all(&project).unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["projects", "register"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["projects", "cd", "manual-app"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("manual-app"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["projects", "remove", "manual-app"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed project manual-app"));
+}
+
+#[test]
 fn env_sync_and_check_use_env_example() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -434,6 +464,47 @@ fn license_set_and_check_write_license_file() {
 }
 
 #[test]
+fn license_add_info_apply_and_remove_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["license", "add", "Custom-1.0", "--text", "Custom terms"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added license Custom-1.0"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["license", "info", "Custom-1.0"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("id: Custom-1.0"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["license", "apply", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would apply license"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["license", "remove", "Custom-1.0"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed license Custom-1.0"));
+}
+
+#[test]
 fn snippet_search_finds_extracted_snippets() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
@@ -450,6 +521,97 @@ fn snippet_search_finds_extracted_snippets() {
         .assert()
         .success()
         .stdout(predicate::str::contains("serde-struct.snippet"));
+}
+
+#[test]
+fn snippet_export_writes_vscode_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let out = temp.path().join("rust-snippets.json");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["snippet", "export", "--lang", "rs", "--out"])
+        .arg(&out)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("exported"));
+
+    let exported = std::fs::read_to_string(out).unwrap();
+    assert!(exported.contains("rs:serde-struct"));
+    assert!(serde_json::from_str::<serde_json::Value>(&exported).is_ok());
+}
+
+#[test]
+fn snippet_export_accepts_zed_format() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["snippet", "export", "--lang", "rs", "--format", "zed"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("serde-struct"));
+}
+
+#[test]
+fn snippet_add_insert_and_remove_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let target = temp.path().join("notes.txt");
+    std::fs::write(&target, "before\nafter\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args([
+            "snippet",
+            "add",
+            "hello",
+            "--lang",
+            "txt",
+            "--trigger",
+            "hello world",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("created snippet txt/hello"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["snippet", "insert", "hello", "--lang", "txt", "--line", "2"])
+        .arg(&target)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("inserted snippet hello"));
+
+    let contents = std::fs::read_to_string(&target).unwrap();
+    assert!(contents.contains("before\nhello world $1\nafter"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["snippet", "remove", "hello", "--lang", "txt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed snippet hello"));
 }
 
 #[test]
@@ -512,6 +674,48 @@ fn commands_run_executes_project_local_shell_macro() {
         .stdout(predicate::str::contains("step 1 [shell]"));
 
     assert!(temp.path().join("macro-output.txt").exists());
+}
+
+#[test]
+fn commands_add_export_and_remove_local_macro() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let exported = temp.path().join("commands.json");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["commands", "add", "deploy"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("created command macro deploy"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["commands", "export", "--out"])
+        .arg(&exported)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("exported"));
+
+    assert!(std::fs::read_to_string(&exported)
+        .unwrap()
+        .contains("deploy.toml"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["commands", "remove", "deploy"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed command macro deploy"));
 }
 
 #[test]
@@ -820,6 +1024,32 @@ fn pkg_list_detects_package_manager() {
 }
 
 #[test]
+fn pkg_update_dry_run_prints_manager_command() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["pkg", "update", "left-pad", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would run: npm update left-pad"));
+}
+
+#[test]
+fn pkg_graph_json_reports_manifest() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("Cargo.toml"), "[package]\nname='x'\n").unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["pkg", "graph", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"kind\": \"cargo\""));
+}
+
+#[test]
 fn release_bumps_cargo_version() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -884,4 +1114,111 @@ fn serve_renders_dashboard_snapshot() {
         .stdout(predicate::str::contains("lode serve"))
         .stdout(predicate::str::contains("PROJECT HEALTH"))
         .stdout(predicate::str::contains("CROSS-PROJECT REGISTRY"));
+}
+
+#[test]
+fn template_reset_and_validate_use_embedded_defaults() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    std::fs::write(
+        temp.path()
+            .join(".lode")
+            .join("templates")
+            .join("root")
+            .join("README.md"),
+        "custom\n",
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["template", "diff", "root/README.md"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("template differs"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["template", "reset", "root/README.md"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("reset template"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["template", "validate", "--all"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("validated"));
+}
+
+#[test]
+fn time_today_without_log_reports_zero() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["time", "today"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("today\t0s"));
+}
+
+#[test]
+fn time_report_reads_project_log_and_writes_markdown() {
+    let temp = tempfile::tempdir().unwrap();
+    let lode_dir = temp.path().join(".lode");
+    std::fs::create_dir_all(&lode_dir).unwrap();
+    std::fs::write(
+        lode_dir.join("time-log.json"),
+        r#"{
+  "sessions": [
+    {
+      "started_at": "2026-06-10T08:00:00Z",
+      "seconds": 3661,
+      "project": "demo",
+      "task": "implementation"
+    }
+  ]
+}
+"#,
+    )
+    .unwrap();
+    let report = temp.path().join("time-report.md");
+
+    lode()
+        .current_dir(temp.path())
+        .args(["time", "report", "--out"])
+        .arg(&report)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote time report"));
+
+    let contents = std::fs::read_to_string(report).unwrap();
+    assert!(contents.contains("1h 1m 1s"));
+    assert!(contents.contains("implementation"));
+}
+
+#[test]
+fn time_clear_confirm_removes_log() {
+    let temp = tempfile::tempdir().unwrap();
+    let lode_dir = temp.path().join(".lode");
+    std::fs::create_dir_all(&lode_dir).unwrap();
+    std::fs::write(lode_dir.join("time-log.json"), "{\"sessions\":[]}").unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["time", "clear", "--confirm"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("time log cleared"));
+
+    assert!(!lode_dir.join("time-log.json").exists());
 }

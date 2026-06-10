@@ -97,29 +97,7 @@ fn now_stamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        key: &'static str,
-        previous: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let previous = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, previous }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(value) = &self.previous {
-                std::env::set_var(self.key, value);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
+    use crate::test_support::EnvGuard;
 
     #[test]
     fn registers_and_prunes_projects() {

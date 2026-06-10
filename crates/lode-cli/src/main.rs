@@ -8,8 +8,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use lode_core::{
     add_component_to_project, audit_project, check_path, command_names, default_config, fix_path,
     global_dir, init_project, load_global_config, load_metrics, load_registry, profile_names,
-    prune_registry, recipe_names, register_project, save_global_config, save_metrics, scan_secrets,
-    setup_defaults, template_paths, AddRequest, InitRequest, LodeError,
+    prune_registry, recipe_names, register_project, save_global_config, save_metrics,
+    save_registry, scan_secrets, setup_defaults, template_paths, AddRequest, InitRequest,
+    LodeError,
 };
 use serde::{Deserialize, Serialize};
 
@@ -131,6 +132,10 @@ enum Command {
         #[command(subcommand)]
         command: PkgCommand,
     },
+    Time {
+        #[command(subcommand)]
+        command: TimeCommand,
+    },
     Metrics {
         #[command(subcommand)]
         command: MetricsCommand,
@@ -218,7 +223,19 @@ enum ConfigCommand {
 #[derive(Debug, Subcommand)]
 enum LibraryCommand {
     List,
-    Show { name: String },
+    Show {
+        name: String,
+    },
+    Diff {
+        name: String,
+    },
+    Reset {
+        name: String,
+    },
+    Validate {
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -249,6 +266,22 @@ enum CommandsCommand {
     Show {
         name: String,
     },
+    Add {
+        slug: String,
+        #[arg(long)]
+        global: bool,
+        #[arg(long)]
+        from: Option<String>,
+    },
+    Remove {
+        slug: String,
+        #[arg(long)]
+        global: bool,
+    },
+    Export {
+        #[arg(long)]
+        out: Option<Utf8PathBuf>,
+    },
     Run {
         slug: String,
         #[arg(long)]
@@ -269,6 +302,36 @@ enum SnippetCommand {
     },
     Search {
         query: String,
+    },
+    Add {
+        name: String,
+        #[arg(long, default_value = "any")]
+        lang: String,
+        #[arg(long)]
+        trigger: Option<String>,
+        #[arg(long)]
+        desc: Option<String>,
+    },
+    Remove {
+        name: String,
+        #[arg(long)]
+        lang: Option<String>,
+    },
+    Insert {
+        name: String,
+        file: Option<Utf8PathBuf>,
+        #[arg(long)]
+        lang: Option<String>,
+        #[arg(long)]
+        line: Option<usize>,
+    },
+    Export {
+        #[arg(long)]
+        lang: Option<String>,
+        #[arg(long, default_value = "vscode")]
+        format: String,
+        #[arg(long)]
+        out: Option<Utf8PathBuf>,
     },
 }
 
@@ -303,15 +366,41 @@ enum EnvCommand {
 #[derive(Debug, Subcommand)]
 enum LicenseCommand {
     List,
-    Show { id: String },
-    Set { id: String },
-    Check,
+    Show {
+        id: String,
+    },
+    Info {
+        id: String,
+    },
+    Add {
+        id: String,
+        #[arg(long)]
+        file: Option<Utf8PathBuf>,
+        #[arg(long)]
+        text: Option<String>,
+    },
+    Remove {
+        id: String,
+    },
+    Set {
+        id: String,
+    },
+    Check {
+        #[arg(long)]
+        json: bool,
+    },
+    Apply {
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 enum ProjectsCommand {
     List,
+    Cd { name: String },
     Register { path: Option<Utf8PathBuf> },
+    Remove { name: String },
     Health,
     Prune,
 }
@@ -327,10 +416,53 @@ enum ToolchainCommand {
 enum PkgCommand {
     List,
     Outdated,
+    Update {
+        name: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
     Audit,
+    Why {
+        name: String,
+    },
+    Info {
+        name: String,
+    },
+    Lock {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    Graph {
+        #[arg(long, default_value = "ascii")]
+        format: String,
+    },
     Clean {
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TimeCommand {
+    Today {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    Show {
+        #[arg(long, default_value = "day")]
+        by: String,
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    Report {
+        #[arg(long, default_value = "markdown")]
+        format: String,
+        #[arg(long)]
+        out: Option<Utf8PathBuf>,
+    },
+    Clear {
+        #[arg(long)]
+        confirm: bool,
     },
 }
 
@@ -375,6 +507,35 @@ struct LodePack {
 struct LodePackFile {
     path: String,
     contents: String,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct TimeLog {
+    #[serde(default)]
+    sessions: Vec<TimeSession>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TimeSession {
+    started_at: String,
+    #[serde(default)]
+    ended_at: Option<String>,
+    #[serde(default)]
+    seconds: u64,
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    file: Option<String>,
+    #[serde(default)]
+    task: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct SnippetAsset {
+    lang: String,
+    name: String,
+    body: String,
+    path: Utf8PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -449,6 +610,7 @@ fn run() -> lode_core::Result<()> {
         Command::Projects { command } => projects(command)?,
         Command::Toolchain { command } => toolchain(command)?,
         Command::Pkg { command } => pkg(command)?,
+        Command::Time { command } => time_command(command)?,
         Command::Metrics { command } => metrics(command)?,
         Command::Workspace { command } => workspace(command)?,
         Command::Daemon { command } => daemon(command),
@@ -493,6 +655,8 @@ fn setup() -> lode_core::Result<()> {
 
 fn init(args: InitArgs) -> lode_core::Result<()> {
     let config = load_global_config()?;
+    let git_config = config.git.clone();
+    let identity = config.identity.clone();
     let base_path = match args.path {
         Some(path) => path,
         None => current_dir()?,
@@ -530,11 +694,95 @@ fn init(args: InitArgs) -> lode_core::Result<()> {
             .unwrap_or_else(|| "project".to_string());
         register_project(&name, &report.project_dir, &profile_for_registry)?;
         println!("registered {}", report.project_dir);
-        if !args.no_git {
-            println!("git init is deferred in this build; project files are ready");
+        if !args.no_git && git_config.auto_init {
+            init_git_project(&report.project_dir, &git_config, &identity, &name)?;
         }
     }
     Ok(())
+}
+
+fn init_git_project(
+    project_dir: &Utf8PathBuf,
+    git: &lode_core::config::GitConfig,
+    identity: &lode_core::config::IdentityConfig,
+    project_name: &str,
+) -> lode_core::Result<()> {
+    if project_dir.join(".git").exists() {
+        println!("git repository already exists");
+        return Ok(());
+    }
+
+    let init_status = ProcessCommand::new("git")
+        .arg("init")
+        .arg("-b")
+        .arg(&git.initial_branch)
+        .current_dir(project_dir.as_str())
+        .status()
+        .map_err(|source| LodeError::Io {
+            path: "git".into(),
+            source,
+        })?;
+    if !init_status.success() {
+        let fallback_status = ProcessCommand::new("git")
+            .arg("init")
+            .current_dir(project_dir.as_str())
+            .status()
+            .map_err(|source| LodeError::Io {
+                path: "git".into(),
+                source,
+            })?;
+        if !fallback_status.success() {
+            return Err(LodeError::Message(format!(
+                "git init failed with {fallback_status}"
+            )));
+        }
+        let branch_status = ProcessCommand::new("git")
+            .args(["checkout", "-B", &git.initial_branch])
+            .current_dir(project_dir.as_str())
+            .status()
+            .map_err(|source| LodeError::Io {
+                path: "git".into(),
+                source,
+            })?;
+        if !branch_status.success() {
+            return Err(LodeError::Message(format!(
+                "git checkout -B {} failed with {branch_status}",
+                git.initial_branch
+            )));
+        }
+    }
+    println!("git initialised on {}", git.initial_branch);
+
+    if git.initial_commit {
+        run_git_in(project_dir, ["config", "user.name", &identity.author])?;
+        run_git_in(project_dir, ["config", "user.email", &identity.email])?;
+        run_git_in(project_dir, ["add", "."])?;
+        let message = git
+            .initial_commit_msg
+            .replace("{project}", project_name)
+            .replace("{org}", &identity.org);
+        run_git_in(project_dir, ["commit", "-m", &message])?;
+        println!("git initial commit: {message}");
+    }
+    Ok(())
+}
+
+fn run_git_in<const N: usize>(project_dir: &Utf8PathBuf, args: [&str; N]) -> lode_core::Result<()> {
+    let status = ProcessCommand::new("git")
+        .args(args)
+        .current_dir(project_dir.as_str())
+        .status()
+        .map_err(|source| LodeError::Io {
+            path: "git".into(),
+            source,
+        })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(LodeError::Message(format!(
+            "git command failed with {status}"
+        )))
+    }
 }
 
 fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
@@ -704,8 +952,148 @@ fn library_command(
                 return Err(LodeError::Message(format!("{root} item not found: {name}")));
             }
         }
+        LibraryCommand::Diff { name } => {
+            require_template_library(root)?;
+            let relative = safe_relative_path(&name)?;
+            let path = global_dir()?.join(root).join(&relative);
+            let current = fs::read_to_string(&path).unwrap_or_default();
+            let default = embedded_template(&name)?;
+            if current == default {
+                println!("template unchanged: {name}");
+            } else {
+                println!("template differs: {name}");
+                print_simple_diff(&current, &default);
+            }
+        }
+        LibraryCommand::Reset { name } => {
+            require_template_library(root)?;
+            let relative = safe_relative_path(&name)?;
+            let path = global_dir()?.join(root).join(relative);
+            let contents = embedded_template(&name)?;
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                    path: parent.as_str().into(),
+                    source,
+                })?;
+            }
+            fs::write(&path, contents).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            println!("reset template {name}");
+        }
+        LibraryCommand::Validate { all } => {
+            require_template_library(root)?;
+            if all {
+                for item in embedded {
+                    validate_template(item)?;
+                }
+                println!("validated {} templates", embedded.len());
+            } else {
+                let root = global_dir()?.join(root);
+                validate_template_tree(&root)?;
+                println!("templates valid");
+            }
+        }
     }
     Ok(())
+}
+
+fn require_template_library(root: &str) -> lode_core::Result<()> {
+    if root == "templates" {
+        Ok(())
+    } else {
+        Err(LodeError::Message(format!(
+            "{root} does not support this library operation"
+        )))
+    }
+}
+
+fn embedded_template(name: &str) -> lode_core::Result<String> {
+    if !template_paths().iter().any(|item| *item == name) {
+        return Err(LodeError::Message(format!("template not found: {name}")));
+    }
+    let context = lode_core::RenderContext::new()
+        .with("project", "project")
+        .with("project_ident", "project")
+        .with("project_class", "Project")
+        .with("author", "Your Name")
+        .with("org", "namespace")
+        .with("license", "MIT OR Apache-2.0")
+        .with("year", "2026")
+        .with("profile", "core/bare");
+    Ok(lode_core::assets::template_contents(name, &context))
+}
+
+fn validate_template_tree(root: &Utf8PathBuf) -> lode_core::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    if root.is_dir() {
+        for entry in fs::read_dir(root).map_err(|source| LodeError::Io {
+            path: root.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: root.as_str().into(),
+                source,
+            })?;
+            let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            validate_template_tree(&child)?;
+        }
+    } else {
+        validate_template(root.as_str())?;
+    }
+    Ok(())
+}
+
+fn validate_template(name: &str) -> lode_core::Result<()> {
+    let contents = if Utf8PathBuf::from(name).exists() {
+        fs::read_to_string(name).map_err(|source| LodeError::Io {
+            path: name.into(),
+            source,
+        })?
+    } else {
+        embedded_template(name).unwrap_or_default()
+    };
+    if name.ends_with(".toml") {
+        let _: toml::Value =
+            toml::from_str(&contents).map_err(|error| LodeError::Message(error.to_string()))?;
+    } else if name.ends_with(".json") {
+        let _: serde_json::Value = serde_json::from_str(&contents)
+            .map_err(|error| LodeError::Message(error.to_string()))?;
+    } else if contents.trim().is_empty() {
+        return Err(LodeError::Message(format!("empty template: {name}")));
+    }
+    Ok(())
+}
+
+fn safe_relative_path(path: &str) -> lode_core::Result<Utf8PathBuf> {
+    if path.contains("..") || path.contains(':') || path.starts_with('/') || path.starts_with('\\')
+    {
+        return Err(LodeError::Message(format!("unsafe relative path: {path}")));
+    }
+    Ok(Utf8PathBuf::from(path))
+}
+
+fn print_simple_diff(current: &str, default: &str) {
+    let current_lines = current.lines().collect::<Vec<_>>();
+    let default_lines = default.lines().collect::<Vec<_>>();
+    let max = current_lines.len().max(default_lines.len());
+    for index in 0..max {
+        match (current_lines.get(index), default_lines.get(index)) {
+            (Some(left), Some(right)) if left == right => {}
+            (Some(left), Some(right)) => {
+                println!("- {left}");
+                println!("+ {right}");
+            }
+            (Some(left), None) => println!("- {left}"),
+            (None, Some(right)) => println!("+ {right}"),
+            (None, None) => {}
+        }
+    }
 }
 
 fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
@@ -768,11 +1156,7 @@ fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
             }
         }
         SnippetCommand::Show { name, lang } => {
-            let lang = lang.unwrap_or_else(|| "any".to_string());
-            let path = global_dir()?
-                .join("snippets")
-                .join(lang)
-                .join(format!("{name}.snippet"));
+            let path = resolve_snippet_path(&name, lang.as_deref())?;
             print!(
                 "{}",
                 fs::read_to_string(&path).map_err(|source| LodeError::Io {
@@ -783,6 +1167,28 @@ fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
         }
         SnippetCommand::Search { query } => {
             search_snippets(&query)?;
+        }
+        SnippetCommand::Add {
+            name,
+            lang,
+            trigger,
+            desc,
+        } => {
+            add_snippet(&name, &lang, trigger.as_deref(), desc.as_deref())?;
+        }
+        SnippetCommand::Remove { name, lang } => {
+            remove_snippet(&name, lang.as_deref())?;
+        }
+        SnippetCommand::Insert {
+            name,
+            file,
+            lang,
+            line,
+        } => {
+            insert_snippet(&name, lang.as_deref(), file, line)?;
+        }
+        SnippetCommand::Export { lang, format, out } => {
+            export_snippets(lang.as_deref(), &format, out)?;
         }
     }
     Ok(())
@@ -821,9 +1227,138 @@ fn commands_command(command: CommandsCommand) -> lode_core::Result<()> {
                 })?
             );
         }
+        CommandsCommand::Add { slug, global, from } => {
+            add_command_macro(&slug, global, from.as_deref())?;
+        }
+        CommandsCommand::Remove { slug, global } => {
+            remove_command_macro(&slug, global)?;
+        }
+        CommandsCommand::Export { out } => {
+            export_command_macros(out)?;
+        }
         CommandsCommand::Run { slug, dry_run } => run_command_macro(&slug, dry_run)?,
     }
     Ok(())
+}
+
+fn add_command_macro(slug: &str, global: bool, from: Option<&str>) -> lode_core::Result<()> {
+    let path = command_macro_path(slug, global)?;
+    if path.exists() {
+        return Err(LodeError::Message(format!(
+            "command macro already exists: {slug}"
+        )));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let contents = if let Some(source_slug) = from {
+        let source = resolve_command_path(source_slug)?;
+        fs::read_to_string(&source).map_err(|source_error| LodeError::Io {
+            path: source.as_str().into(),
+            source: source_error,
+        })?
+    } else {
+        format!(
+            "slug = \"{slug}\"\ndescription = \"Custom {slug} command macro\"\n\n[[steps]]\nkind = \"make\"\nrun = \"{slug}\"\n"
+        )
+    };
+    fs::write(&path, contents).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("created command macro {slug} at {path}");
+    Ok(())
+}
+
+fn remove_command_macro(slug: &str, global: bool) -> lode_core::Result<()> {
+    let path = command_macro_path(slug, global)?;
+    if !path.exists() {
+        return Err(LodeError::Message(format!(
+            "command macro not found: {slug}"
+        )));
+    }
+    fs::remove_file(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("removed command macro {slug}");
+    Ok(())
+}
+
+fn export_command_macros(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
+    let mut pack = LodePack {
+        version: 1,
+        files: Vec::new(),
+    };
+    let global = global_dir()?.join("commands");
+    collect_command_macro_files(&global, "global", &mut pack)?;
+    let local = Utf8PathBuf::from(".lode").join("commands");
+    collect_command_macro_files(&local, "project", &mut pack)?;
+    let raw = serde_json::to_string_pretty(&pack)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    if let Some(path) = out {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                path: parent.as_str().into(),
+                source,
+            })?;
+        }
+        fs::write(&path, raw).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        println!("exported {} command macros to {path}", pack.files.len());
+    } else {
+        println!("{raw}");
+    }
+    Ok(())
+}
+
+fn collect_command_macro_files(
+    root: &Utf8PathBuf,
+    prefix: &str,
+    pack: &mut LodePack,
+) -> lode_core::Result<()> {
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root).map_err(|source| LodeError::Io {
+        path: root.as_str().into(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: root.as_str().into(),
+            source,
+        })?;
+        let path = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+        })?;
+        if path.extension() != Some("toml") {
+            continue;
+        }
+        let contents = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        let name = path.file_name().unwrap_or("command.toml");
+        pack.files.push(LodePackFile {
+            path: format!("{prefix}/commands/{name}"),
+            contents,
+        });
+    }
+    Ok(())
+}
+
+fn command_macro_path(slug: &str, global: bool) -> lode_core::Result<Utf8PathBuf> {
+    let relative = safe_relative_path(&format!("{slug}.toml"))?;
+    if global {
+        Ok(global_dir()?.join("commands").join(relative))
+    } else {
+        Ok(Utf8PathBuf::from(".lode").join("commands").join(relative))
+    }
 }
 
 fn resolve_command_path(slug: &str) -> lode_core::Result<Utf8PathBuf> {
@@ -1336,6 +1871,33 @@ fn license(command: LicenseCommand) -> lode_core::Result<()> {
     match command {
         LicenseCommand::List => list_dir(global_dir()?.join("licenses"))?,
         LicenseCommand::Show { id } => print!("{}", read_license(&id)?),
+        LicenseCommand::Info { id } => {
+            let contents = read_license(&id)?;
+            println!("id: {id}");
+            println!("bytes: {}", contents.len());
+            println!(
+                "category: {}",
+                if id.contains(" OR ") {
+                    "compound"
+                } else {
+                    "single"
+                }
+            );
+        }
+        LicenseCommand::Add { id, file, text } => {
+            add_license(&id, file, text.as_deref())?;
+        }
+        LicenseCommand::Remove { id } => {
+            let path = license_path(&id)?;
+            if !path.exists() {
+                return Err(LodeError::Message(format!("license not found: {id}")));
+            }
+            fs::remove_file(&path).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            println!("removed license {id}");
+        }
         LicenseCommand::Set { id } => {
             let contents = read_license(&id)?;
             fs::write("LICENSE", contents).map_err(|source| LodeError::Io {
@@ -1344,17 +1906,19 @@ fn license(command: LicenseCommand) -> lode_core::Result<()> {
             })?;
             println!("license set: {id}");
         }
-        LicenseCommand::Check => {
+        LicenseCommand::Check { json } => {
             let path = Utf8PathBuf::from("LICENSE");
-            if path.exists()
+            let ok = path.exists()
                 && !fs::read_to_string(&path)
                     .map_err(|source| LodeError::Io {
                         path: path.as_str().into(),
                         source,
                     })?
                     .trim()
-                    .is_empty()
-            {
+                    .is_empty();
+            if json {
+                println!("{{\"license\":{ok}}}");
+            } else if ok {
                 println!("license ok");
             } else {
                 return Err(LodeError::Message(
@@ -1362,8 +1926,71 @@ fn license(command: LicenseCommand) -> lode_core::Result<()> {
                 ));
             }
         }
+        LicenseCommand::Apply { dry_run } => {
+            let id = project_license_id()?.unwrap_or(load_global_config()?.identity.license);
+            if dry_run {
+                println!("would apply license {id}");
+            } else {
+                let contents = read_license(&id)?;
+                fs::write("LICENSE", contents).map_err(|source| LodeError::Io {
+                    path: "LICENSE".into(),
+                    source,
+                })?;
+                println!("license applied: {id}");
+            }
+        }
     }
     Ok(())
+}
+
+fn add_license(id: &str, file: Option<Utf8PathBuf>, text: Option<&str>) -> lode_core::Result<()> {
+    let path = license_path(id)?;
+    if path.exists() {
+        return Err(LodeError::Message(format!("license already exists: {id}")));
+    }
+    let contents = if let Some(file) = file {
+        fs::read_to_string(&file).map_err(|source| LodeError::Io {
+            path: file.as_str().into(),
+            source,
+        })?
+    } else {
+        text.unwrap_or(id).to_string()
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    fs::write(&path, contents).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("added license {id}");
+    Ok(())
+}
+
+fn license_path(id: &str) -> lode_core::Result<Utf8PathBuf> {
+    let relative = safe_relative_path(&format!("{id}.txt"))?;
+    Ok(global_dir()?.join("licenses").join(relative))
+}
+
+fn project_license_id() -> lode_core::Result<Option<String>> {
+    let path = Utf8PathBuf::from(".lode").join("project.toml");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let value: toml::Value =
+        toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+    Ok(value
+        .get("project")
+        .and_then(|project| project.get("license"))
+        .and_then(toml::Value::as_str)
+        .map(str::to_string))
 }
 
 fn env_check() -> lode_core::Result<()> {
@@ -1498,6 +2125,150 @@ fn read_license(id: &str) -> lode_core::Result<String> {
     Err(LodeError::Message(format!("license not found: {id}")))
 }
 
+fn add_snippet(
+    name: &str,
+    lang: &str,
+    trigger: Option<&str>,
+    desc: Option<&str>,
+) -> lode_core::Result<()> {
+    let relative = safe_relative_path(&format!("{lang}/{name}.snippet"))?;
+    let path = global_dir()?.join("snippets").join(relative);
+    if path.exists() {
+        return Err(LodeError::Message(format!(
+            "snippet already exists: {name}"
+        )));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let trigger = trigger.unwrap_or(name);
+    let desc = desc.unwrap_or("User snippet");
+    let contents = format!(
+        "name: {name}\nlang: {lang}\ntrigger: {trigger}\ndescription: {desc}\n---\n{trigger} $1\n"
+    );
+    fs::write(&path, contents).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("created snippet {lang}/{name}");
+    Ok(())
+}
+
+fn remove_snippet(name: &str, lang: Option<&str>) -> lode_core::Result<()> {
+    let path = resolve_snippet_path(name, lang)?;
+    fs::remove_file(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("removed snippet {name}");
+    Ok(())
+}
+
+fn insert_snippet(
+    name: &str,
+    lang: Option<&str>,
+    file: Option<Utf8PathBuf>,
+    line: Option<usize>,
+) -> lode_core::Result<()> {
+    let path = resolve_snippet_path(name, lang)?;
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let snippet = parse_snippet_asset(&path, &raw);
+    if let Some(file) = file {
+        let existing = fs::read_to_string(&file).unwrap_or_default();
+        let updated = insert_text_at_line(&existing, &snippet.body, line.unwrap_or(usize::MAX));
+        if let Some(parent) = file.parent() {
+            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                path: parent.as_str().into(),
+                source,
+            })?;
+        }
+        fs::write(&file, updated).map_err(|source| LodeError::Io {
+            path: file.as_str().into(),
+            source,
+        })?;
+        println!("inserted snippet {name} into {file}");
+    } else {
+        print!("{}", snippet.body);
+    }
+    Ok(())
+}
+
+fn insert_text_at_line(existing: &str, snippet: &str, line: usize) -> String {
+    let mut lines = existing.lines().map(str::to_string).collect::<Vec<_>>();
+    let snippet_lines = snippet.lines().map(str::to_string).collect::<Vec<_>>();
+    let index = if line == 0 || line == usize::MAX {
+        lines.len()
+    } else {
+        line.saturating_sub(1).min(lines.len())
+    };
+    lines.splice(index..index, snippet_lines);
+    let mut output = lines.join("\n");
+    if !output.ends_with('\n') {
+        output.push('\n');
+    }
+    output
+}
+
+fn resolve_snippet_path(name: &str, lang: Option<&str>) -> lode_core::Result<Utf8PathBuf> {
+    let root = global_dir()?.join("snippets");
+    if let Some(lang) = lang {
+        let relative = safe_relative_path(&format!("{lang}/{name}.snippet"))?;
+        let path = root.join(relative);
+        if path.exists() {
+            return Ok(path);
+        }
+        return Err(LodeError::Message(format!(
+            "snippet not found: {lang}/{name}"
+        )));
+    }
+
+    let mut matches = Vec::new();
+    collect_snippet_named(&root, name, &mut matches)?;
+    match matches.len() {
+        0 => Err(LodeError::Message(format!("snippet not found: {name}"))),
+        1 => Ok(matches.remove(0)),
+        _ => Err(LodeError::Message(format!(
+            "snippet name is ambiguous; pass --lang for {name}"
+        ))),
+    }
+}
+
+fn collect_snippet_named(
+    path: &Utf8PathBuf,
+    name: &str,
+    matches: &mut Vec<Utf8PathBuf>,
+) -> lode_core::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            collect_snippet_named(&child, name, matches)?;
+        }
+        return Ok(());
+    }
+    if path.file_stem() == Some(name) && path.extension() == Some("snippet") {
+        matches.push(path.clone());
+    }
+    Ok(())
+}
+
 fn search_snippets(query: &str) -> lode_core::Result<()> {
     let root = global_dir()?.join("snippets");
     let mut matches = Vec::new();
@@ -1542,6 +2313,210 @@ fn collect_snippet_matches(
         matches.push(path.clone());
     }
     Ok(())
+}
+
+fn export_snippets(
+    lang: Option<&str>,
+    format: &str,
+    out: Option<Utf8PathBuf>,
+) -> lode_core::Result<()> {
+    let root = global_dir()?.join("snippets");
+    let scan_root = lang.map_or(root.clone(), |lang| root.join(lang));
+    let mut snippets = Vec::new();
+    collect_snippet_assets(&scan_root, &mut snippets)?;
+    snippets.sort_by(|left, right| {
+        left.lang
+            .cmp(&right.lang)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+
+    let rendered = match format {
+        "vscode" | "json" => render_vscode_snippets(&snippets)?,
+        "zed" => render_zed_snippets(&snippets)?,
+        "neovim" | "nvim" => render_neovim_snippets(&snippets),
+        "jetbrains" | "intellij" => render_jetbrains_snippets(&snippets),
+        "markdown" | "md" => render_markdown_snippets(&snippets),
+        "plain" | "text" => render_plain_snippets(&snippets),
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported snippet export format: {other}"
+            )))
+        }
+    };
+
+    if let Some(path) = out {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                path: parent.as_str().into(),
+                source,
+            })?;
+        }
+        fs::write(&path, rendered).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        println!("exported {} snippets to {path}", snippets.len());
+    } else {
+        print!("{rendered}");
+    }
+    Ok(())
+}
+
+fn collect_snippet_assets(
+    path: &Utf8PathBuf,
+    snippets: &mut Vec<SnippetAsset>,
+) -> lode_core::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            collect_snippet_assets(&child, snippets)?;
+        }
+        return Ok(());
+    }
+    if path.extension() != Some("snippet") {
+        return Ok(());
+    }
+    let contents = fs::read_to_string(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    snippets.push(parse_snippet_asset(path, &contents));
+    Ok(())
+}
+
+fn parse_snippet_asset(path: &Utf8PathBuf, contents: &str) -> SnippetAsset {
+    let mut name = path
+        .file_stem()
+        .map(str::to_string)
+        .unwrap_or_else(|| "snippet".to_string());
+    let mut lang = path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .map(str::to_string)
+        .unwrap_or_else(|| "any".to_string());
+    let mut body = contents.to_string();
+
+    if let Some((header, raw_body)) = contents.split_once("---") {
+        body = raw_body.trim_start_matches(['\r', '\n']).to_string();
+        for line in header.lines() {
+            if let Some((key, value)) = line.split_once(':') {
+                match key.trim() {
+                    "name" => name = value.trim().to_string(),
+                    "lang" => lang = value.trim().to_string(),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    SnippetAsset {
+        lang,
+        name,
+        body,
+        path: path.clone(),
+    }
+}
+
+fn render_vscode_snippets(snippets: &[SnippetAsset]) -> lode_core::Result<String> {
+    let mut output = serde_json::Map::new();
+    for snippet in snippets {
+        let key = format!("{}:{}", snippet.lang, snippet.name);
+        output.insert(
+            key,
+            serde_json::json!({
+                "prefix": snippet.name,
+                "scope": snippet.lang,
+                "body": snippet.body.lines().collect::<Vec<_>>(),
+                "description": format!("Lode snippet from {}", snippet.path),
+            }),
+        );
+    }
+    serde_json::to_string_pretty(&serde_json::Value::Object(output))
+        .map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn render_zed_snippets(snippets: &[SnippetAsset]) -> lode_core::Result<String> {
+    let mut output = serde_json::Map::new();
+    for snippet in snippets {
+        output.insert(
+            format!("{}:{}", snippet.lang, snippet.name),
+            serde_json::json!({
+                "prefix": snippet.name,
+                "body": snippet.body,
+                "description": format!("Lode snippet from {}", snippet.path),
+            }),
+        );
+    }
+    serde_json::to_string_pretty(&serde_json::Value::Object(output))
+        .map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn render_neovim_snippets(snippets: &[SnippetAsset]) -> String {
+    let mut output = String::from("return {\n");
+    for snippet in snippets {
+        output.push_str(&format!(
+            "  {{ lang = {:?}, trigger = {:?}, body = {:?} }},\n",
+            snippet.lang, snippet.name, snippet.body
+        ));
+    }
+    output.push_str("}\n");
+    output
+}
+
+fn render_jetbrains_snippets(snippets: &[SnippetAsset]) -> String {
+    let mut output = String::from("<templateSet group=\"Lode\">\n");
+    for snippet in snippets {
+        output.push_str(&format!(
+            "  <template name=\"{}\" value=\"{}\" description=\"{} snippet\" toReformat=\"true\" toShortenFQNames=\"true\" />\n",
+            xml_escape(&snippet.name),
+            xml_escape(&snippet.body),
+            xml_escape(&snippet.lang)
+        ));
+    }
+    output.push_str("</templateSet>\n");
+    output
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn render_markdown_snippets(snippets: &[SnippetAsset]) -> String {
+    let mut output = String::from("# Lode Snippets\n\n");
+    for snippet in snippets {
+        output.push_str(&format!(
+            "## {} / {}\n\nSource: `{}`\n\n```{}\n{}```\n\n",
+            snippet.lang, snippet.name, snippet.path, snippet.lang, snippet.body
+        ));
+    }
+    output
+}
+
+fn render_plain_snippets(snippets: &[SnippetAsset]) -> String {
+    let mut output = String::new();
+    for snippet in snippets {
+        output.push_str(&format!(
+            "[{}:{}]\n{}\n",
+            snippet.lang, snippet.name, snippet.body
+        ));
+    }
+    output
 }
 
 fn apply_recipe(name: &str, dry_run: bool) -> lode_core::Result<()> {
@@ -1611,6 +2586,15 @@ fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
                 }
             }
         }
+        ProjectsCommand::Cd { name } => {
+            let registry = load_registry()?;
+            let project = registry
+                .projects
+                .iter()
+                .find(|project| project.name == name)
+                .ok_or_else(|| LodeError::Message(format!("project not found: {name}")))?;
+            println!("{}", project.path);
+        }
         ProjectsCommand::Register { path } => {
             let path = path.unwrap_or(current_dir()?);
             let name = path
@@ -1619,6 +2603,17 @@ fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
                 .unwrap_or_else(|| "project".to_string());
             register_project(&name, &path, "manual")?;
             println!("registered {path}");
+        }
+        ProjectsCommand::Remove { name } => {
+            let mut registry = load_registry()?;
+            let before = registry.projects.len();
+            registry.projects.retain(|project| project.name != name);
+            let removed = before - registry.projects.len();
+            if removed == 0 {
+                return Err(LodeError::Message(format!("project not found: {name}")));
+            }
+            save_registry(&registry)?;
+            println!("removed project {name}");
         }
         ProjectsCommand::Health => {
             let registry = load_registry()?;
@@ -1702,14 +2697,33 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 }
             }
         }
-        PkgCommand::Outdated => println!("outdated check available for manager: {manager}"),
+        PkgCommand::Outdated => run_package_manager(&manager, package_outdated_args(&manager))?,
+        PkgCommand::Update { name, dry_run } => {
+            let args = package_update_args(&manager, name.as_deref())?;
+            if dry_run {
+                println!("would run: {} {}", manager, args.join(" "));
+            } else {
+                run_package_manager(&manager, args)?;
+            }
+        }
         PkgCommand::Audit => {
-            println!("audit check available for manager: {manager}");
+            run_package_manager(&manager, package_audit_args(&manager))?;
             scan(ScanCommand::Secrets {
                 path: Some(current_dir()?),
                 json: false,
             })?;
         }
+        PkgCommand::Why { name } => package_why(&manager, &name)?,
+        PkgCommand::Info { name } => package_info(&manager, &name)?,
+        PkgCommand::Lock { dry_run } => {
+            let args = package_lock_args(&manager)?;
+            if dry_run {
+                println!("would run: {} {}", manager, args.join(" "));
+            } else {
+                run_package_manager(&manager, args)?;
+            }
+        }
+        PkgCommand::Graph { format } => package_graph(&format)?,
         PkgCommand::Clean { dry_run } => {
             for path in [
                 "target",
@@ -1735,6 +2749,419 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
         }
     }
     Ok(())
+}
+
+fn run_package_manager(manager: &str, args: Vec<String>) -> lode_core::Result<()> {
+    if manager == "unknown" {
+        return Err(LodeError::Message(
+            "no supported package manager files found".to_string(),
+        ));
+    }
+    let status = ProcessCommand::new(manager)
+        .args(&args)
+        .status()
+        .map_err(|source| LodeError::Io {
+            path: manager.into(),
+            source,
+        })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(LodeError::Message(format!(
+            "{manager} {} failed with {status}",
+            args.join(" ")
+        )))
+    }
+}
+
+fn package_outdated_args(manager: &str) -> Vec<String> {
+    match manager {
+        "cargo" => vec!["tree".into(), "--depth".into(), "1".into()],
+        "npm" | "pnpm" | "yarn" | "bun" => vec!["outdated".into()],
+        "uv" => vec!["pip".into(), "list".into(), "--outdated".into()],
+        "go" => vec!["list".into(), "-m".into(), "-u".into(), "all".into()],
+        _ => vec!["--version".into()],
+    }
+}
+
+fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<Vec<String>> {
+    let mut args = match manager {
+        "cargo" => vec!["update".to_string()],
+        "npm" => vec!["update".to_string()],
+        "pnpm" => vec!["update".to_string()],
+        "yarn" => vec!["upgrade".to_string()],
+        "bun" => vec!["update".to_string()],
+        "uv" => vec!["lock".to_string(), "--upgrade".to_string()],
+        "go" => vec!["get".to_string(), "-u".to_string()],
+        _ => {
+            return Err(LodeError::Message(
+                "no supported package manager files found".to_string(),
+            ))
+        }
+    };
+    if let Some(name) = name {
+        args.push(name.to_string());
+    } else if manager == "go" {
+        args.push("./...".to_string());
+    }
+    Ok(args)
+}
+
+fn package_audit_args(manager: &str) -> Vec<String> {
+    match manager {
+        "cargo" => vec!["tree".into(), "--duplicates".into()],
+        "npm" => vec!["audit".into()],
+        "pnpm" => vec!["audit".into()],
+        "yarn" => vec!["audit".into()],
+        "bun" => vec!["audit".into()],
+        "uv" => vec!["pip".into(), "check".into()],
+        "go" => vec!["list".into(), "-m".into(), "all".into()],
+        _ => vec!["--version".into()],
+    }
+}
+
+fn package_lock_args(manager: &str) -> lode_core::Result<Vec<String>> {
+    match manager {
+        "cargo" => Ok(vec!["generate-lockfile".into()]),
+        "npm" => Ok(vec![
+            "install".into(),
+            "--package-lock-only".into(),
+            "--ignore-scripts".into(),
+        ]),
+        "pnpm" => Ok(vec!["install".into(), "--lockfile-only".into()]),
+        "yarn" => Ok(vec!["install".into(), "--mode=update-lockfile".into()]),
+        "bun" => Ok(vec!["install".into(), "--lockfile-only".into()]),
+        "uv" => Ok(vec!["lock".into()]),
+        "go" => Ok(vec!["mod".into(), "tidy".into()]),
+        _ => Err(LodeError::Message(
+            "no supported package manager files found".to_string(),
+        )),
+    }
+}
+
+fn package_why(manager: &str, name: &str) -> lode_core::Result<()> {
+    match manager {
+        "cargo" => run_package_manager(manager, vec!["tree".into(), "-i".into(), name.into()]),
+        "npm" => run_package_manager(manager, vec!["explain".into(), name.into()]),
+        "pnpm" | "yarn" => run_package_manager(manager, vec!["why".into(), name.into()]),
+        "bun" => run_package_manager(manager, vec!["pm".into(), "why".into(), name.into()]),
+        "uv" => run_package_manager(manager, vec!["pip".into(), "show".into(), name.into()]),
+        "go" => run_package_manager(manager, vec!["mod".into(), "why".into(), name.into()]),
+        _ => Err(LodeError::Message(
+            "no supported package manager files found".to_string(),
+        )),
+    }
+}
+
+fn package_info(manager: &str, name: &str) -> lode_core::Result<()> {
+    match manager {
+        "cargo" => run_package_manager(manager, vec!["search".into(), name.into()]),
+        "npm" | "pnpm" | "yarn" | "bun" => {
+            run_package_manager(manager, vec!["info".into(), name.into()])
+        }
+        "uv" => run_package_manager(manager, vec!["pip".into(), "show".into(), name.into()]),
+        "go" => run_package_manager(manager, vec!["list".into(), "-m".into(), name.into()]),
+        _ => Err(LodeError::Message(
+            "no supported package manager files found".to_string(),
+        )),
+    }
+}
+
+fn package_graph(format: &str) -> lode_core::Result<()> {
+    let manifests = [
+        ("Cargo.toml", "cargo"),
+        ("package.json", "node"),
+        ("pyproject.toml", "python"),
+        ("go.mod", "go"),
+        ("build.gradle", "gradle"),
+    ];
+    match format {
+        "json" => {
+            let found = manifests
+                .iter()
+                .filter(|(file, _)| Utf8PathBuf::from(*file).exists())
+                .map(|(file, kind)| serde_json::json!({ "file": file, "kind": kind }))
+                .collect::<Vec<_>>();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&found)
+                    .map_err(|error| LodeError::Message(error.to_string()))?
+            );
+        }
+        "ascii" => {
+            println!("project");
+            for (file, kind) in manifests {
+                if Utf8PathBuf::from(file).exists() {
+                    println!("`- {kind} ({file})");
+                }
+            }
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported package graph format: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn time_command(command: TimeCommand) -> lode_core::Result<()> {
+    match command {
+        TimeCommand::Today { format } => {
+            let log = load_time_log()?;
+            let today = today_utc();
+            let sessions = log
+                .sessions
+                .into_iter()
+                .filter(|session| session.started_at.starts_with(&today))
+                .collect::<Vec<_>>();
+            print_time_sessions("today", &sessions, &format)?;
+        }
+        TimeCommand::Show { by, format } => {
+            let log = load_time_log()?;
+            print_time_summary(&log.sessions, &by, &format)?;
+        }
+        TimeCommand::Report { format, out } => {
+            let log = load_time_log()?;
+            let report = render_time_report(&log.sessions, &format)?;
+            if let Some(path) = out {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                        path: parent.as_str().into(),
+                        source,
+                    })?;
+                }
+                fs::write(&path, report).map_err(|source| LodeError::Io {
+                    path: path.as_str().into(),
+                    source,
+                })?;
+                println!("wrote time report to {path}");
+            } else {
+                print!("{report}");
+            }
+        }
+        TimeCommand::Clear { confirm } => {
+            if !confirm {
+                return Err(LodeError::Message(
+                    "refusing to clear time log without --confirm".to_string(),
+                ));
+            }
+            let path = time_log_path()?;
+            if path.exists() {
+                fs::remove_file(&path).map_err(|source| LodeError::Io {
+                    path: path.as_str().into(),
+                    source,
+                })?;
+            }
+            println!("time log cleared");
+        }
+    }
+    Ok(())
+}
+
+fn time_log_path() -> lode_core::Result<Utf8PathBuf> {
+    Ok(current_dir()?.join(".lode").join("time-log.json"))
+}
+
+fn load_time_log() -> lode_core::Result<TimeLog> {
+    let path = time_log_path()?;
+    if !path.exists() {
+        return Ok(TimeLog::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn print_time_sessions(
+    label: &str,
+    sessions: &[TimeSession],
+    format: &str,
+) -> lode_core::Result<()> {
+    match format {
+        "json" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(sessions)
+                    .map_err(|error| LodeError::Message(error.to_string()))?
+            );
+        }
+        "markdown" | "md" => {
+            print!("{}", render_time_sessions_markdown(label, sessions));
+        }
+        "table" => {
+            println!("{label}\t{}", format_seconds(total_seconds(sessions)));
+            for session in sessions {
+                println!(
+                    "{}\t{}\t{}",
+                    session.started_at,
+                    format_seconds(session.seconds),
+                    session
+                        .task
+                        .as_deref()
+                        .or(session.file.as_deref())
+                        .or(session.project.as_deref())
+                        .unwrap_or("-")
+                );
+            }
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported time output format: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn print_time_summary(sessions: &[TimeSession], by: &str, format: &str) -> lode_core::Result<()> {
+    let mut groups = std::collections::BTreeMap::<String, u64>::new();
+    for session in sessions {
+        let key = match by {
+            "day" => session.started_at.chars().take(10).collect::<String>(),
+            "project" => session
+                .project
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+            "file" => session
+                .file
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+            "task" => session
+                .task
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+            other => {
+                return Err(LodeError::Message(format!(
+                    "unsupported time grouping: {other}"
+                )))
+            }
+        };
+        *groups.entry(key).or_insert(0) += session.seconds;
+    }
+
+    match format {
+        "json" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&groups)
+                    .map_err(|error| LodeError::Message(error.to_string()))?
+            );
+        }
+        "markdown" | "md" => {
+            println!("# Time Summary\n");
+            println!("| {by} | duration |");
+            println!("| --- | --- |");
+            for (key, seconds) in groups {
+                println!("| {key} | {} |", format_seconds(seconds));
+            }
+        }
+        "table" => {
+            for (key, seconds) in groups {
+                println!("{key}\t{}", format_seconds(seconds));
+            }
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported time output format: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn render_time_report(sessions: &[TimeSession], format: &str) -> lode_core::Result<String> {
+    match format {
+        "json" => serde_json::to_string_pretty(&sessions)
+            .map_err(|error| LodeError::Message(error.to_string())),
+        "markdown" | "md" => Ok(render_time_sessions_markdown("time report", sessions)),
+        "table" => {
+            let mut output = format!("total\t{}\n", format_seconds(total_seconds(sessions)));
+            for session in sessions {
+                output.push_str(&format!(
+                    "{}\t{}\t{}\n",
+                    session.started_at,
+                    format_seconds(session.seconds),
+                    session
+                        .task
+                        .as_deref()
+                        .or(session.file.as_deref())
+                        .or(session.project.as_deref())
+                        .unwrap_or("-")
+                ));
+            }
+            Ok(output)
+        }
+        other => Err(LodeError::Message(format!(
+            "unsupported time report format: {other}"
+        ))),
+    }
+}
+
+fn render_time_sessions_markdown(label: &str, sessions: &[TimeSession]) -> String {
+    let mut output = format!(
+        "# {label}\n\nTotal: {}\n\n",
+        format_seconds(total_seconds(sessions))
+    );
+    output.push_str("| started | duration | context |\n");
+    output.push_str("| --- | --- | --- |\n");
+    for session in sessions {
+        let context = session
+            .task
+            .as_deref()
+            .or(session.file.as_deref())
+            .or(session.project.as_deref())
+            .unwrap_or("-");
+        output.push_str(&format!(
+            "| {} | {} | {} |\n",
+            session.started_at,
+            format_seconds(session.seconds),
+            context
+        ));
+    }
+    output
+}
+
+fn total_seconds(sessions: &[TimeSession]) -> u64 {
+    sessions.iter().map(|session| session.seconds).sum()
+}
+
+fn format_seconds(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+fn today_utc() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() / 86_400)
+        .unwrap_or_default() as i64;
+    let (year, month, day) = civil_from_days(days);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i32, u32, u32) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    (year as i32, m as u32, d as u32)
 }
 
 fn detect_toolchains() -> Vec<String> {
