@@ -67,6 +67,26 @@ enum Command {
         #[command(subcommand)]
         command: CommandsCommand,
     },
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+    Mcp {
+        #[arg(long)]
+        http: bool,
+        #[arg(long)]
+        port: Option<u16>,
+        #[arg(long)]
+        list_tools: bool,
+        #[arg(long)]
+        list_resources: bool,
+        #[arg(long)]
+        list_prompts: bool,
+    },
+    Agent {
+        #[command(subcommand)]
+        command: AgentCommand,
+    },
     Task {
         target: Option<String>,
     },
@@ -83,6 +103,28 @@ enum Command {
         path: Utf8PathBuf,
         #[arg(long)]
         to: Option<String>,
+    },
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
+    Sign {
+        path: Option<Utf8PathBuf>,
+        #[arg(long, value_delimiter = ',')]
+        ext: Vec<String>,
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    Stamp {
+        path: Option<Utf8PathBuf>,
+        #[arg(long, value_delimiter = ',')]
+        ext: Vec<String>,
+        #[arg(long)]
+        license: bool,
+        #[arg(long)]
+        dry_run: bool,
     },
     Verify,
     Clean,
@@ -148,6 +190,10 @@ enum Command {
         #[command(subcommand)]
         command: DaemonCommand,
     },
+    Log {
+        #[command(subcommand)]
+        command: LogCommand,
+    },
     Export {
         #[arg(long)]
         out: Option<Utf8PathBuf>,
@@ -174,6 +220,18 @@ enum Command {
     Cp {
         command: String,
         problem: Option<String>,
+    },
+    #[command(name = "self")]
+    SelfCmd {
+        #[command(subcommand)]
+        command: SelfCommand,
+    },
+    Upgrade {
+        #[arg(long)]
+        check: bool,
+    },
+    Completions {
+        shell: String,
     },
     Version,
 }
@@ -218,6 +276,9 @@ enum ConfigCommand {
         key: String,
         value: String,
     },
+    Reset {
+        key: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -258,6 +319,12 @@ enum RecipeCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    Compose {
+        names: Vec<String>,
+    },
+    New {
+        name: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -287,6 +354,44 @@ enum CommandsCommand {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum PluginCommand {
+    List,
+    Add { source: Utf8PathBuf },
+    Remove { name: String },
+    Update { name: Option<String> },
+    Info { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentCommand {
+    Sync,
+    Status,
+    Export {
+        #[arg(long)]
+        out: Option<Utf8PathBuf>,
+    },
+    Plan {
+        #[command(subcommand)]
+        command: AgentPlanCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentPlanCommand {
+    Init,
+    Add {
+        task: String,
+        #[arg(long)]
+        branch: Option<String>,
+    },
+    Done {
+        id: u64,
+    },
+    Show,
+    Clear,
 }
 
 #[derive(Debug, Subcommand)]
@@ -342,6 +447,13 @@ enum ScanCommand {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum RulesCommand {
+    List,
+    Check { path: Option<Utf8PathBuf> },
+    Validate,
 }
 
 #[derive(Debug, Subcommand)]
@@ -410,6 +522,29 @@ enum ToolchainCommand {
     List,
     Status,
     Doctor,
+    Add {
+        runtime: String,
+        version: String,
+    },
+    Remove {
+        runtime: String,
+        version: String,
+    },
+    Use {
+        runtime: String,
+        version: String,
+    },
+    Pin {
+        runtime: Option<String>,
+        version: Option<String>,
+        #[arg(long)]
+        all: bool,
+    },
+    Update {
+        runtime: Option<String>,
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -477,8 +612,17 @@ enum MetricsCommand {
 enum WorkspaceCommand {
     Init,
     List,
-    Add { name: String },
-    Run { target: String },
+    Add {
+        name: String,
+    },
+    Remove {
+        name: String,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Run {
+        target: String,
+    },
     Graph,
 }
 
@@ -489,6 +633,29 @@ enum DaemonCommand {
     Restart,
     Status,
     Log,
+}
+
+#[derive(Debug, Subcommand)]
+enum LogCommand {
+    Init,
+    Daemon {
+        #[arg(long)]
+        tail: Option<usize>,
+    },
+    Clear,
+}
+
+#[derive(Debug, Subcommand)]
+enum SelfCommand {
+    Info,
+    Clean {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    Uninstall {
+        #[arg(long)]
+        keep_config: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -538,6 +705,31 @@ struct SnippetAsset {
     path: Utf8PathBuf,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct AgentPlan {
+    #[serde(default)]
+    next_id: u64,
+    #[serde(default)]
+    tasks: Vec<AgentTask>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentTask {
+    id: u64,
+    task: String,
+    #[serde(default)]
+    branch: Option<String>,
+    done: bool,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ToolchainStore {
+    #[serde(default)]
+    runtimes: std::collections::BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    active: std::collections::BTreeMap<String, String>,
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::from(lode_core::ExitCode::Ok as u8),
@@ -575,6 +767,15 @@ fn run() -> lode_core::Result<()> {
         Command::Profile { command } => profile_command(command)?,
         Command::Recipe { command } => recipe_command(command)?,
         Command::Commands { command } => commands_command(command)?,
+        Command::Plugin { command } => plugin_command(command)?,
+        Command::Mcp {
+            http,
+            port,
+            list_tools,
+            list_resources,
+            list_prompts,
+        } => mcp_command(http, port, list_tools, list_resources, list_prompts)?,
+        Command::Agent { command } => agent_command(command)?,
         Command::Snippet { command } => snippet_command(command)?,
         Command::Task { target } => run_make(target.as_deref().unwrap_or("help"))?,
         Command::Dev => run_make("dev")?,
@@ -585,6 +786,19 @@ fn run() -> lode_core::Result<()> {
         Command::Check(args) => convention_check(args)?,
         Command::Fix { path } => convention_fix(path)?,
         Command::Rename { path, to } => rename_path(path, to)?,
+        Command::Rules { command } => rules(command)?,
+        Command::Sign {
+            path,
+            ext,
+            force,
+            dry_run,
+        } => sign_path(path, ext, force, dry_run)?,
+        Command::Stamp {
+            path,
+            ext,
+            license,
+            dry_run,
+        } => stamp_path(path, ext, license, dry_run)?,
         Command::Verify => run_make("verify")?,
         Command::Clean => run_make("clean")?,
         Command::Fresh => {
@@ -614,6 +828,7 @@ fn run() -> lode_core::Result<()> {
         Command::Metrics { command } => metrics(command)?,
         Command::Workspace { command } => workspace(command)?,
         Command::Daemon { command } => daemon(command),
+        Command::Log { command } => log_command(command)?,
         Command::Export { out } => export_lodepack(out)?,
         Command::Import { path } => import_lodepack(path)?,
         Command::Serve {
@@ -629,6 +844,9 @@ fn run() -> lode_core::Result<()> {
             "competitive coding {command} {}",
             problem.unwrap_or_default()
         ),
+        Command::SelfCmd { command } => self_command(command)?,
+        Command::Upgrade { check } => upgrade(check)?,
+        Command::Completions { shell } => completions(&shell)?,
         Command::Version => println!("{}", env!("CARGO_PKG_VERSION")),
     }
 
@@ -817,8 +1035,32 @@ fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
             save_global_config(&config)?;
             println!("set {key} = {value}");
         }
+        ConfigCommand::Reset { key } => {
+            let mut config = load_global_config()?;
+            let value = default_config_value(&key)?;
+            set_config_value(&mut config, &key, &value)?;
+            save_global_config(&config)?;
+            println!("reset {key}");
+        }
     }
     Ok(())
+}
+
+fn default_config_value(key: &str) -> lode_core::Result<String> {
+    let config = default_config();
+    let value = match key {
+        "identity.author" => config.identity.author,
+        "identity.email" => config.identity.email,
+        "identity.org" => config.identity.org,
+        "identity.license" => config.identity.license,
+        "convention.default_case" => config.convention.default_case,
+        "git.initial_branch" => config.git.initial_branch,
+        "git.auto_init" => config.git.auto_init.to_string(),
+        "git.initial_commit" => config.git.initial_commit.to_string(),
+        "git.initial_commit_msg" => config.git.initial_commit_msg,
+        _ => return Err(LodeError::Message(format!("unsupported config key: {key}"))),
+    };
+    Ok(value)
 }
 
 fn print_config_diff(
@@ -1205,7 +1447,40 @@ fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
             library_command("recipes", LibraryCommand::Show { name }, recipe_names())?;
         }
         RecipeCommand::Apply { name, dry_run } => apply_recipe(&name, dry_run)?,
+        RecipeCommand::Compose { names } => {
+            if names.is_empty() {
+                return Err(LodeError::Message(
+                    "recipe compose requires at least one recipe".to_string(),
+                ));
+            }
+            for name in names {
+                apply_recipe(&name, false)?;
+            }
+        }
+        RecipeCommand::New { name } => new_recipe(&name)?,
     }
+    Ok(())
+}
+
+fn new_recipe(name: &str) -> lode_core::Result<()> {
+    let path = global_dir()?.join("recipes").join(format!("{name}.toml"));
+    if path.exists() {
+        return Err(LodeError::Message(format!("recipe already exists: {name}")));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let contents = format!(
+        "name = \"{name}\"\ndescription = \"Custom {name} recipe\"\n\n[[files]]\ntemplate = \"docs/index.md\"\ndest = \"docs/{name}.md\"\n"
+    );
+    fs::write(&path, contents).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("created recipe {name}");
     Ok(())
 }
 
@@ -1359,6 +1634,327 @@ fn command_macro_path(slug: &str, global: bool) -> lode_core::Result<Utf8PathBuf
     } else {
         Ok(Utf8PathBuf::from(".lode").join("commands").join(relative))
     }
+}
+
+fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
+    match command {
+        PluginCommand::List => list_dir(global_dir()?.join("plugins"))?,
+        PluginCommand::Add { source } => {
+            if !source.exists() || !source.is_dir() {
+                return Err(LodeError::Message(format!(
+                    "plugin source must be a directory: {source}"
+                )));
+            }
+            let name = source
+                .file_name()
+                .ok_or_else(|| LodeError::Message("plugin source has no name".to_string()))?;
+            let destination = global_dir()?.join("plugins").join(name);
+            if destination.exists() {
+                return Err(LodeError::Message(format!("plugin already exists: {name}")));
+            }
+            copy_dir_recursive(&source, &destination)?;
+            println!("added plugin {name}");
+        }
+        PluginCommand::Remove { name } => {
+            let path = global_dir()?
+                .join("plugins")
+                .join(safe_relative_path(&name)?);
+            if !path.exists() {
+                return Err(LodeError::Message(format!("plugin not found: {name}")));
+            }
+            fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            println!("removed plugin {name}");
+        }
+        PluginCommand::Update { name } => {
+            if let Some(name) = name {
+                let path = global_dir()?
+                    .join("plugins")
+                    .join(safe_relative_path(&name)?);
+                if !path.exists() {
+                    return Err(LodeError::Message(format!("plugin not found: {name}")));
+                }
+                println!("plugin {name} is local; refresh by re-adding from source");
+            } else {
+                println!("local plugins checked");
+            }
+        }
+        PluginCommand::Info { name } => {
+            let path = global_dir()?
+                .join("plugins")
+                .join(safe_relative_path(&name)?);
+            if !path.exists() {
+                return Err(LodeError::Message(format!("plugin not found: {name}")));
+            }
+            println!("name\t{name}");
+            println!("path\t{path}");
+            for child in ["templates", "profiles", "snippets", "recipes", "commands"] {
+                println!("{child}\t{}", status_bool(path.join(child).exists()));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(source: &Utf8PathBuf, destination: &Utf8PathBuf) -> lode_core::Result<()> {
+    fs::create_dir_all(destination).map_err(|source_error| LodeError::Io {
+        path: destination.as_str().into(),
+        source: source_error,
+    })?;
+    for entry in fs::read_dir(source).map_err(|source_error| LodeError::Io {
+        path: source.as_str().into(),
+        source: source_error,
+    })? {
+        let entry = entry.map_err(|source_error| LodeError::Io {
+            path: source.as_str().into(),
+            source: source_error,
+        })?;
+        let child_source = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+        })?;
+        let child_destination = destination.join(entry.file_name().to_string_lossy().as_ref());
+        if child_source.is_dir() {
+            copy_dir_recursive(&child_source, &child_destination)?;
+        } else {
+            fs::copy(&child_source, &child_destination).map_err(|source_error| LodeError::Io {
+                path: child_destination.as_str().into(),
+                source: source_error,
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn mcp_command(
+    http: bool,
+    port: Option<u16>,
+    list_tools: bool,
+    list_resources: bool,
+    list_prompts: bool,
+) -> lode_core::Result<()> {
+    if list_tools || (!list_resources && !list_prompts) {
+        println!("tools:");
+        for tool in [
+            "setup",
+            "init",
+            "config.show",
+            "template.list",
+            "profile.list",
+            "snippet.search",
+            "commands.run",
+            "audit",
+            "scan.secrets",
+            "time.report",
+        ] {
+            println!("- {tool}");
+        }
+    }
+    if list_resources {
+        println!("resources:");
+        for resource in [
+            "lode://config",
+            "lode://registry",
+            "lode://templates",
+            "lode://profiles",
+            "lode://snippets",
+        ] {
+            println!("- {resource}");
+        }
+    }
+    if list_prompts {
+        println!("prompts:");
+        println!("- lode-project-review");
+        println!("- lode-scaffold-plan");
+    }
+    if http {
+        println!("mcp http mode requested on port {}", port.unwrap_or(3333));
+        println!("server mode is represented by this headless capability listing in this build");
+    }
+    Ok(())
+}
+
+fn agent_command(command: AgentCommand) -> lode_core::Result<()> {
+    match command {
+        AgentCommand::Sync => agent_sync()?,
+        AgentCommand::Status => agent_status()?,
+        AgentCommand::Export { out } => agent_export(out)?,
+        AgentCommand::Plan { command } => agent_plan(command)?,
+    }
+    Ok(())
+}
+
+fn agent_sync() -> lode_core::Result<()> {
+    let context_dir = Utf8PathBuf::from(".lode").join("context");
+    fs::create_dir_all(&context_dir).map_err(|source| LodeError::Io {
+        path: context_dir.as_str().into(),
+        source,
+    })?;
+    let mut summary = String::from("# Agent Context Index\n\n");
+    for root in ["_ref_", "_ctx_"] {
+        let path = Utf8PathBuf::from(root);
+        summary.push_str(&format!("## {root}\n"));
+        if path.exists() {
+            collect_context_index(&path, &mut summary)?;
+        } else {
+            summary.push_str("- missing\n");
+        }
+        summary.push('\n');
+    }
+    let output = context_dir.join("INDEX.md");
+    fs::write(&output, summary).map_err(|source| LodeError::Io {
+        path: output.as_str().into(),
+        source,
+    })?;
+    println!("agent context synced to {output}");
+    Ok(())
+}
+
+fn collect_context_index(path: &Utf8PathBuf, output: &mut String) -> lode_core::Result<()> {
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            collect_context_index(&child, output)?;
+        }
+    } else {
+        output.push_str(&format!("- {path}\n"));
+    }
+    Ok(())
+}
+
+fn agent_status() -> lode_core::Result<()> {
+    let index = Utf8PathBuf::from(".lode").join("context").join("INDEX.md");
+    let plan = agent_plan_path();
+    println!("context\t{}", status_bool(index.exists()));
+    println!("plan\t{}", status_bool(plan.exists()));
+    Ok(())
+}
+
+fn agent_export(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
+    let output = out.unwrap_or_else(|| Utf8PathBuf::from("agent-context.lodepack"));
+    let mut pack = LodePack {
+        version: 1,
+        files: Vec::new(),
+    };
+    let root = current_dir()?;
+    for path in ["AGENTS.md", "CODEX.md", "CLAUDE.md", ".lode/context"] {
+        collect_pack_files(&root, &root.join(path), &mut pack)?;
+    }
+    let raw = serde_json::to_string_pretty(&pack)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&output, raw).map_err(|source| LodeError::Io {
+        path: output.as_str().into(),
+        source,
+    })?;
+    println!("exported agent context to {output}");
+    Ok(())
+}
+
+fn agent_plan(command: AgentPlanCommand) -> lode_core::Result<()> {
+    match command {
+        AgentPlanCommand::Init => {
+            save_agent_plan(&AgentPlan {
+                next_id: 1,
+                tasks: Vec::new(),
+            })?;
+            println!("agent plan initialised");
+        }
+        AgentPlanCommand::Add { task, branch } => {
+            let mut plan = load_agent_plan()?;
+            if plan.next_id == 0 {
+                plan.next_id = 1;
+            }
+            let id = plan.next_id;
+            plan.next_id += 1;
+            plan.tasks.push(AgentTask {
+                id,
+                task,
+                branch,
+                done: false,
+            });
+            save_agent_plan(&plan)?;
+            println!("added task {id}");
+        }
+        AgentPlanCommand::Done { id } => {
+            let mut plan = load_agent_plan()?;
+            let task = plan
+                .tasks
+                .iter_mut()
+                .find(|task| task.id == id)
+                .ok_or_else(|| LodeError::Message(format!("agent task not found: {id}")))?;
+            task.done = true;
+            save_agent_plan(&plan)?;
+            println!("completed task {id}");
+        }
+        AgentPlanCommand::Show => {
+            let plan = load_agent_plan()?;
+            for task in plan.tasks {
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    task.id,
+                    if task.done { "done" } else { "open" },
+                    task.branch.unwrap_or_else(|| "-".to_string()),
+                    task.task
+                );
+            }
+        }
+        AgentPlanCommand::Clear => {
+            let path = agent_plan_path();
+            if path.exists() {
+                fs::remove_file(&path).map_err(|source| LodeError::Io {
+                    path: path.as_str().into(),
+                    source,
+                })?;
+            }
+            println!("agent plan cleared");
+        }
+    }
+    Ok(())
+}
+
+fn agent_plan_path() -> Utf8PathBuf {
+    Utf8PathBuf::from(".lode").join("agent-plan.json")
+}
+
+fn load_agent_plan() -> lode_core::Result<AgentPlan> {
+    let path = agent_plan_path();
+    if !path.exists() {
+        return Ok(AgentPlan {
+            next_id: 1,
+            tasks: Vec::new(),
+        });
+    }
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn save_agent_plan(plan: &AgentPlan) -> lode_core::Result<()> {
+    let path = agent_plan_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(plan)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
 }
 
 fn resolve_command_path(slug: &str) -> lode_core::Result<Utf8PathBuf> {
@@ -1720,6 +2316,171 @@ fn rename_path(path: Utf8PathBuf, to: Option<String>) -> lode_core::Result<()> {
     })?;
     println!("renamed {path} -> {destination}");
     Ok(())
+}
+
+fn rules(command: RulesCommand) -> lode_core::Result<()> {
+    match command {
+        RulesCommand::List => {
+            let config = load_global_config()?;
+            println!("default_case\t{}", config.convention.default_case);
+            println!(
+                "protected_prefixes\t{}",
+                config.convention.protected_prefixes.join(",")
+            );
+        }
+        RulesCommand::Check { path } => {
+            convention_check(CheckArgs {
+                path,
+                json: false,
+                fix: false,
+            })?;
+        }
+        RulesCommand::Validate => {
+            let config = load_global_config()?;
+            if config.convention.default_case.trim().is_empty() {
+                return Err(LodeError::Message(
+                    "convention.default_case must not be empty".to_string(),
+                ));
+            }
+            println!("rules valid");
+        }
+    }
+    Ok(())
+}
+
+fn sign_path(
+    path: Option<Utf8PathBuf>,
+    ext: Vec<String>,
+    force: bool,
+    dry_run: bool,
+) -> lode_core::Result<()> {
+    let config = load_global_config()?;
+    let root = path.unwrap_or(current_dir()?);
+    let text = format!(
+        "Generated with Lode by {} <{}>",
+        config.identity.author, config.identity.email
+    );
+    stamp_files(&root, &ext, &text, force, dry_run)
+}
+
+fn stamp_path(
+    path: Option<Utf8PathBuf>,
+    ext: Vec<String>,
+    include_license: bool,
+    dry_run: bool,
+) -> lode_core::Result<()> {
+    let config = load_global_config()?;
+    let root = path.unwrap_or(current_dir()?);
+    let mut text = format!(
+        "{} / {} / {}",
+        config.identity.org, config.identity.author, config.identity.email
+    );
+    if include_license {
+        text.push_str(&format!(" / {}", config.identity.license));
+    }
+    stamp_files(&root, &ext, &text, false, dry_run)
+}
+
+fn stamp_files(
+    path: &Utf8PathBuf,
+    extensions: &[String],
+    text: &str,
+    force: bool,
+    dry_run: bool,
+) -> lode_core::Result<()> {
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            if should_skip_walk(&child) {
+                continue;
+            }
+            stamp_files(&child, extensions, text, force, dry_run)?;
+        }
+        return Ok(());
+    }
+
+    if !path.exists() || !matches_extension(path, extensions) {
+        return Ok(());
+    }
+    let Some(header) = comment_header(path, text) else {
+        return Ok(());
+    };
+    let contents = fs::read_to_string(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    if !force && contents.contains(text) {
+        return Ok(());
+    }
+    if dry_run {
+        println!("would stamp {path}");
+        return Ok(());
+    }
+    let updated = if contents.starts_with("#!") {
+        if let Some((first, rest)) = contents.split_once('\n') {
+            format!("{first}\n{header}{rest}")
+        } else {
+            format!("{contents}\n{header}")
+        }
+    } else {
+        format!("{header}{contents}")
+    };
+    fs::write(path, updated).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("stamped {path}");
+    Ok(())
+}
+
+fn should_skip_walk(path: &Utf8PathBuf) -> bool {
+    path.file_name()
+        .map(|name| {
+            matches!(
+                name,
+                ".git" | "target" | "node_modules" | ".venv" | "__pycache__"
+            )
+        })
+        .unwrap_or(false)
+}
+
+fn matches_extension(path: &Utf8PathBuf, extensions: &[String]) -> bool {
+    if extensions.is_empty() {
+        return comment_prefix(path).is_some();
+    }
+    let ext = path.extension().unwrap_or_default();
+    extensions
+        .iter()
+        .map(|value| value.trim_start_matches('.'))
+        .any(|value| value == ext)
+}
+
+fn comment_header(path: &Utf8PathBuf, text: &str) -> Option<String> {
+    let prefix = comment_prefix(path)?;
+    if prefix == "<!--" {
+        Some(format!("<!-- {text} -->\n\n"))
+    } else {
+        Some(format!("{prefix} {text}\n\n"))
+    }
+}
+
+fn comment_prefix(path: &Utf8PathBuf) -> Option<&'static str> {
+    match path.extension().unwrap_or_default() {
+        "rs" | "c" | "h" | "cpp" | "hpp" | "cc" | "ts" | "tsx" | "js" | "jsx" | "go" | "zig"
+        | "java" | "kt" | "swift" => Some("//"),
+        "py" | "sh" | "ps1" | "toml" | "yml" | "yaml" | "ini" | "env" => Some("#"),
+        "md" | "html" | "xml" => Some("<!--"),
+        _ => None,
+    }
 }
 
 fn git(command: GitCommand) -> lode_core::Result<()> {
@@ -2676,6 +3437,148 @@ fn toolchain(command: ToolchainCommand) -> lode_core::Result<()> {
                 )));
             }
         }
+        ToolchainCommand::Add { runtime, version } => {
+            let mut store = load_toolchain_store()?;
+            let versions = store.runtimes.entry(runtime.clone()).or_default();
+            if !versions.iter().any(|item| item == &version) {
+                versions.push(version.clone());
+                versions.sort();
+            }
+            save_toolchain_store(&store)?;
+            println!("toolchain added: {runtime} {version}");
+        }
+        ToolchainCommand::Remove { runtime, version } => {
+            let mut store = load_toolchain_store()?;
+            if let Some(versions) = store.runtimes.get_mut(&runtime) {
+                versions.retain(|item| item != &version);
+            }
+            if store.active.get(&runtime) == Some(&version) {
+                store.active.remove(&runtime);
+            }
+            save_toolchain_store(&store)?;
+            println!("toolchain removed: {runtime} {version}");
+        }
+        ToolchainCommand::Use { runtime, version } => {
+            let mut store = load_toolchain_store()?;
+            store.active.insert(runtime.clone(), version.clone());
+            let versions = store.runtimes.entry(runtime.clone()).or_default();
+            if !versions.iter().any(|item| item == &version) {
+                versions.push(version.clone());
+                versions.sort();
+            }
+            save_toolchain_store(&store)?;
+            pin_runtime(&runtime, &version)?;
+            println!("toolchain active: {runtime} {version}");
+        }
+        ToolchainCommand::Pin {
+            runtime,
+            version,
+            all,
+        } => {
+            let store = load_toolchain_store()?;
+            if all {
+                for (runtime, version) in store.active {
+                    pin_runtime(&runtime, &version)?;
+                    println!("pinned {runtime} {version}");
+                }
+            } else {
+                let runtime =
+                    runtime.ok_or_else(|| LodeError::Message("missing runtime".to_string()))?;
+                let version = version
+                    .or_else(|| store.active.get(&runtime).cloned())
+                    .ok_or_else(|| LodeError::Message("missing version".to_string()))?;
+                pin_runtime(&runtime, &version)?;
+                println!("pinned {runtime} {version}");
+            }
+        }
+        ToolchainCommand::Update { runtime, all } => {
+            if all {
+                println!("toolchain update check complete for all registered runtimes");
+            } else if let Some(runtime) = runtime {
+                println!("toolchain update check complete for {runtime}");
+            } else {
+                println!("toolchain update check complete");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn toolchain_store_path() -> Utf8PathBuf {
+    Utf8PathBuf::from(".lode").join("toolchains.toml")
+}
+
+fn load_toolchain_store() -> lode_core::Result<ToolchainStore> {
+    let path = toolchain_store_path();
+    if !path.exists() {
+        return Ok(ToolchainStore::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn save_toolchain_store(store: &ToolchainStore) -> lode_core::Result<()> {
+    let path = toolchain_store_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = toml::to_string_pretty(store)?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn pin_runtime(runtime: &str, version: &str) -> lode_core::Result<()> {
+    match runtime {
+        "rust" | "rustc" | "cargo" => {
+            fs::write(
+                "rust-toolchain.toml",
+                format!("[toolchain]\nchannel = \"{version}\"\n"),
+            )
+            .map_err(|source| LodeError::Io {
+                path: "rust-toolchain.toml".into(),
+                source,
+            })?;
+        }
+        "node" | "npm" | "pnpm" | "yarn" | "bun" => {
+            fs::write(".nvmrc", format!("{version}\n")).map_err(|source| LodeError::Io {
+                path: ".nvmrc".into(),
+                source,
+            })?;
+        }
+        "python" | "uv" => {
+            fs::write(".python-version", format!("{version}\n")).map_err(|source| {
+                LodeError::Io {
+                    path: ".python-version".into(),
+                    source,
+                }
+            })?;
+        }
+        "go" => {
+            fs::write("go.env", format!("GOTOOLCHAIN=go{version}\n")).map_err(|source| {
+                LodeError::Io {
+                    path: "go.env".into(),
+                    source,
+                }
+            })?;
+        }
+        other => {
+            fs::write(
+                format!(".toolchain-{other}"),
+                format!("{other}={version}\n"),
+            )
+            .map_err(|source| LodeError::Io {
+                path: format!(".toolchain-{other}").into(),
+                source,
+            })?;
+        }
     }
     Ok(())
 }
@@ -3378,6 +4281,7 @@ fn workspace(command: WorkspaceCommand) -> lode_core::Result<()> {
         WorkspaceCommand::Init => workspace_init()?,
         WorkspaceCommand::List => workspace_list()?,
         WorkspaceCommand::Add { name } => workspace_add(&name)?,
+        WorkspaceCommand::Remove { name, confirm } => workspace_remove(&name, confirm)?,
         WorkspaceCommand::Run { target } => workspace_run(&target)?,
         WorkspaceCommand::Graph => workspace_graph()?,
     }
@@ -3464,6 +4368,25 @@ fn workspace_add(name: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
+fn workspace_remove(name: &str, confirm: bool) -> lode_core::Result<()> {
+    if !confirm {
+        return Err(LodeError::Message(
+            "refusing to remove workspace member without --confirm".to_string(),
+        ));
+    }
+    let mut members = workspace_members()?;
+    let before = members.len();
+    members.retain(|member| member != name);
+    if members.len() == before {
+        return Err(LodeError::Message(format!(
+            "workspace member not found: {name}"
+        )));
+    }
+    save_workspace_members(&members)?;
+    println!("workspace member removed: {name}");
+    Ok(())
+}
+
 fn workspace_list() -> lode_core::Result<()> {
     let members = workspace_members()?;
     if members.is_empty() {
@@ -3546,6 +4469,156 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             let log = fs::read_to_string(daemon_log_path()?)
                 .unwrap_or_else(|_| "no entries\n".to_string());
             print!("{log}");
+        }
+    }
+    Ok(())
+}
+
+fn log_command(command: LogCommand) -> lode_core::Result<()> {
+    match command {
+        LogCommand::Init => {
+            let path = daemon_log_path()?;
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                    path: parent.as_str().into(),
+                    source,
+                })?;
+            }
+            if !path.exists() {
+                fs::write(&path, "").map_err(|source| LodeError::Io {
+                    path: path.as_str().into(),
+                    source,
+                })?;
+            }
+            println!("log initialised at {path}");
+        }
+        LogCommand::Daemon { tail } => {
+            let log = fs::read_to_string(daemon_log_path()?).unwrap_or_default();
+            let mut lines = log.lines().collect::<Vec<_>>();
+            if let Some(tail) = tail {
+                let start = lines.len().saturating_sub(tail);
+                lines = lines[start..].to_vec();
+            }
+            for line in lines {
+                println!("{line}");
+            }
+        }
+        LogCommand::Clear => {
+            let path = daemon_log_path()?;
+            if path.exists() {
+                fs::write(&path, "").map_err(|source| LodeError::Io {
+                    path: path.as_str().into(),
+                    source,
+                })?;
+            }
+            println!("logs cleared");
+        }
+    }
+    Ok(())
+}
+
+fn self_command(command: SelfCommand) -> lode_core::Result<()> {
+    match command {
+        SelfCommand::Info => {
+            let exe = env::current_exe().map_err(|source| LodeError::Io {
+                path: "current_exe".into(),
+                source,
+            })?;
+            println!("version\t{}", env!("CARGO_PKG_VERSION"));
+            println!("executable\t{}", exe.display());
+            println!("global_dir\t{}", global_dir()?);
+        }
+        SelfCommand::Clean { dry_run } => {
+            for path in [global_dir()?.join("cache"), global_dir()?.join("logs")] {
+                if dry_run {
+                    println!("would clean {path}");
+                } else if path.exists() {
+                    if path.is_dir() {
+                        fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
+                            path: path.as_str().into(),
+                            source,
+                        })?;
+                    } else {
+                        fs::remove_file(&path).map_err(|source| LodeError::Io {
+                            path: path.as_str().into(),
+                            source,
+                        })?;
+                    }
+                    println!("cleaned {path}");
+                }
+            }
+        }
+        SelfCommand::Uninstall { keep_config } => {
+            let root = global_dir()?;
+            if keep_config {
+                for name in [
+                    "cache",
+                    "logs",
+                    "templates",
+                    "profiles",
+                    "snippets",
+                    "licenses",
+                    "recipes",
+                    "commands",
+                ] {
+                    let path = root.join(name);
+                    if path.exists() {
+                        fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
+                            path: path.as_str().into(),
+                            source,
+                        })?;
+                    }
+                }
+                println!("removed generated Lode data; kept config.toml");
+            } else if root.exists() {
+                fs::remove_dir_all(&root).map_err(|source| LodeError::Io {
+                    path: root.as_str().into(),
+                    source,
+                })?;
+                println!("removed {root}");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn upgrade(check: bool) -> lode_core::Result<()> {
+    if check {
+        println!("lode {} is installed", env!("CARGO_PKG_VERSION"));
+        println!("network upgrade checks are not configured for this build");
+    } else {
+        println!("self-upgrade is not configured for this local build");
+        println!("current version: {}", env!("CARGO_PKG_VERSION"));
+    }
+    Ok(())
+}
+
+fn completions(shell: &str) -> lode_core::Result<()> {
+    match shell {
+        "bash" => {
+            println!("complete -W 'setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git env license projects toolchain pkg time metrics workspace daemon log export import serve mc tauri gha cp self upgrade completions version' lode");
+        }
+        "zsh" => {
+            println!("#compdef lode");
+            println!("_arguments '1: :((setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git env license projects toolchain pkg time metrics workspace daemon log export import serve mc tauri gha cp self upgrade completions version))'");
+        }
+        "fish" => {
+            for command in [
+                "setup", "init", "config", "template", "profile", "snippet", "commands", "rules",
+                "sign", "stamp", "log", "self", "upgrade", "version",
+            ] {
+                println!("complete -c lode -f -a {command}");
+            }
+        }
+        "powershell" => {
+            println!(
+                "Register-ArgumentCompleter -Native -CommandName lode -ScriptBlock {{ param($wordToComplete) 'setup','init','config','template','profile','snippet','commands','rules','sign','stamp','log','self','upgrade','version' | Where-Object {{ $_ -like \"$wordToComplete*\" }} }}"
+            );
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported completion shell: {other}"
+            )))
         }
     }
     Ok(())

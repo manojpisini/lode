@@ -124,6 +124,33 @@ fn config_diff_reports_changed_values() {
 }
 
 #[test]
+fn config_reset_restores_default_value() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["config", "set", "identity.author", "Someone"])
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["config", "reset", "identity.author"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("reset identity.author"));
+
+    assert!(std::fs::read_to_string(config)
+        .unwrap()
+        .contains("author = \"Your Name\""));
+}
+
+#[test]
 fn init_dry_run_writes_nothing() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
@@ -294,6 +321,65 @@ fn check_fix_renames_convention_violations() {
         .stdout(predicate::str::contains("renamed"));
 
     assert!(temp.path().join("bad_name.rs").exists());
+}
+
+#[test]
+fn rules_list_and_validate_use_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["rules", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("default_case"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["rules", "validate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rules valid"));
+}
+
+#[test]
+fn sign_and_stamp_write_headers() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let file = temp.path().join("main.rs");
+    std::fs::write(&file, "fn main() {}\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["sign"])
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("stamped"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["stamp", "--license"])
+        .arg(&file)
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(file).unwrap();
+    assert!(contents.contains("Generated with Lode"));
+    assert!(contents.contains("MIT OR Apache-2.0"));
 }
 
 #[test]
@@ -637,6 +723,35 @@ fn recipe_apply_writes_declared_files() {
 }
 
 #[test]
+fn recipe_new_and_compose_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["recipe", "new", "my-stack"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("created recipe my-stack"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["recipe", "compose", "my-stack"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote"));
+
+    assert!(temp.path().join("docs").join("my-stack.md").exists());
+}
+
+#[test]
 fn commands_run_dry_run_reads_extracted_macro() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
@@ -716,6 +831,116 @@ fn commands_add_export_and_remove_local_macro() {
         .assert()
         .success()
         .stdout(predicate::str::contains("removed command macro deploy"));
+}
+
+#[test]
+fn plugin_add_info_and_remove_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let source = temp.path().join("my-plugin");
+    std::fs::create_dir_all(source.join("templates")).unwrap();
+    std::fs::write(source.join("templates").join("README.md"), "# Plugin\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add"])
+        .arg(&source)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added plugin my-plugin"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "info", "my-plugin"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("templates\tok"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "remove", "my-plugin"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed plugin my-plugin"));
+}
+
+#[test]
+fn mcp_lists_tools_resources_and_prompts() {
+    lode()
+        .args(["mcp", "--list-tools", "--list-resources", "--list-prompts"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tools:"))
+        .stdout(predicate::str::contains("lode://config"))
+        .stdout(predicate::str::contains("lode-project-review"));
+}
+
+#[test]
+fn agent_sync_plan_and_export_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join("_ref_")).unwrap();
+    std::fs::create_dir_all(temp.path().join("_ctx_")).unwrap();
+    std::fs::write(
+        temp.path().join("_ref_").join("ARCHITECTURE.md"),
+        "# Arch\n",
+    )
+    .unwrap();
+    std::fs::write(temp.path().join("AGENTS.md"), "# Agent\n").unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["agent", "sync"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("agent context synced"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["agent", "plan", "init"])
+        .assert()
+        .success();
+    lode()
+        .current_dir(temp.path())
+        .args([
+            "agent",
+            "plan",
+            "add",
+            "finish daemon",
+            "--branch",
+            "feat/daemon",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added task 1"));
+    lode()
+        .current_dir(temp.path())
+        .args(["agent", "plan", "done", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("completed task 1"));
+    lode()
+        .current_dir(temp.path())
+        .args(["agent", "plan", "show"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("done"))
+        .stdout(predicate::str::contains("finish daemon"));
+
+    let out = temp.path().join("agent.lodepack");
+    lode()
+        .current_dir(temp.path())
+        .args(["agent", "export", "--out"])
+        .arg(&out)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("exported agent context"));
+    assert!(out.exists());
 }
 
 #[test]
@@ -876,6 +1101,13 @@ fn workspace_init_add_list_and_graph_are_file_backed() {
         .assert()
         .success()
         .stdout(predicate::str::contains("-> crates/app"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["workspace", "remove", "crates/app", "--confirm"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("workspace member removed"));
 }
 
 #[test]
@@ -996,6 +1228,78 @@ fn daemon_start_status_log_and_stop_are_stateful() {
 }
 
 #[test]
+fn log_commands_read_and_clear_daemon_log() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["log", "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("log initialised"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "start"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["log", "daemon", "--tail", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("daemon started"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["log", "clear"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("logs cleared"));
+}
+
+#[test]
+fn self_info_clean_upgrade_and_completions_work() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["self", "info"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("global_dir"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["self", "clean", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would clean"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["upgrade", "--check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is installed"));
+
+    lode()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("complete -W"));
+}
+
+#[test]
 fn toolchain_status_detects_project_files() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(temp.path().join("Cargo.toml"), "[package]\nname='x'\n").unwrap();
@@ -1007,6 +1311,41 @@ fn toolchain_status_detects_project_files() {
         .success()
         .stdout(predicate::str::contains("rust"))
         .stdout(predicate::str::contains("Cargo.toml"));
+}
+
+#[test]
+fn toolchain_add_use_pin_and_remove_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["toolchain", "add", "rust", "stable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("toolchain added"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["toolchain", "use", "rust", "stable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("toolchain active"));
+
+    assert!(temp.path().join("rust-toolchain.toml").exists());
+
+    lode()
+        .current_dir(temp.path())
+        .args(["toolchain", "pin", "--all"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pinned rust stable"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["toolchain", "remove", "rust", "stable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("toolchain removed"));
 }
 
 #[test]
