@@ -1,16 +1,31 @@
 use std::{
-    env, fs,
+    env, fs, io,
+    io::IsTerminal,
     process::{Command as ProcessCommand, ExitCode},
+    time::Duration,
 };
 
 use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use lode_core::{
     add_component_to_project, audit_project, check_path, command_names, default_config, fix_path,
     global_dir, init_project, load_global_config, load_metrics, load_registry, profile_names,
     prune_registry, recipe_names, register_project, save_global_config, save_metrics,
     save_registry, scan_secrets, setup_defaults, template_paths, AddRequest, InitRequest,
     LodeError,
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
+    Frame, Terminal,
 };
 use serde::{Deserialize, Serialize};
 
@@ -1000,10 +1015,7 @@ fn run() -> lode_core::Result<()> {
             no_merge,
             force,
         } => import_lodepack(path, no_merge, force)?,
-        Command::Serve {
-            no_color,
-            no_live: _,
-        } => serve_dashboard(no_color)?,
+        Command::Serve { no_color, no_live } => serve_dashboard(no_color, no_live)?,
         Command::Mc { command } => mc_command(&command)?,
         Command::Tauri { command } => tauri_command(&command)?,
         Command::Gha { command, name } => gha_command(&command, name.as_deref())?,
@@ -5321,7 +5333,87 @@ fn completions(shell: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn serve_dashboard(no_color: bool) -> lode_core::Result<()> {
+fn serve_dashboard(no_color: bool, no_live: bool) -> lode_core::Result<()> {
+    if no_live || !io::stdout().is_terminal() {
+        return serve_dashboard_snapshot(no_color);
+    }
+
+    enable_raw_mode().map_err(terminal_error)?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen).map_err(terminal_error)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend).map_err(terminal_error)?;
+
+    let result = run_live_dashboard(&mut terminal, no_color);
+
+    disable_raw_mode().map_err(terminal_error)?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(terminal_error)?;
+    terminal.show_cursor().map_err(terminal_error)?;
+
+    result
+}
+
+fn terminal_error(error: io::Error) -> LodeError {
+    LodeError::Message(format!("terminal error: {error}"))
+}
+
+fn run_live_dashboard(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    no_color: bool,
+) -> lode_core::Result<()> {
+    let mut selected = 0usize;
+    loop {
+        let data = dashboard_data(no_color)?;
+        terminal
+            .draw(|frame| draw_live_dashboard(frame, &data, selected, no_color))
+            .map_err(terminal_error)?;
+
+        if event::poll(Duration::from_millis(750)).map_err(terminal_error)? {
+            if let Event::Key(key) = event::read().map_err(terminal_error)? {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Tab | KeyCode::Down | KeyCode::Right => selected = (selected + 1) % 8,
+                    KeyCode::BackTab | KeyCode::Up | KeyCode::Left => {
+                        selected = selected.checked_sub(1).unwrap_or(7);
+                    }
+                    KeyCode::Char('1') => selected = 0,
+                    KeyCode::Char('2') => selected = 1,
+                    KeyCode::Char('3') => selected = 2,
+                    KeyCode::Char('4') => selected = 3,
+                    KeyCode::Char('5') => selected = 4,
+                    KeyCode::Char('6') => selected = 5,
+                    KeyCode::Char('7') => selected = 6,
+                    KeyCode::Char('8') => selected = 7,
+                    _ => {}
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct DashboardData {
+    project: String,
+    env_name: String,
+    score: u8,
+    convention_violations: usize,
+    secret_findings: usize,
+    license_present: bool,
+    env_example_present: bool,
+    readme_present: bool,
+    daemon_state: String,
+    events: Vec<String>,
+    registry: Vec<String>,
+    package_manager: String,
+    toolchains: String,
+    rust_version: String,
+    git_version: String,
+    time_total: String,
+    time_sessions: usize,
+}
+
+fn dashboard_data(no_color: bool) -> lode_core::Result<DashboardData> {
     let cwd = current_dir()?;
     let project = cwd
         .file_name()
@@ -5335,6 +5427,336 @@ fn serve_dashboard(no_color: bool) -> lode_core::Result<()> {
         .trim()
         .to_string();
     let daemon_log = fs::read_to_string(daemon_log_path()?).unwrap_or_default();
+    let time_log = load_time_log().unwrap_or_default();
+    let color = Palette::new(no_color);
+    let registry = if registry.projects.is_empty() {
+        vec!["No registered projects".to_string()]
+    } else {
+        registry
+            .projects
+            .iter()
+            .take(8)
+            .map(|project| {
+                format!(
+                    "{}  {}  {}",
+                    project.name,
+                    if project.path.exists() {
+                        color.green("HEALTHY")
+                    } else {
+                        color.red("MISSING")
+                    },
+                    project.path
+                )
+            })
+            .collect()
+    };
+
+    Ok(DashboardData {
+        project,
+        env_name: env::var("APP_ENV").unwrap_or_else(|_| "development".to_string()),
+        score: audit.score,
+        convention_violations: audit.convention_violations,
+        secret_findings: audit.secret_findings,
+        license_present: audit.license_present,
+        env_example_present: audit.env_example_present,
+        readme_present: audit.readme_present,
+        daemon_state,
+        events: recent_log_lines(&daemon_log),
+        registry,
+        package_manager: detect_package_manager().unwrap_or_else(|| "unknown".to_string()),
+        toolchains: detect_toolchains().join(", "),
+        rust_version: command_version("rustc").unwrap_or_else(|| "missing".to_string()),
+        git_version: command_version("git").unwrap_or_else(|| "missing".to_string()),
+        time_total: format_seconds(total_seconds(&time_log.sessions)),
+        time_sessions: time_log.sessions.len(),
+    })
+}
+
+fn draw_live_dashboard(frame: &mut Frame, data: &DashboardData, selected: usize, no_color: bool) {
+    let theme = DashboardTheme::new(no_color);
+    let area = frame.area();
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(12),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled("◇ lode serve", theme.accent.add_modifier(Modifier::BOLD)),
+        Span::raw(format!(
+            "  {}  env:{}  health:{}",
+            data.project, data.env_name, data.score
+        )),
+    ]))
+    .block(Block::default().borders(Borders::ALL).style(theme.panel));
+    frame.render_widget(title, vertical[0]);
+
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(28), Constraint::Min(50)])
+        .split(vertical[1]);
+
+    let nav_items = [
+        "Overview", "Health", "Metrics", "Events", "Deps", "Registry", "Config", "Logs",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(index, label)| {
+        let marker = if selected == index { "›" } else { " " };
+        let style = if selected == index {
+            theme.accent.add_modifier(Modifier::BOLD)
+        } else {
+            theme.text
+        };
+        ListItem::new(Line::from(vec![
+            Span::styled(marker, style),
+            Span::raw(format!(" {} [{}]", label, index + 1)),
+        ]))
+    })
+    .collect::<Vec<_>>();
+    frame.render_widget(
+        List::new(nav_items).block(
+            Block::default()
+                .title(" NAVIGATION ")
+                .borders(Borders::ALL)
+                .style(theme.panel),
+        ),
+        body[0],
+    );
+
+    match selected {
+        0 => draw_overview(frame, body[1], data, &theme),
+        1 => draw_health(frame, body[1], data, &theme),
+        2 => draw_metrics_panel(frame, body[1], data, &theme),
+        3 => draw_lines_panel(frame, body[1], " LIVE DAEMON EVENTS ", &data.events, &theme),
+        4 => draw_deps(frame, body[1], data, &theme),
+        5 => draw_lines_panel(
+            frame,
+            body[1],
+            " CROSS-PROJECT REGISTRY ",
+            &data.registry,
+            &theme,
+        ),
+        6 => draw_config_panel(frame, body[1], data, &theme),
+        _ => draw_lines_panel(frame, body[1], " LOGS ", &data.events, &theme),
+    }
+
+    let footer = Paragraph::new(" ↑↓/Tab move  1-8 jump  q quit  auto-refresh 750ms ")
+        .style(theme.dim)
+        .block(Block::default().borders(Borders::ALL).style(theme.panel));
+    frame.render_widget(footer, vertical[2]);
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DashboardTheme {
+    panel: Style,
+    text: Style,
+    dim: Style,
+    accent: Style,
+    good: Style,
+    warn: Style,
+    bad: Style,
+}
+
+impl DashboardTheme {
+    fn new(no_color: bool) -> Self {
+        if no_color {
+            Self {
+                panel: Style::default(),
+                text: Style::default(),
+                dim: Style::default(),
+                accent: Style::default().add_modifier(Modifier::BOLD),
+                good: Style::default(),
+                warn: Style::default(),
+                bad: Style::default(),
+            }
+        } else {
+            Self {
+                panel: Style::default().fg(Color::Rgb(194, 202, 204)),
+                text: Style::default().fg(Color::Rgb(222, 226, 226)),
+                dim: Style::default().fg(Color::Rgb(116, 126, 128)),
+                accent: Style::default().fg(Color::Rgb(91, 223, 207)),
+                good: Style::default().fg(Color::Rgb(118, 220, 151)),
+                warn: Style::default().fg(Color::Rgb(238, 197, 104)),
+                bad: Style::default().fg(Color::Rgb(238, 109, 109)),
+            }
+        }
+    }
+}
+
+fn draw_overview(frame: &mut Frame, area: Rect, data: &DashboardData, theme: &DashboardTheme) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Length(7),
+            Constraint::Min(6),
+        ])
+        .split(area);
+    frame.render_widget(
+        Gauge::default()
+            .block(
+                Block::default()
+                    .title(" PROJECT HEALTH ")
+                    .borders(Borders::ALL),
+            )
+            .gauge_style(if data.score >= 85 {
+                theme.good
+            } else if data.score >= 60 {
+                theme.warn
+            } else {
+                theme.bad
+            })
+            .percent(data.score as u16),
+        chunks[0],
+    );
+    draw_health(frame, chunks[1], data, theme);
+    draw_lines_panel(frame, chunks[2], " RECENT EVENTS ", &data.events, theme);
+}
+
+fn draw_health(frame: &mut Frame, area: Rect, data: &DashboardData, theme: &DashboardTheme) {
+    let lines = vec![
+        Line::from(vec![
+            Span::raw("Convention      "),
+            Span::styled(
+                status_count_plain(data.convention_violations),
+                if data.convention_violations == 0 {
+                    theme.good
+                } else {
+                    theme.warn
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("Secrets         "),
+            Span::styled(
+                status_count_plain(data.secret_findings),
+                if data.secret_findings == 0 {
+                    theme.good
+                } else {
+                    theme.bad
+                },
+            ),
+        ]),
+        Line::from(format!("License         {}", yes_no(data.license_present))),
+        Line::from(format!(
+            "Env example     {}",
+            yes_no(data.env_example_present)
+        )),
+        Line::from(format!("Readme          {}", yes_no(data.readme_present))),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).style(theme.text).block(
+            Block::default()
+                .title(" HEALTH CHECKS ")
+                .borders(Borders::ALL),
+        ),
+        area,
+    );
+}
+
+fn draw_metrics_panel(frame: &mut Frame, area: Rect, data: &DashboardData, theme: &DashboardTheme) {
+    let lines = vec![
+        Line::from(format!("Score           {}", data.score)),
+        Line::from(format!("Time today      {}", data.time_total)),
+        Line::from(format!("Sessions        {}", data.time_sessions)),
+        Line::from(format!("Daemon          {}", data.daemon_state)),
+        Line::from(format!("Toolchains      {}", data.toolchains)),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(theme.text)
+            .block(
+                Block::default()
+                    .title(" METRICS TRENDS ")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn draw_deps(frame: &mut Frame, area: Rect, data: &DashboardData, theme: &DashboardTheme) {
+    let lines = vec![
+        Line::from(format!("Package manager {}", data.package_manager)),
+        Line::from(format!("Rust            {}", data.rust_version)),
+        Line::from(format!("Git             {}", data.git_version)),
+        Line::from("Policy          strict"),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(theme.text)
+            .block(
+                Block::default()
+                    .title(" DEPENDENCY STATUS ")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn draw_config_panel(frame: &mut Frame, area: Rect, data: &DashboardData, theme: &DashboardTheme) {
+    let lines = vec![
+        Line::from(format!("Project         {}", data.project)),
+        Line::from(format!("Environment     {}", data.env_name)),
+        Line::from(format!("Daemon state    {}", data.daemon_state)),
+        Line::from(format!("Package manager {}", data.package_manager)),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(theme.text)
+            .block(
+                Block::default()
+                    .title(" CONFIG SUMMARY ")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn draw_lines_panel(
+    frame: &mut Frame,
+    area: Rect,
+    title: &'static str,
+    lines: &[String],
+    theme: &DashboardTheme,
+) {
+    let text = lines
+        .iter()
+        .map(|line| Line::from(line.clone()))
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(text)
+            .style(theme.text)
+            .block(Block::default().title(title).borders(Borders::ALL))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn status_count_plain(count: usize) -> String {
+    if count == 0 {
+        "0 OK".to_string()
+    } else {
+        format!("{count} WARN")
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "OK"
+    } else {
+        "MISSING"
+    }
+}
+
+fn serve_dashboard_snapshot(no_color: bool) -> lode_core::Result<()> {
+    let data = dashboard_data(no_color)?;
     let color = Palette::new(no_color);
 
     println!("{}", color.cyan("◇ lode serve"));
@@ -5342,11 +5764,11 @@ fn serve_dashboard(no_color: bool) -> lode_core::Result<()> {
         "{}",
         rule(&format!(
             " Project: {} | Env: {} | Health: {} | Warn: {} | Fail: {} ",
-            color.cyan(&project),
-            color.cyan(&env::var("APP_ENV").unwrap_or_else(|_| "development".to_string())),
-            color.green(&audit.score.to_string()),
-            color.yellow(&audit.convention_violations.to_string()),
-            color.red(&audit.secret_findings.to_string())
+            color.cyan(&data.project),
+            color.cyan(&data.env_name),
+            color.green(&data.score.to_string()),
+            color.yellow(&data.convention_violations.to_string()),
+            color.red(&data.secret_findings.to_string())
         ))
     );
     println!();
@@ -5369,27 +5791,27 @@ fn serve_dashboard(no_color: bool) -> lode_core::Result<()> {
         pane(
             "1. PROJECT HEALTH",
             &[
-                &format!("Overall Status  {}", health_label(audit.score, &color)),
-                &format!("Score           {}", color.cyan(&audit.score.to_string())),
+                &format!("Overall Status  {}", health_label(data.score, &color)),
+                &format!("Score           {}", color.cyan(&data.score.to_string())),
                 &format!(
                     "Convention      {}",
-                    status_count(audit.convention_violations, &color)
+                    status_count(data.convention_violations, &color)
                 ),
                 &format!(
                     "Secrets         {}",
-                    status_count(audit.secret_findings, &color)
+                    status_count(data.secret_findings, &color)
                 ),
                 &format!(
                     "License         {}",
-                    bool_label(audit.license_present, &color)
+                    bool_label(data.license_present, &color)
                 ),
                 &format!(
                     "Env Example     {}",
-                    bool_label(audit.env_example_present, &color)
+                    bool_label(data.env_example_present, &color)
                 ),
                 &format!(
                     "Readme          {}",
-                    bool_label(audit.readme_present, &color)
+                    bool_label(data.readme_present, &color)
                 ),
             ],
             56
@@ -5400,87 +5822,50 @@ fn serve_dashboard(no_color: bool) -> lode_core::Result<()> {
         pane(
             "2. METRICS TRENDS",
             &[
-                &format!("Health      {} {}", color.cyan("████████░░"), audit.score),
+                &format!("Health      {} {}", color.cyan("████████░░"), data.score),
                 &format!(
                     "Checks      {}",
                     color.green("convention · secrets · license · env")
                 ),
-                &format!("Toolchain   {}", detect_toolchains().join(", ")),
-                &format!(
-                    "Package     {}",
-                    detect_package_manager().unwrap_or_else(|| "unknown".to_string())
-                ),
+                &format!("Toolchain   {}", data.toolchains),
+                &format!("Package     {}", data.package_manager),
             ],
             56
         ),
         pane(
             "3. DAEMON / TIME",
             &[
-                &format!("Daemon State  {}", color.cyan(&daemon_state)),
-                "Active Session  snapshot mode",
-                "Today           not tracked yet",
+                &format!("Daemon State  {}", color.cyan(&data.daemon_state)),
+                &format!("Active Session  {} session(s)", data.time_sessions),
+                &format!("Today           {}", data.time_total),
                 "Focus Score     derived metrics pending",
             ],
             56
         )
     );
-    let events = recent_log_lines(&daemon_log);
     println!(
         "{}  {}",
         pane(
             "4. LIVE DAEMON EVENTS",
-            &events.iter().map(String::as_str).collect::<Vec<_>>(),
+            &data.events.iter().map(String::as_str).collect::<Vec<_>>(),
             70
         ),
         pane(
             "5. DEPENDENCY STATUS",
             &[
-                &format!(
-                    "Manager  {}",
-                    detect_package_manager().unwrap_or_else(|| "unknown".to_string())
-                ),
-                &format!(
-                    "Rust     {}",
-                    command_version("rustc").unwrap_or_else(|| "missing".to_string())
-                ),
-                &format!(
-                    "Git      {}",
-                    command_version("git").unwrap_or_else(|| "missing".to_string())
-                ),
+                &format!("Manager  {}", data.package_manager),
+                &format!("Rust     {}", data.rust_version),
+                &format!("Git      {}", data.git_version),
                 "Policy   strict",
             ],
             42
         )
     );
-    let registry_lines = if registry.projects.is_empty() {
-        vec!["No registered projects".to_string()]
-    } else {
-        registry
-            .projects
-            .iter()
-            .take(8)
-            .map(|project| {
-                format!(
-                    "{}  {}  {}",
-                    project.name,
-                    if project.path.exists() {
-                        color.green("HEALTHY")
-                    } else {
-                        color.red("MISSING")
-                    },
-                    project.path
-                )
-            })
-            .collect()
-    };
     println!(
         "{}",
         pane(
             "6. CROSS-PROJECT REGISTRY",
-            &registry_lines
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
+            &data.registry.iter().map(String::as_str).collect::<Vec<_>>(),
             116
         )
     );
