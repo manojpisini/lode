@@ -1,0 +1,458 @@
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use camino::Utf8PathBuf;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    assets, config,
+    template::{render_template, slug_to_class, slug_to_ident, RenderContext},
+    LodeError, Result,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitRequest {
+    pub name: String,
+    pub base_path: Utf8PathBuf,
+    pub config: config::LodeConfig,
+    pub profile: Option<String>,
+    pub components: Vec<String>,
+    pub dry_run: bool,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScaffoldReport {
+    pub project_dir: Utf8PathBuf,
+    pub planned_paths: Vec<Utf8PathBuf>,
+    pub wrote_paths: Vec<Utf8PathBuf>,
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddRequest {
+    pub project_dir: Utf8PathBuf,
+    pub name: String,
+    pub config: config::LodeConfig,
+    pub component: String,
+    pub dry_run: bool,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectConfig {
+    pub schema_version: u32,
+    pub project: ProjectSection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectSection {
+    pub name: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub profile: String,
+    pub components: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ManifestItem {
+    template: &'static str,
+    destination: Utf8PathBuf,
+}
+
+pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
+    let project_dir = request.base_path.join(&request.name);
+    let project_config_path = project_dir.join(".lode").join("project.toml");
+
+    if project_config_path.exists() && !request.overwrite {
+        return Err(LodeError::AlreadyInitialised {
+            path: PathBuf::from(project_config_path.as_str()),
+        });
+    }
+
+    let profile = request.profile.as_deref().unwrap_or("core/bare");
+    let context = RenderContext::new()
+        .with("project", &request.name)
+        .with("project_ident", slug_to_ident(&request.name))
+        .with("project_class", slug_to_class(&request.name))
+        .with("author", &request.config.identity.author)
+        .with("org", &request.config.identity.org)
+        .with("license", &request.config.identity.license)
+        .with("year", "2026")
+        .with("profile", profile);
+    let manifest = scaffold_manifest(Some(profile), &request.components);
+
+    let mut planned_paths = Vec::new();
+    planned_paths.push(project_dir.clone());
+    for dir in &request.config.scaffold.always_dirs {
+        planned_paths.push(project_dir.join(dir));
+    }
+    for item in &manifest {
+        let rendered_destination = render_template(item.destination.as_str(), &context);
+        planned_paths.push(project_dir.join(rendered_destination));
+    }
+
+    if request.dry_run {
+        return Ok(ScaffoldReport {
+            project_dir,
+            planned_paths,
+            wrote_paths: Vec::new(),
+            dry_run: true,
+        });
+    }
+
+    let mut wrote_paths = Vec::new();
+    create_dir_all(&project_dir)?;
+    wrote_paths.push(project_dir.clone());
+
+    for dir in &request.config.scaffold.always_dirs {
+        let path = project_dir.join(dir);
+        create_dir_all(&path)?;
+        wrote_paths.push(path);
+    }
+
+    for item in manifest {
+        let rendered_destination = render_template(item.destination.as_str(), &context);
+        let destination = project_dir.join(rendered_destination);
+        if destination.exists() && !request.overwrite {
+            continue;
+        }
+        if let Some(parent) = destination.parent() {
+            create_dir_all(&parent.to_path_buf())?;
+        }
+        let contents = if item.template == "lode/project.toml" {
+            project_config_toml(&request.name, profile, &request.components)?
+        } else {
+            render_template(
+                &assets::template_contents(item.template, &context),
+                &context,
+            )
+        };
+        write_file(&destination, &contents)?;
+        wrote_paths.push(destination);
+    }
+
+    Ok(ScaffoldReport {
+        project_dir,
+        planned_paths,
+        wrote_paths,
+        dry_run: false,
+    })
+}
+
+pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
+    let context = RenderContext::new()
+        .with("project", &request.name)
+        .with("project_ident", slug_to_ident(&request.name))
+        .with("project_class", slug_to_class(&request.name))
+        .with("author", &request.config.identity.author)
+        .with("org", &request.config.identity.org)
+        .with("license", &request.config.identity.license)
+        .with("year", "2026")
+        .with("profile", "core/bare");
+    let mut manifest = Vec::new();
+    add_component_items(&request.component, &mut manifest);
+
+    let mut planned_paths = Vec::new();
+    for item in &manifest {
+        let rendered_destination = render_template(item.destination.as_str(), &context);
+        planned_paths.push(request.project_dir.join(rendered_destination));
+    }
+
+    if request.dry_run {
+        return Ok(ScaffoldReport {
+            project_dir: request.project_dir,
+            planned_paths,
+            wrote_paths: Vec::new(),
+            dry_run: true,
+        });
+    }
+
+    let mut wrote_paths = Vec::new();
+    for item in manifest {
+        let rendered_destination = render_template(item.destination.as_str(), &context);
+        let destination = request.project_dir.join(rendered_destination);
+        if destination.exists() && !request.overwrite {
+            continue;
+        }
+        if let Some(parent) = destination.parent() {
+            create_dir_all(&parent.to_path_buf())?;
+        }
+        let contents = render_template(
+            &assets::template_contents(item.template, &context),
+            &context,
+        );
+        write_file(&destination, &contents)?;
+        wrote_paths.push(destination);
+    }
+
+    Ok(ScaffoldReport {
+        project_dir: request.project_dir,
+        planned_paths,
+        wrote_paths,
+        dry_run: false,
+    })
+}
+
+fn scaffold_manifest(profile: Option<&str>, components: &[String]) -> Vec<ManifestItem> {
+    let mut items = vec![
+        item("lode/project.toml", ".lode/project.toml"),
+        item("root/README.md", "README.md"),
+        item("root/CHANGELOG.md", "CHANGELOG.md"),
+        item("root/CONTRIBUTING.md", "CONTRIBUTING.md"),
+        item("root/LICENSE", "LICENSE"),
+        item("root/Makefile", "Makefile"),
+        item("dotfiles/env.example", ".env.example"),
+        item("dotfiles/gitignore", ".gitignore"),
+        item("dotfiles/gitattributes", ".gitattributes"),
+        item("dotfiles/editorconfig", ".editorconfig"),
+        item("ref/ARCHITECTURE.md", "_ref_/ARCHITECTURE.md"),
+        item("ref/DECISIONS.md", "_ref_/DECISIONS.md"),
+        item("ref/GLOSSARY.md", "_ref_/GLOSSARY.md"),
+        item("ref/CONVENTIONS.md", "_ref_/CONVENTIONS.md"),
+        item("ctx/PROJECT.md", "_ctx_/PROJECT.md"),
+        item("ctx/ROADMAP.md", "_ctx_/ROADMAP.md"),
+        item("ctx/STACK.md", "_ctx_/STACK.md"),
+        item("ctx/RISKS.md", "_ctx_/RISKS.md"),
+        item("ctx/NOTES.md", "_ctx_/NOTES.md"),
+        item("ctx/TASKS.md", "_ctx_/TASKS.md"),
+        item("agent/AGENTS.md", "AGENTS.md"),
+        item("agent/CODEX.md", "CODEX.md"),
+        item("agent/PLAN.md", ".lode/context/PLAN.md"),
+        item("agent/CONSTRAINTS.md", ".lode/context/CONSTRAINTS.md"),
+        item("agent/TASKS.md", ".lode/context/TASKS.md"),
+    ];
+
+    if let Some(profile) = profile {
+        add_profile_items(profile, &mut items);
+    }
+    for component in components {
+        add_component_items(component, &mut items);
+    }
+    items
+}
+
+fn add_profile_items(profile: &str, items: &mut Vec<ManifestItem>) {
+    if profile.contains("rust") {
+        items.extend([
+            item("rust/Cargo.toml", "Cargo.toml"),
+            item("rust/rust-toolchain.toml", "rust-toolchain.toml"),
+            item("rust/src/main.rs", "src/main.rs"),
+            item("rust/src/lib.rs", "src/lib.rs"),
+            item("rust/tests/integration.rs", "tests/integration.rs"),
+            item("ci/rust.yml", ".github/workflows/ci.yml"),
+        ]);
+    } else if profile.contains("go") {
+        items.extend([
+            item("go/go.mod", "go.mod"),
+            item("go/cmd/project/main.go", "cmd/{{ project }}/main.go"),
+            item("ci/go.yml", ".github/workflows/ci.yml"),
+        ]);
+    } else if profile.contains("python") || profile.contains("django") {
+        items.extend([
+            item("python/pyproject.toml", "pyproject.toml"),
+            item("python/.python-version", ".python-version"),
+            item(
+                "python/src/project/__init__.py",
+                "src/{{ project_ident }}/__init__.py",
+            ),
+            item(
+                "python/src/project/main.py",
+                "src/{{ project_ident }}/main.py",
+            ),
+            item("ci/python.yml", ".github/workflows/ci.yml"),
+        ]);
+        if profile.contains("django") {
+            items.push(item("django/manage.py", "manage.py"));
+        }
+    } else if profile.contains("node")
+        || profile.contains("react")
+        || profile.contains("next")
+        || profile.contains("astro")
+        || profile.contains("svelte")
+    {
+        items.extend([
+            item("node/package.json", "package.json"),
+            item("node/tsconfig.json", "tsconfig.json"),
+            item("node/src/index.ts", "src/index.ts"),
+            item("ci/node.yml", ".github/workflows/ci.yml"),
+        ]);
+    } else if profile.contains("tauri") {
+        items.extend([
+            item("tauri/package.json", "package.json"),
+            item("tauri/src-tauri/Cargo.toml", "src-tauri/Cargo.toml"),
+            item("ci/node.yml", ".github/workflows/ci.yml"),
+        ]);
+    } else if profile.contains("java") || profile.contains("minecraft") {
+        items.extend([
+            item("java/build.gradle", "build.gradle"),
+            item("java/settings.gradle", "settings.gradle"),
+            item(
+                "java/src/main/java/app/Main.java",
+                "src/main/java/app/Main.java",
+            ),
+        ]);
+        if profile.contains("minecraft") {
+            items.push(item("minecraft/fabric/build.gradle", "fabric/build.gradle"));
+        }
+    } else if profile.contains("cpp") || profile.contains("competitive-cpp") {
+        items.extend([
+            item("cpp/CMakeLists.txt", "CMakeLists.txt"),
+            item("cpp/src/main.cpp", "src/main.cpp"),
+        ]);
+    } else if profile.contains("c-app") || profile.contains("c-lib") {
+        items.extend([
+            item("c/CMakeLists.txt", "CMakeLists.txt"),
+            item("c/src/main.c", "src/main.c"),
+        ]);
+    } else if profile.contains("zig") {
+        items.extend([
+            item("zig/build.zig", "build.zig"),
+            item("zig/src/main.zig", "src/main.zig"),
+        ]);
+    } else if profile.contains("competitive") {
+        items.extend([
+            item("competitive/problems/a/main.cpp", "problems/a/main.cpp"),
+            item("competitive/templates/cpp.cpp", "templates/cpp.cpp"),
+            item("competitive/scripts/run.sh", "scripts/run.sh"),
+        ]);
+    }
+}
+
+fn add_component_items(component: &str, items: &mut Vec<ManifestItem>) {
+    match component {
+        "ci" | "github-actions" => {
+            items.push(item("github/workflows/ci.yml", ".github/workflows/ci.yml"));
+        }
+        "security" => items.push(item(
+            "github/workflows/security.yml",
+            ".github/workflows/security.yml",
+        )),
+        "release" => items.push(item(
+            "github/workflows/release.yml",
+            ".github/workflows/release.yml",
+        )),
+        "docker" => {
+            items.push(item("docker/Dockerfile", "Dockerfile"));
+            items.push(item("docker/compose.yml", "compose.yml"));
+            items.push(item("dotfiles/dockerignore", ".dockerignore"));
+        }
+        "devcontainer" => items.push(item(
+            "devcontainer/devcontainer.json",
+            ".devcontainer/devcontainer.json",
+        )),
+        "vscode" => {
+            items.push(item("vscode/settings.json", ".vscode/settings.json"));
+            items.push(item("vscode/extensions.json", ".vscode/extensions.json"));
+            items.push(item("vscode/tasks.json", ".vscode/tasks.json"));
+        }
+        "zed" => items.push(item("zed/settings.json", ".zed/settings.json")),
+        "agent" | "agent-all" => {
+            items.push(item("agent/CLAUDE.md", "CLAUDE.md"));
+            items.push(item("agent/.cursorrules", ".cursorrules"));
+            items.push(item("agent/.windsurfrules", ".windsurfrules"));
+            items.push(item("agent/.mcp.json", ".mcp.json"));
+        }
+        "docs" => {
+            items.push(item("docs/index.md", "docs/index.md"));
+            items.push(item("docs/getting-started.md", "docs/getting-started.md"));
+            items.push(item("docs/usage.md", "docs/usage.md"));
+        }
+        _ => {}
+    }
+}
+
+fn item(template: &'static str, destination: &str) -> ManifestItem {
+    ManifestItem {
+        template,
+        destination: Utf8PathBuf::from(destination),
+    }
+}
+
+fn project_config_toml(name: &str, profile: &str, components: &[String]) -> Result<String> {
+    let config = ProjectConfig {
+        schema_version: config::SCHEMA_VERSION,
+        project: ProjectSection {
+            name: name.to_string(),
+            created_by: "lode".to_string(),
+            created_at: created_at(),
+            profile: profile.to_string(),
+            components: components.to_vec(),
+        },
+    };
+
+    Ok(toml::to_string_pretty(&config)?)
+}
+
+fn created_at() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    format!("unix:{seconds}")
+}
+
+fn create_dir_all(path: &Utf8PathBuf) -> Result<()> {
+    fs::create_dir_all(path).map_err(|source| LodeError::Io {
+        path: PathBuf::from(path.as_str()),
+        source,
+    })
+}
+
+fn write_file(path: &Utf8PathBuf, contents: &str) -> Result<()> {
+    fs::write(path, contents).map_err(|source| LodeError::Io {
+        path: PathBuf::from(path.as_str()),
+        source,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dry_run_writes_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let base_path = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+
+        let report = init_project(InitRequest {
+            name: "my-app".to_string(),
+            base_path: base_path.clone(),
+            config: config::default_config(),
+            profile: None,
+            components: Vec::new(),
+            dry_run: true,
+            overwrite: false,
+        })
+        .unwrap();
+
+        assert!(report.dry_run);
+        assert!(report.wrote_paths.is_empty());
+        assert!(!base_path.join("my-app").exists());
+    }
+
+    #[test]
+    fn existing_project_config_returns_exists() {
+        let temp = tempfile::tempdir().unwrap();
+        let base_path = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        let lode_dir = base_path.join("my-app").join(".lode");
+        fs::create_dir_all(&lode_dir).unwrap();
+        fs::write(lode_dir.join("project.toml"), "").unwrap();
+
+        let error = init_project(InitRequest {
+            name: "my-app".to_string(),
+            base_path,
+            config: config::default_config(),
+            profile: None,
+            components: Vec::new(),
+            dry_run: false,
+            overwrite: false,
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, LodeError::AlreadyInitialised { .. }));
+    }
+}
