@@ -1,8 +1,10 @@
 use std::{
+    collections::BTreeMap,
     env, fs, io,
     io::IsTerminal,
     process::{Command as ProcessCommand, ExitCode},
-    time::Duration,
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use camino::Utf8PathBuf;
@@ -4666,6 +4668,20 @@ fn today_utc() -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+fn now_timestamp() -> String {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default();
+    let day = seconds / 86_400;
+    let second_of_day = seconds % 86_400;
+    let (year, month, date) = civil_from_days(day as i64);
+    let hour = second_of_day / 3_600;
+    let minute = (second_of_day % 3_600) / 60;
+    let second = second_of_day % 60;
+    format!("{year:04}-{month:02}-{date:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
 fn today_days_since_epoch() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -5155,9 +5171,7 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             ))?;
             println!("daemon started");
             if foreground {
-                println!(
-                    "foreground mode recorded; long-running watch loop is not active in this build"
-                );
+                run_foreground_daemon(!no_rename, !no_sign, !no_stamp)?;
             }
         }
         DaemonCommand::Stop { project } => {
@@ -5205,6 +5219,151 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
         }
     }
     Ok(())
+}
+
+fn run_foreground_daemon(rename: bool, sign: bool, stamp: bool) -> lode_core::Result<()> {
+    let root = current_dir()?;
+    let mut snapshot = snapshot_project(&root)?;
+    let once = env::var_os("LODE_DAEMON_ONCE").is_some() || !io::stdin().is_terminal();
+    let interactive = io::stdin().is_terminal();
+
+    if interactive {
+        enable_raw_mode().map_err(terminal_error)?;
+    }
+
+    println!(
+        "foreground daemon watching {} rename={} sign={} stamp={}{}",
+        root,
+        rename,
+        sign,
+        stamp,
+        if interactive {
+            " (press q to quit)"
+        } else {
+            ""
+        }
+    );
+
+    loop {
+        if interactive
+            && event::poll(Duration::from_millis(50)).map_err(terminal_error)?
+            && matches!(
+                event::read().map_err(terminal_error)?,
+                Event::Key(key) if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+            )
+        {
+            break;
+        }
+
+        thread::sleep(Duration::from_millis(950));
+        let next = snapshot_project(&root)?;
+        let changed = changed_files(&snapshot, &next);
+        if !changed.is_empty() {
+            record_daemon_activity(&root, &changed)?;
+            println!("daemon observed {} changed file(s)", changed.len());
+        }
+        snapshot = next;
+
+        if once {
+            break;
+        }
+    }
+
+    if interactive {
+        disable_raw_mode().map_err(terminal_error)?;
+    }
+    append_daemon_log("foreground daemon exited")?;
+    Ok(())
+}
+
+fn snapshot_project(root: &Utf8PathBuf) -> lode_core::Result<BTreeMap<String, u64>> {
+    let mut snapshot = BTreeMap::new();
+    snapshot_dir(root, root, &mut snapshot)?;
+    Ok(snapshot)
+}
+
+fn snapshot_dir(
+    root: &Utf8PathBuf,
+    dir: &Utf8PathBuf,
+    snapshot: &mut BTreeMap<String, u64>,
+) -> lode_core::Result<()> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(LodeError::Io {
+                path: dir.as_str().into(),
+                source,
+            })
+        }
+    };
+
+    for entry in entries {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: dir.as_str().into(),
+            source,
+        })?;
+        let path = Utf8PathBuf::from_path_buf(entry.path())
+            .map_err(|path| LodeError::Message(format!("non-utf8 path: {}", path.display())))?;
+        let name = path.file_name().unwrap_or_default();
+        if should_skip_watch_path(name) {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        if metadata.is_dir() {
+            snapshot_dir(root, &path, snapshot)?;
+        } else if metadata.is_file() {
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs())
+                .unwrap_or_default();
+            let relative = path
+                .strip_prefix(root)
+                .map(|path| path.as_str().replace('\\', "/"))
+                .unwrap_or_else(|_| path.as_str().replace('\\', "/"));
+            snapshot.insert(relative, modified);
+        }
+    }
+    Ok(())
+}
+
+fn should_skip_watch_path(name: &str) -> bool {
+    matches!(
+        name,
+        ".git" | "target" | "node_modules" | ".venv" | "dist" | "build" | ".lodepack"
+    )
+}
+
+fn changed_files(before: &BTreeMap<String, u64>, after: &BTreeMap<String, u64>) -> Vec<String> {
+    after
+        .iter()
+        .filter_map(|(path, modified)| {
+            if before.get(path) == Some(modified) {
+                None
+            } else {
+                Some(path.clone())
+            }
+        })
+        .collect()
+}
+
+fn record_daemon_activity(root: &Utf8PathBuf, changed: &[String]) -> lode_core::Result<()> {
+    append_daemon_log(&format!("changed files: {}", changed.join(", ")))?;
+    let mut log = load_time_log()?;
+    log.sessions.push(TimeSession {
+        started_at: now_timestamp(),
+        ended_at: None,
+        seconds: 60,
+        project: root.file_name().map(str::to_string),
+        file: changed.first().cloned(),
+        task: Some("daemon activity".to_string()),
+    });
+    save_time_log(&log)
 }
 
 fn log_command(command: LogCommand) -> lode_core::Result<()> {

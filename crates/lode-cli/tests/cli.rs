@@ -1658,7 +1658,7 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
         .args(["daemon", "start", "--no-rename", "--foreground"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("foreground mode recorded"));
+        .stdout(predicate::str::contains("foreground daemon watching"));
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -1672,7 +1672,7 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
         .args(["daemon", "log", "--tail", "1"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("daemon started"));
+        .stdout(predicate::str::contains("foreground daemon exited"));
 
     lode()
         .env("LODE_CONFIG", &config)
