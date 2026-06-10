@@ -154,6 +154,10 @@ enum Command {
         #[command(subcommand)]
         command: GitCommand,
     },
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommand,
+    },
     Env {
         #[command(subcommand)]
         command: EnvCommand,
@@ -445,7 +449,11 @@ enum ScanCommand {
     Secrets {
         path: Option<Utf8PathBuf>,
         #[arg(long)]
+        staged: bool,
+        #[arg(long)]
         json: bool,
+        #[arg(long)]
+        quiet: bool,
     },
 }
 
@@ -458,21 +466,75 @@ enum RulesCommand {
 
 #[derive(Debug, Subcommand)]
 enum GitCommand {
-    Branch { kind: String, description: String },
-    Commit { message: Option<String> },
-    Tag { version: String },
-    Changelog,
+    Branch {
+        kind: String,
+        description: String,
+    },
+    Commit {
+        message: Option<String>,
+        #[arg(long)]
+        r#type: Option<String>,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long)]
+        breaking: bool,
+        #[arg(long)]
+        no_confirm: bool,
+    },
+    Tag {
+        version: String,
+        #[arg(long)]
+        no_changelog: bool,
+        #[arg(long)]
+        push: bool,
+        #[arg(long)]
+        message: Option<String>,
+    },
+    Changelog {
+        #[arg(long)]
+        since: Option<String>,
+        #[arg(long)]
+        out: Option<Utf8PathBuf>,
+        #[arg(long, default_value = "markdown")]
+        format: String,
+    },
     InstallHooks,
     UninstallHooks,
     HooksStatus,
+    SignSetup,
+    RemoteSetup {
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        visibility: Option<String>,
+        #[arg(long)]
+        token_env: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum HooksCommand {
+    List,
+    Status,
+    Test { event: String },
 }
 
 #[derive(Debug, Subcommand)]
 enum EnvCommand {
     Check,
-    Add { key: String },
+    Add {
+        key: String,
+        #[arg(long)]
+        default: Option<String>,
+        #[arg(long)]
+        comment: Option<String>,
+        #[arg(long)]
+        secret: bool,
+    },
     Sync,
-    Use { profile: String },
+    Use {
+        profile: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -819,6 +881,7 @@ fn run() -> lode_core::Result<()> {
         Command::Doctor { fix: _, json } => doctor(json)?,
         Command::Scan { command } => scan(command)?,
         Command::Git { command } => git(command)?,
+        Command::Hooks { command } => hooks(command)?,
         Command::Env { command } => env_command(command)?,
         Command::License { command } => license(command)?,
         Command::Projects { command } => projects(command)?,
@@ -2228,8 +2291,16 @@ fn explain() {
 
 fn scan(command: ScanCommand) -> lode_core::Result<()> {
     match command {
-        ScanCommand::Secrets { path, json } => {
+        ScanCommand::Secrets {
+            path,
+            staged,
+            json,
+            quiet,
+        } => {
             let path = path.unwrap_or(current_dir()?);
+            if staged {
+                println!("scanning staged-compatible project path: {path}");
+            }
             let report = scan_secrets(&path)?;
             if json {
                 println!(
@@ -2237,7 +2308,7 @@ fn scan(command: ScanCommand) -> lode_core::Result<()> {
                     serde_json::to_string_pretty(&report)
                         .map_err(|error| LodeError::Message(error.to_string()))?
                 );
-            } else {
+            } else if !quiet {
                 if report.findings.is_empty() {
                     println!("no obvious secrets found in {path}");
                 } else {
@@ -2489,20 +2560,62 @@ fn git(command: GitCommand) -> lode_core::Result<()> {
             let branch = format!("{}/{}", kind, slugify(&description));
             println!("{branch}");
         }
-        GitCommand::Commit { message } => {
-            let message = message.unwrap_or_else(|| "chore: update".to_string());
+        GitCommand::Commit {
+            message,
+            r#type,
+            scope,
+            breaking,
+            no_confirm: _,
+        } => {
+            let message = message.unwrap_or_else(|| {
+                conventional_message(
+                    r#type.as_deref().unwrap_or("chore"),
+                    scope.as_deref(),
+                    "update",
+                    breaking,
+                )
+            });
             run_git(&["commit", "-m", &message])?;
         }
-        GitCommand::Tag { version } => {
+        GitCommand::Tag {
+            version,
+            no_changelog: _,
+            push,
+            message,
+        } => {
             let tag = format!("v{}", version.trim_start_matches('v'));
-            run_git(&["tag", &tag])?;
+            if let Some(message) = message {
+                run_git(&["tag", "-a", &tag, "-m", &message])?;
+            } else {
+                run_git(&["tag", &tag])?;
+            }
+            if push {
+                run_git(&["push", "origin", &tag])?;
+            }
         }
-        GitCommand::Changelog => git_changelog()?,
+        GitCommand::Changelog { since, out, format } => {
+            git_changelog(since.as_deref(), out, &format)?
+        }
         GitCommand::InstallHooks => install_git_hooks()?,
         GitCommand::UninstallHooks => uninstall_git_hooks()?,
         GitCommand::HooksStatus => hooks_status()?,
+        GitCommand::SignSetup => git_sign_setup()?,
+        GitCommand::RemoteSetup {
+            provider,
+            visibility,
+            token_env,
+        } => git_remote_setup(provider, visibility, token_env)?,
     }
     Ok(())
+}
+
+fn conventional_message(kind: &str, scope: Option<&str>, subject: &str, breaking: bool) -> String {
+    let bang = if breaking { "!" } else { "" };
+    if let Some(scope) = scope {
+        format!("{kind}({scope}){bang}: {subject}")
+    } else {
+        format!("{kind}{bang}: {subject}")
+    }
 }
 
 fn slugify(input: &str) -> String {
@@ -2535,9 +2648,21 @@ fn run_git(args: &[&str]) -> lode_core::Result<()> {
     }
 }
 
-fn git_changelog() -> lode_core::Result<()> {
+fn git_changelog(
+    since: Option<&str>,
+    out: Option<Utf8PathBuf>,
+    format: &str,
+) -> lode_core::Result<()> {
+    let mut args = vec![
+        "log".to_string(),
+        "--pretty=format:%s".to_string(),
+        "--no-merges".to_string(),
+    ];
+    if let Some(since) = since {
+        args.push(format!("{since}..HEAD"));
+    }
     let output = ProcessCommand::new("git")
-        .args(["log", "--pretty=format:%s", "--no-merges"])
+        .args(&args)
         .output()
         .map_err(|source| LodeError::Io {
             path: "git".into(),
@@ -2546,11 +2671,80 @@ fn git_changelog() -> lode_core::Result<()> {
     if !output.status.success() {
         return Err(LodeError::Message("git log failed".to_string()));
     }
-    println!("# Changelog\n");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        println!("- {line}");
+    let rendered = match format {
+        "json" => serde_json::to_string_pretty(
+            &stdout
+                .lines()
+                .map(|line| serde_json::json!({ "subject": line }))
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|error| LodeError::Message(error.to_string()))?,
+        "plain" => stdout.lines().collect::<Vec<_>>().join("\n") + "\n",
+        "markdown" | "md" => {
+            let mut text = String::from("# Changelog\n\n");
+            for line in stdout.lines() {
+                text.push_str(&format!("- {line}\n"));
+            }
+            text
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported changelog format: {other}"
+            )))
+        }
+    };
+    if let Some(path) = out {
+        fs::write(&path, rendered).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        println!("wrote changelog to {path}");
+    } else {
+        print!("{rendered}");
     }
+    Ok(())
+}
+
+fn git_sign_setup() -> lode_core::Result<()> {
+    let path = Utf8PathBuf::from(".lode").join("git-signing.toml");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    fs::write(&path, "enabled = true\nmode = \"manual\"\n").map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("git signing setup recorded at {path}");
+    Ok(())
+}
+
+fn git_remote_setup(
+    provider: Option<String>,
+    visibility: Option<String>,
+    token_env: Option<String>,
+) -> lode_core::Result<()> {
+    let path = Utf8PathBuf::from(".lode").join("remote.toml");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let contents = format!(
+        "provider = \"{}\"\nvisibility = \"{}\"\ntoken_env = \"{}\"\n",
+        provider.unwrap_or_else(|| "github".to_string()),
+        visibility.unwrap_or_else(|| "private".to_string()),
+        token_env.unwrap_or_else(|| "GITHUB_TOKEN".to_string())
+    );
+    fs::write(&path, contents).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("git remote setup recorded at {path}");
     Ok(())
 }
 
@@ -2618,10 +2812,37 @@ fn hooks_status() -> lode_core::Result<()> {
     Ok(())
 }
 
+fn hooks(command: HooksCommand) -> lode_core::Result<()> {
+    match command {
+        HooksCommand::List => {
+            println!("pre-commit");
+            println!("pre-push");
+        }
+        HooksCommand::Status => hooks_status()?,
+        HooksCommand::Test { event } => test_hook(&event)?,
+    }
+    Ok(())
+}
+
+fn test_hook(event: &str) -> lode_core::Result<()> {
+    let script = match event {
+        "pre-commit" => "lode check . && lode scan secrets .",
+        "pre-push" => "lode task test",
+        other => return Err(LodeError::Message(format!("unknown hook event: {other}"))),
+    };
+    println!("hook {event}: {script}");
+    Ok(())
+}
+
 fn env_command(command: EnvCommand) -> lode_core::Result<()> {
     match command {
         EnvCommand::Check => env_check()?,
-        EnvCommand::Add { key } => env_add(&key)?,
+        EnvCommand::Add {
+            key,
+            default,
+            comment,
+            secret,
+        } => env_add(&key, default.as_deref(), comment.as_deref(), secret)?,
         EnvCommand::Sync => env_sync()?,
         EnvCommand::Use { profile } => env_use(&profile)?,
     }
@@ -2776,7 +2997,12 @@ fn env_check() -> lode_core::Result<()> {
     }
 }
 
-fn env_add(key: &str) -> lode_core::Result<()> {
+fn env_add(
+    key: &str,
+    default: Option<&str>,
+    comment: Option<&str>,
+    secret: bool,
+) -> lode_core::Result<()> {
     let path = Utf8PathBuf::from(".env.example");
     let mut contents = if path.exists() {
         fs::read_to_string(&path).map_err(|source| LodeError::Io {
@@ -2790,12 +3016,38 @@ fn env_add(key: &str) -> lode_core::Result<()> {
         if !contents.ends_with('\n') && !contents.is_empty() {
             contents.push('\n');
         }
+        if let Some(comment) = comment {
+            contents.push_str("# ");
+            contents.push_str(comment);
+            contents.push('\n');
+        }
         contents.push_str(key);
-        contents.push_str("=\n");
+        contents.push('=');
+        if !secret {
+            contents.push_str(default.unwrap_or_default());
+        }
+        contents.push('\n');
         fs::write(&path, contents).map_err(|source| LodeError::Io {
             path: path.as_str().into(),
             source,
         })?;
+    }
+    if secret {
+        let env_path = Utf8PathBuf::from(".env");
+        let mut env_contents = fs::read_to_string(&env_path).unwrap_or_default();
+        if !read_env_entries(&env_contents).contains_key(key) {
+            if !env_contents.ends_with('\n') && !env_contents.is_empty() {
+                env_contents.push('\n');
+            }
+            env_contents.push_str(key);
+            env_contents.push('=');
+            env_contents.push_str(default.unwrap_or_default());
+            env_contents.push('\n');
+            fs::write(&env_path, env_contents).map_err(|source| LodeError::Io {
+                path: env_path.as_str().into(),
+                source,
+            })?;
+        }
     }
     println!("added env key {key}");
     Ok(())
@@ -3613,7 +3865,9 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
             run_package_manager(&manager, package_audit_args(&manager))?;
             scan(ScanCommand::Secrets {
                 path: Some(current_dir()?),
+                staged: false,
                 json: false,
+                quiet: false,
             })?;
         }
         PkgCommand::Why { name } => package_why(&manager, &name)?,

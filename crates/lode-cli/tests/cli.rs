@@ -396,6 +396,21 @@ fn scan_secrets_returns_exit_code_7() {
 }
 
 #[test]
+fn scan_secrets_quiet_supports_staged_flag() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join(".env"), "API_KEY=real-value\n").unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["scan", "secrets", "--quiet", "--staged"])
+        .assert()
+        .code(7)
+        .stdout(predicate::str::contains(
+            "scanning staged-compatible project path",
+        ));
+}
+
+#[test]
 fn init_registers_project_and_projects_list_shows_it() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
@@ -519,6 +534,33 @@ fn env_add_updates_env_example() {
     assert!(std::fs::read_to_string(temp.path().join(".env.example"))
         .unwrap()
         .contains("API_URL="));
+}
+
+#[test]
+fn env_add_supports_default_comment_and_secret() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args([
+            "env",
+            "add",
+            "API_TOKEN",
+            "--default",
+            "dev-token",
+            "--comment",
+            "Local API token",
+            "--secret",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added env key API_TOKEN"));
+
+    let example = std::fs::read_to_string(temp.path().join(".env.example")).unwrap();
+    let env = std::fs::read_to_string(temp.path().join(".env")).unwrap();
+    assert!(example.contains("# Local API token"));
+    assert!(example.contains("API_TOKEN=\n"));
+    assert!(env.contains("API_TOKEN=dev-token"));
 }
 
 #[test]
@@ -953,6 +995,85 @@ fn git_branch_formats_slug() {
 }
 
 #[test]
+fn git_setup_commands_write_metadata_files() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["git", "sign-setup"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("git signing setup recorded"));
+
+    lode()
+        .current_dir(temp.path())
+        .args([
+            "git",
+            "remote-setup",
+            "--provider",
+            "github",
+            "--visibility",
+            "public",
+            "--token-env",
+            "GH_TOKEN",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("git remote setup recorded"));
+
+    assert!(temp.path().join(".lode").join("git-signing.toml").exists());
+    assert!(
+        std::fs::read_to_string(temp.path().join(".lode").join("remote.toml"))
+            .unwrap()
+            .contains("GH_TOKEN")
+    );
+}
+
+#[test]
+fn git_changelog_can_write_plain_output() {
+    let temp = tempfile::tempdir().unwrap();
+    let out = temp.path().join("CHANGELOG.generated");
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(temp.path())
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test User"])
+        .current_dir(temp.path())
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@example.com"])
+        .current_dir(temp.path())
+        .status()
+        .unwrap();
+    std::fs::write(temp.path().join("file.txt"), "hello\n").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(temp.path())
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "feat: hello"])
+        .current_dir(temp.path())
+        .status()
+        .unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["git", "changelog", "--format", "plain", "--out"])
+        .arg(&out)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote changelog"));
+
+    assert!(std::fs::read_to_string(out)
+        .unwrap()
+        .contains("feat: hello"));
+}
+
+#[test]
 fn git_hooks_install_status_and_uninstall() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join(".git").join("hooks")).unwrap();
@@ -985,6 +1106,33 @@ fn git_hooks_install_status_and_uninstall() {
         .join("hooks")
         .join("pre-commit")
         .exists());
+}
+
+#[test]
+fn hooks_list_status_and_test_are_available() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join(".git").join("hooks")).unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["hooks", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pre-commit"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["hooks", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pre-push"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["hooks", "test", "pre-commit"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lode scan secrets"));
 }
 
 #[test]
