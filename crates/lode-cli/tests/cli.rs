@@ -498,6 +498,37 @@ fn projects_cd_and_remove_use_registry() {
 }
 
 #[test]
+fn projects_health_supports_json_and_refresh() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let project = temp.path().join("healthy-app");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("README.md"), "# App\n").unwrap();
+    std::fs::write(project.join("LICENSE"), "MIT\n").unwrap();
+    std::fs::write(project.join(".env.example"), "APP_NAME=app\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["projects", "register"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["projects", "health", "--json", "--refresh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"healthy-app\""))
+        .stdout(predicate::str::contains("\"score\""));
+}
+
+#[test]
 fn env_sync_and_check_use_env_example() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -1219,6 +1250,50 @@ fn health_writes_metrics_and_metrics_show_reads_them() {
 }
 
 #[test]
+fn metrics_baseline_trend_and_diff_are_file_backed() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    std::fs::write(temp.path().join("README.md"), "# App\n").unwrap();
+    std::fs::write(temp.path().join("LICENSE"), "MIT\n").unwrap();
+    std::fs::write(temp.path().join(".env.example"), "APP_NAME=app\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["metrics", "baseline"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("metrics baseline saved"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .arg("health")
+        .assert()
+        .success();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["metrics", "trend", "--last", "3"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("last 3 snapshot"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["metrics", "diff-baseline"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("score delta"));
+}
+
+#[test]
 fn workspace_init_add_list_and_graph_are_file_backed() {
     let temp = tempfile::tempdir().unwrap();
 
@@ -1373,6 +1448,45 @@ fn daemon_start_status_log_and_stop_are_stateful() {
         .assert()
         .success()
         .stdout(predicate::str::contains("daemon stopped"));
+}
+
+#[test]
+fn daemon_flags_status_json_and_log_tail_are_stateful() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "start", "--no-rename", "--foreground"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("foreground mode recorded"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "status", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"active\":true"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "log", "--tail", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("daemon started"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "stop", "--project", "demo"])
+        .assert()
+        .success();
 }
 
 #[test]
@@ -1784,6 +1898,63 @@ fn time_report_reads_project_log_and_writes_markdown() {
     let contents = std::fs::read_to_string(report).unwrap();
     assert!(contents.contains("1h 1m 1s"));
     assert!(contents.contains("implementation"));
+}
+
+#[test]
+fn time_show_report_and_clear_support_filters() {
+    let temp = tempfile::tempdir().unwrap();
+    let lode_dir = temp.path().join(".lode");
+    std::fs::create_dir_all(&lode_dir).unwrap();
+    std::fs::write(
+        lode_dir.join("time-log.json"),
+        r#"{
+  "sessions": [
+    {
+      "started_at": "2026-05-01T08:00:00Z",
+      "seconds": 60,
+      "project": "demo",
+      "task": "old"
+    },
+    {
+      "started_at": "2026-06-10T08:00:00Z",
+      "seconds": 120,
+      "project": "demo",
+      "task": "new"
+    }
+  ]
+}
+"#,
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["time", "show", "--since", "2026-06-01", "--by", "task"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("new"))
+        .stdout(predicate::str::contains("2m 0s"));
+
+    lode()
+        .current_dir(temp.path())
+        .args([
+            "time",
+            "report",
+            "--since",
+            "2026-06-01",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"task\": \"new\""));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["time", "clear", "--before", "2026-06-01", "--confirm"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed 1 session"));
 }
 
 #[test]

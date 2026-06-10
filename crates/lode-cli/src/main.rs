@@ -576,10 +576,23 @@ enum LicenseCommand {
 #[derive(Debug, Subcommand)]
 enum ProjectsCommand {
     List,
-    Cd { name: String },
-    Register { path: Option<Utf8PathBuf> },
-    Remove { name: String },
-    Health,
+    Cd {
+        name: String,
+    },
+    Register {
+        path: Option<Utf8PathBuf>,
+    },
+    Remove {
+        name: String,
+    },
+    Health {
+        #[arg(long)]
+        stale_only: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        refresh: bool,
+    },
     Prune,
 }
 
@@ -650,18 +663,24 @@ enum TimeCommand {
         format: String,
     },
     Show {
+        #[arg(long)]
+        since: Option<String>,
         #[arg(long, default_value = "day")]
         by: String,
         #[arg(long, default_value = "table")]
         format: String,
     },
     Report {
+        #[arg(long)]
+        since: Option<String>,
         #[arg(long, default_value = "markdown")]
         format: String,
         #[arg(long)]
         out: Option<Utf8PathBuf>,
     },
     Clear {
+        #[arg(long)]
+        before: Option<String>,
         #[arg(long)]
         confirm: bool,
     },
@@ -670,8 +689,12 @@ enum TimeCommand {
 #[derive(Debug, Subcommand)]
 enum MetricsCommand {
     Show,
-    Trend,
+    Trend {
+        #[arg(long)]
+        last: Option<usize>,
+    },
     Baseline,
+    DiffBaseline,
 }
 
 #[derive(Debug, Subcommand)]
@@ -694,11 +717,33 @@ enum WorkspaceCommand {
 
 #[derive(Debug, Subcommand)]
 enum DaemonCommand {
-    Start,
-    Stop,
+    Start {
+        #[arg(long)]
+        no_rename: bool,
+        #[arg(long)]
+        no_sign: bool,
+        #[arg(long)]
+        no_stamp: bool,
+        #[arg(long)]
+        foreground: bool,
+    },
+    Stop {
+        #[arg(long)]
+        project: Option<String>,
+    },
     Restart,
-    Status,
-    Log,
+    Status {
+        #[arg(long)]
+        quiet: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    Log {
+        #[arg(long)]
+        tail: Option<usize>,
+        #[arg(long)]
+        follow: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -3631,15 +3676,55 @@ fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
             save_registry(&registry)?;
             println!("removed project {name}");
         }
-        ProjectsCommand::Health => {
+        ProjectsCommand::Health {
+            stale_only,
+            json,
+            refresh,
+        } => {
             let registry = load_registry()?;
+            let mut rows = Vec::new();
             for project in registry.projects {
                 let status = if project.path.exists() {
                     "ok"
                 } else {
                     "missing"
                 };
-                println!("{}\t{}\t{}", project.name, status, project.path);
+                if stale_only && status == "ok" {
+                    continue;
+                }
+                let score = if refresh && project.path.exists() {
+                    audit_project(&project.path, &load_global_config()?)
+                        .ok()
+                        .map(|report| report.score)
+                } else {
+                    None
+                };
+                rows.push(serde_json::json!({
+                    "name": project.name,
+                    "status": status,
+                    "path": project.path,
+                    "score": score,
+                }));
+            }
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&rows)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
+            } else {
+                for row in rows {
+                    println!(
+                        "{}\t{}\t{}\t{}",
+                        row["name"].as_str().unwrap_or_default(),
+                        row["status"].as_str().unwrap_or_default(),
+                        row["score"]
+                            .as_u64()
+                            .map(|score| score.to_string())
+                            .unwrap_or_else(|| "-".to_string()),
+                        row["path"].as_str().unwrap_or_default()
+                    );
+                }
             }
         }
         ProjectsCommand::Prune => {
@@ -4087,13 +4172,15 @@ fn time_command(command: TimeCommand) -> lode_core::Result<()> {
                 .collect::<Vec<_>>();
             print_time_sessions("today", &sessions, &format)?;
         }
-        TimeCommand::Show { by, format } => {
+        TimeCommand::Show { since, by, format } => {
             let log = load_time_log()?;
-            print_time_summary(&log.sessions, &by, &format)?;
+            let sessions = filter_time_sessions(log.sessions, since.as_deref());
+            print_time_summary(&sessions, &by, &format)?;
         }
-        TimeCommand::Report { format, out } => {
+        TimeCommand::Report { since, format, out } => {
             let log = load_time_log()?;
-            let report = render_time_report(&log.sessions, &format)?;
+            let sessions = filter_time_sessions(log.sessions, since.as_deref());
+            let report = render_time_report(&sessions, &format)?;
             if let Some(path) = out {
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent).map_err(|source| LodeError::Io {
@@ -4110,20 +4197,34 @@ fn time_command(command: TimeCommand) -> lode_core::Result<()> {
                 print!("{report}");
             }
         }
-        TimeCommand::Clear { confirm } => {
+        TimeCommand::Clear { before, confirm } => {
             if !confirm {
                 return Err(LodeError::Message(
                     "refusing to clear time log without --confirm".to_string(),
                 ));
             }
             let path = time_log_path()?;
-            if path.exists() {
+            if let Some(before) = before {
+                let mut log = load_time_log()?;
+                let before_key = resolve_since_key(&before).unwrap_or(before);
+                let before_key = before_key.as_str();
+                let before_count = log.sessions.len();
+                log.sessions
+                    .retain(|session| session.started_at.as_str() >= before_key);
+                save_time_log(&log)?;
+                println!(
+                    "time log cleared: removed {} session(s)",
+                    before_count - log.sessions.len()
+                );
+            } else if path.exists() {
                 fs::remove_file(&path).map_err(|source| LodeError::Io {
                     path: path.as_str().into(),
                     source,
                 })?;
+                println!("time log cleared");
+            } else {
+                println!("time log cleared");
             }
-            println!("time log cleared");
         }
     }
     Ok(())
@@ -4143,6 +4244,41 @@ fn load_time_log() -> lode_core::Result<TimeLog> {
         source,
     })?;
     serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn save_time_log(log: &TimeLog) -> lode_core::Result<()> {
+    let path = time_log_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw =
+        serde_json::to_string_pretty(log).map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn filter_time_sessions(sessions: Vec<TimeSession>, since: Option<&str>) -> Vec<TimeSession> {
+    let Some(since) = since else {
+        return sessions;
+    };
+    let key = resolve_since_key(since).unwrap_or_else(|| since.to_string());
+    sessions
+        .into_iter()
+        .filter(|session| session.started_at.as_str() >= key.as_str())
+        .collect()
+}
+
+fn resolve_since_key(value: &str) -> Option<String> {
+    let days = value.strip_suffix('d')?.parse::<u64>().ok()?;
+    let today = today_days_since_epoch();
+    let target = today.saturating_sub(days);
+    let (year, month, day) = civil_from_days(target as i64);
+    Some(format!("{year:04}-{month:02}-{day:02}"))
 }
 
 fn print_time_sessions(
@@ -4312,12 +4448,16 @@ fn format_seconds(seconds: u64) -> String {
 }
 
 fn today_utc() -> String {
-    let days = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() / 86_400)
-        .unwrap_or_default() as i64;
+    let days = today_days_since_epoch() as i64;
     let (year, month, day) = civil_from_days(days);
     format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn today_days_since_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() / 86_400)
+        .unwrap_or_default()
 }
 
 fn civil_from_days(days_since_epoch: i64) -> (i32, u32, u32) {
@@ -4524,15 +4664,71 @@ fn metrics(command: MetricsCommand) -> lode_core::Result<()> {
             println!("convention violations: {}", report.convention_violations);
             println!("secret findings: {}", report.secret_findings);
         }
-        MetricsCommand::Trend => println!("metrics trend: stable"),
+        MetricsCommand::Trend { last } => {
+            let report = load_metrics(&current_dir()?)?;
+            println!("metrics trend: latest score {}", report.score);
+            if let Some(last) = last {
+                println!("window: last {last} snapshot(s)");
+            }
+        }
         MetricsCommand::Baseline => {
             let cwd = current_dir()?;
             let report = audit_project(&cwd, &load_global_config()?)?;
             save_metrics(&cwd, &report)?;
+            save_metrics_baseline(&cwd, &report)?;
             println!("metrics baseline saved");
+        }
+        MetricsCommand::DiffBaseline => {
+            let cwd = current_dir()?;
+            let current = load_metrics(&cwd)?;
+            let baseline = load_metrics_baseline(&cwd)?;
+            println!(
+                "score delta: {}",
+                current.score as i16 - baseline.score as i16
+            );
+            println!(
+                "convention delta: {}",
+                current.convention_violations as i64 - baseline.convention_violations as i64
+            );
+            println!(
+                "secret delta: {}",
+                current.secret_findings as i64 - baseline.secret_findings as i64
+            );
         }
     }
     Ok(())
+}
+
+fn metrics_baseline_path(root: &Utf8PathBuf) -> Utf8PathBuf {
+    root.join(".lode").join("metrics-baseline.json")
+}
+
+fn save_metrics_baseline(
+    root: &Utf8PathBuf,
+    report: &lode_core::AuditReport,
+) -> lode_core::Result<()> {
+    let path = metrics_baseline_path(root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(report)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn load_metrics_baseline(root: &Utf8PathBuf) -> lode_core::Result<lode_core::AuditReport> {
+    let path = metrics_baseline_path(root);
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))
 }
 
 fn status_bool(value: bool) -> &'static str {
@@ -4712,14 +4908,37 @@ fn daemon(command: DaemonCommand) {
 
 fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
     match command {
-        DaemonCommand::Start => {
-            write_daemon_state("active")?;
-            append_daemon_log("daemon started")?;
+        DaemonCommand::Start {
+            no_rename,
+            no_sign,
+            no_stamp,
+            foreground,
+        } => {
+            let state = format!(
+                "active\nforeground={foreground}\nrename={}\nsign={}\nstamp={}\n",
+                !no_rename, !no_sign, !no_stamp
+            );
+            write_daemon_state(&state)?;
+            append_daemon_log(&format!(
+                "daemon started foreground={foreground} rename={} sign={} stamp={}",
+                !no_rename, !no_sign, !no_stamp
+            ))?;
             println!("daemon started");
+            if foreground {
+                println!(
+                    "foreground mode recorded; long-running watch loop is not active in this build"
+                );
+            }
         }
-        DaemonCommand::Stop => {
+        DaemonCommand::Stop { project } => {
             write_daemon_state("inactive")?;
-            append_daemon_log("daemon stopped")?;
+            append_daemon_log(&format!(
+                "daemon stopped{}",
+                project
+                    .as_deref()
+                    .map(|project| format!(" project={project}"))
+                    .unwrap_or_default()
+            ))?;
             println!("daemon stopped");
         }
         DaemonCommand::Restart => {
@@ -4727,15 +4946,32 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             append_daemon_log("daemon restarted")?;
             println!("daemon restarted");
         }
-        DaemonCommand::Status => {
+        DaemonCommand::Status { quiet, json } => {
             let state =
                 fs::read_to_string(daemon_state_path()?).unwrap_or_else(|_| "inactive".to_string());
-            println!("daemon status: {}", state.trim());
+            let active = state.lines().next().unwrap_or("inactive") == "active";
+            if json {
+                println!("{{\"active\":{active},\"state\":{:?}}}", state.trim());
+            } else if quiet {
+                println!("{}", if active { "active" } else { "inactive" });
+            } else {
+                println!("daemon status: {}", state.trim());
+            }
         }
-        DaemonCommand::Log => {
+        DaemonCommand::Log { tail, follow } => {
             let log = fs::read_to_string(daemon_log_path()?)
                 .unwrap_or_else(|_| "no entries\n".to_string());
-            print!("{log}");
+            let mut lines = log.lines().collect::<Vec<_>>();
+            if let Some(tail) = tail {
+                let start = lines.len().saturating_sub(tail);
+                lines = lines[start..].to_vec();
+            }
+            for line in lines {
+                println!("{line}");
+            }
+            if follow {
+                println!("follow mode requested; streaming is not active in this build");
+            }
         }
     }
     Ok(())
