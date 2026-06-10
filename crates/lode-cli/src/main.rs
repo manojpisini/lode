@@ -89,6 +89,8 @@ enum Command {
     },
     Task {
         target: Option<String>,
+        #[arg(long)]
+        no_store: bool,
     },
     Dev,
     Build,
@@ -224,6 +226,8 @@ enum Command {
     Cp {
         command: String,
         problem: Option<String>,
+        #[arg(long)]
+        lang: Option<String>,
     },
     #[command(name = "self")]
     SelfCmd {
@@ -839,7 +843,7 @@ fn run() -> lode_core::Result<()> {
         } => mcp_command(http, port, list_tools, list_resources, list_prompts)?,
         Command::Agent { command } => agent_command(command)?,
         Command::Snippet { command } => snippet_command(command)?,
-        Command::Task { target } => run_make(target.as_deref().unwrap_or("help"))?,
+        Command::Task { target, no_store } => task_command(target, no_store)?,
         Command::Dev => run_make("dev")?,
         Command::Build => run_make("build")?,
         Command::Test => run_make("test")?,
@@ -898,15 +902,14 @@ fn run() -> lode_core::Result<()> {
             no_color,
             no_live: _,
         } => serve_dashboard(no_color)?,
-        Command::Mc { command } => run_make(&format!("mc-{command}"))?,
-        Command::Tauri { command } => run_make(&format!("tauri-{command}"))?,
-        Command::Gha { command, name } => {
-            println!("github actions {command} {}", name.unwrap_or_default())
-        }
-        Command::Cp { command, problem } => println!(
-            "competitive coding {command} {}",
-            problem.unwrap_or_default()
-        ),
+        Command::Mc { command } => mc_command(&command)?,
+        Command::Tauri { command } => tauri_command(&command)?,
+        Command::Gha { command, name } => gha_command(&command, name.as_deref())?,
+        Command::Cp {
+            command,
+            problem,
+            lang,
+        } => cp_command(&command, problem.as_deref(), lang.as_deref())?,
         Command::SelfCmd { command } => self_command(command)?,
         Command::Upgrade { check } => upgrade(check)?,
         Command::Completions { shell } => completions(&shell)?,
@@ -4053,6 +4056,16 @@ fn package_graph(format: &str) -> lode_core::Result<()> {
                 }
             }
         }
+        "dot" => {
+            println!("digraph packages {{");
+            println!("  project;");
+            for (file, kind) in manifests {
+                if Utf8PathBuf::from(file).exists() {
+                    println!("  project -> {kind} [label=\"{file}\"];");
+                }
+            }
+            println!("}}");
+        }
         other => {
             return Err(LodeError::Message(format!(
                 "unsupported package graph format: {other}"
@@ -5191,6 +5204,228 @@ fn append_daemon_log(line: &str) -> lode_core::Result<()> {
         path: path.as_str().into(),
         source,
     })
+}
+
+fn task_command(target: Option<String>, no_store: bool) -> lode_core::Result<()> {
+    match target.as_deref() {
+        None | Some("list") => list_make_targets(),
+        Some("test") => {
+            if no_store {
+                println!("task test running without storing history");
+            }
+            run_make("test")
+        }
+        Some(target) => run_make(target),
+    }
+}
+
+fn list_make_targets() -> lode_core::Result<()> {
+    let path = Utf8PathBuf::from("Makefile");
+    if !path.exists() {
+        for target in [
+            "dev", "build", "test", "fmt", "lint", "check", "verify", "clean", "docs", "install",
+            "update", "release",
+        ] {
+            println!("{target}");
+        }
+        return Ok(());
+    }
+    let contents = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    for line in contents.lines() {
+        if let Some((target, _)) = line.split_once(':') {
+            if !target.trim().is_empty()
+                && target
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+            {
+                println!("{}", target.trim());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn gha_command(command: &str, name: Option<&str>) -> lode_core::Result<()> {
+    match command {
+        "validate" => {
+            let dir = Utf8PathBuf::from(".github").join("workflows");
+            if !dir.exists() {
+                return Err(LodeError::Message(
+                    "no GitHub workflow directory found".to_string(),
+                ));
+            }
+            let mut count = 0usize;
+            for entry in fs::read_dir(&dir).map_err(|source| LodeError::Io {
+                path: dir.as_str().into(),
+                source,
+            })? {
+                let entry = entry.map_err(|source| LodeError::Io {
+                    path: dir.as_str().into(),
+                    source,
+                })?;
+                let path = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                    LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+                })?;
+                if matches!(path.extension(), Some("yml" | "yaml")) {
+                    let contents = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+                        path: path.as_str().into(),
+                        source,
+                    })?;
+                    if !contents.contains("jobs:") {
+                        return Err(LodeError::Message(format!("workflow missing jobs: {path}")));
+                    }
+                    count += 1;
+                }
+            }
+            println!("validated {count} workflow(s)");
+        }
+        "add" => {
+            let name = name.unwrap_or("ci-rust");
+            let path = Utf8PathBuf::from(".github")
+                .join("workflows")
+                .join(format!("{name}.yml"));
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                    path: parent.as_str().into(),
+                    source,
+                })?;
+            }
+            let body = workflow_contents(name);
+            fs::write(&path, body).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            println!("added workflow {name}");
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported gha command: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn workflow_contents(name: &str) -> String {
+    let run = if name.contains("node") {
+        "npm ci\n      - run: npm test"
+    } else if name.contains("tauri") {
+        "npm ci\n      - run: npm run build"
+    } else if name.contains("minecraft") {
+        "./gradlew build"
+    } else {
+        "cargo test --workspace"
+    };
+    format!(
+        "name: {name}\non: [push, pull_request]\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: {run}\n"
+    )
+}
+
+fn tauri_command(command: &str) -> lode_core::Result<()> {
+    match command {
+        "doctor" => {
+            println!(
+                "src-tauri\t{}",
+                status_bool(Utf8PathBuf::from("src-tauri").exists())
+            );
+            println!(
+                "package.json\t{}",
+                status_bool(Utf8PathBuf::from("package.json").exists())
+            );
+        }
+        "dev" | "build" => run_make(&format!("tauri-{command}"))?,
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported tauri command: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn mc_command(command: &str) -> lode_core::Result<()> {
+    match command {
+        "run-client" | "run-server" | "build" => run_make(&format!("mc-{command}"))?,
+        "doctor" => {
+            println!(
+                "gradle\t{}",
+                status_bool(
+                    Utf8PathBuf::from("build.gradle").exists()
+                        || Utf8PathBuf::from("settings.gradle").exists()
+                )
+            );
+            println!(
+                "minecraft sources\t{}",
+                status_bool(Utf8PathBuf::from("src/main").exists())
+            );
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported mc command: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn cp_command(command: &str, problem: Option<&str>, lang: Option<&str>) -> lode_core::Result<()> {
+    match command {
+        "new" => {
+            let problem = problem.unwrap_or("a");
+            let lang = lang.unwrap_or("cpp");
+            let ext = match lang {
+                "rs" | "rust" => "rs",
+                "py" | "python" => "py",
+                "java" => "java",
+                _ => "cpp",
+            };
+            let path = Utf8PathBuf::from("problems")
+                .join(problem)
+                .join(format!("main.{ext}"));
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                    path: parent.as_str().into(),
+                    source,
+                })?;
+            }
+            fs::write(&path, cp_template(ext)).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            println!("created competitive problem {problem}");
+        }
+        "run" | "test" | "stress" => {
+            let problem = problem.unwrap_or("a");
+            println!("competitive coding {command} {problem}");
+        }
+        "archive" => {
+            let contest = problem.unwrap_or("contest");
+            let path = Utf8PathBuf::from("archive").join(contest);
+            fs::create_dir_all(&path).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            println!("archived contest {contest}");
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported cp command: {other}"
+            )))
+        }
+    }
+    Ok(())
+}
+
+fn cp_template(ext: &str) -> &'static str {
+    match ext {
+        "rs" => "fn main() {\n    println!(\"hello\");\n}\n",
+        "py" => "def main():\n    pass\n\nif __name__ == \"__main__\":\n    main()\n",
+        "java" => "class Main {\n    public static void main(String[] args) {}\n}\n",
+        _ => "#include <bits/stdc++.h>\nusing namespace std;\nint main(){ios::sync_with_stdio(false);cin.tie(nullptr);}\n",
+    }
 }
 
 fn run_make(target: &str) -> lode_core::Result<()> {

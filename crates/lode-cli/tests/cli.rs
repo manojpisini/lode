@@ -1448,6 +1448,85 @@ fn self_info_clean_upgrade_and_completions_work() {
 }
 
 #[test]
+fn task_list_reads_makefile_targets() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("Makefile"),
+        "alpha: ## Alpha task\n\t@echo alpha\nbeta:\n\t@echo beta\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["task", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alpha"))
+        .stdout(predicate::str::contains("beta"));
+}
+
+#[test]
+fn gha_add_and_validate_workflows() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["gha", "add", "ci-rust"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added workflow ci-rust"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["gha", "validate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("validated 1 workflow"));
+}
+
+#[test]
+fn tauri_and_minecraft_doctor_report_local_files() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(temp.path().join("src-tauri")).unwrap();
+    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+    std::fs::write(temp.path().join("build.gradle"), "\n").unwrap();
+    std::fs::create_dir_all(temp.path().join("src").join("main")).unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["tauri", "doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("src-tauri\tok"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["mc", "doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("gradle\tok"));
+}
+
+#[test]
+fn cp_new_creates_problem_file() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["cp", "new", "b", "--lang", "rust"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("created competitive problem b"));
+
+    assert!(temp
+        .path()
+        .join("problems")
+        .join("b")
+        .join("main.rs")
+        .exists());
+}
+
+#[test]
 fn toolchain_status_detects_project_files() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(temp.path().join("Cargo.toml"), "[package]\nname='x'\n").unwrap();
@@ -1534,6 +1613,20 @@ fn pkg_graph_json_reports_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"kind\": \"cargo\""));
+}
+
+#[test]
+fn pkg_graph_dot_reports_manifest() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["pkg", "graph", "--format", "dot"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("digraph packages"))
+        .stdout(predicate::str::contains("project -> node"));
 }
 
 #[test]
