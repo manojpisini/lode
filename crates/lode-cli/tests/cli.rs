@@ -74,6 +74,32 @@ fn config_show_defaults_prints_valid_json() {
 }
 
 #[test]
+fn template_and_snippet_lists_support_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["template", "list", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("root/README.md"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["snippet", "list", "--format", "json", "--lang", "rs"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"serde-struct\""));
+}
+
+#[test]
 fn config_set_updates_global_config() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
@@ -495,6 +521,47 @@ fn projects_cd_and_remove_use_registry() {
         .assert()
         .success()
         .stdout(predicate::str::contains("removed project manual-app"));
+}
+
+#[test]
+fn projects_and_license_lists_support_json() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let project = temp.path().join("json-app");
+    std::fs::create_dir_all(&project).unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["projects", "register"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args([
+            "projects",
+            "list",
+            "--format",
+            "json",
+            "--sort",
+            "last-seen",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"json-app\""));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["license", "list", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("MIT.txt"));
 }
 
 #[test]
@@ -1212,6 +1279,88 @@ fn export_import_round_trips_lodepack() {
         .join("templates")
         .join("root")
         .join("README.md")
+        .exists());
+}
+
+#[test]
+fn export_filters_and_import_conflict_modes_work() {
+    let source = tempfile::tempdir().unwrap();
+    let source_config = isolated_config(&source);
+    let pack = source.path().join("filtered.lodepack");
+
+    lode()
+        .env("LODE_CONFIG", &source_config)
+        .arg("setup")
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &source_config)
+        .args(["export", "--no-templates", "--no-snippets", "--out"])
+        .arg(&pack)
+        .assert()
+        .success();
+
+    let raw = std::fs::read_to_string(&pack).unwrap();
+    assert!(!raw.contains("templates/root/README.md"));
+    assert!(!raw.contains("snippets/rs/serde-struct.snippet"));
+
+    let dest = tempfile::tempdir().unwrap();
+    let dest_config = isolated_config(&dest);
+    lode()
+        .env("LODE_CONFIG", &dest_config)
+        .arg("setup")
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &dest_config)
+        .args(["import", "--no-merge"])
+        .arg(&pack)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("import conflict"));
+    lode()
+        .env("LODE_CONFIG", &dest_config)
+        .args(["import", "--force"])
+        .arg(&pack)
+        .assert()
+        .success();
+}
+
+#[test]
+fn sync_refreshes_agent_context_and_supports_dry_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    std::fs::create_dir_all(temp.path().join("_ref_")).unwrap();
+    std::fs::create_dir_all(temp.path().join("_ctx_")).unwrap();
+    std::fs::write(temp.path().join("_ctx_").join("NOTES.md"), "# Notes\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["sync", "--dry-run", "--section", "agent"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would sync agent"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["sync", "--section", "agent"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("agent context synced"));
+
+    assert!(temp
+        .path()
+        .join(".lode")
+        .join("context")
+        .join("INDEX.md")
         .exists());
 }
 

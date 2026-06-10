@@ -38,6 +38,10 @@ enum Command {
     Sync {
         #[arg(long)]
         dry_run: bool,
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        section: Option<String>,
     },
     Info {
         #[arg(long)]
@@ -203,9 +207,23 @@ enum Command {
     Export {
         #[arg(long)]
         out: Option<Utf8PathBuf>,
+        #[arg(long)]
+        no_plugins: bool,
+        #[arg(long)]
+        no_templates: bool,
+        #[arg(long)]
+        no_snippets: bool,
+        #[arg(long)]
+        no_licenses: bool,
+        #[arg(long)]
+        no_recipes: bool,
     },
     Import {
         path: Utf8PathBuf,
+        #[arg(long)]
+        no_merge: bool,
+        #[arg(long)]
+        force: bool,
     },
     Serve {
         #[arg(long)]
@@ -291,9 +309,14 @@ enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 enum LibraryCommand {
-    List,
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
     Show {
         name: String,
+        #[arg(long)]
+        raw: bool,
     },
     Diff {
         name: String,
@@ -407,6 +430,8 @@ enum SnippetCommand {
     List {
         #[arg(long)]
         lang: Option<String>,
+        #[arg(long, default_value = "table")]
+        format: String,
     },
     Show {
         name: String,
@@ -543,7 +568,10 @@ enum EnvCommand {
 
 #[derive(Debug, Subcommand)]
 enum LicenseCommand {
-    List,
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
     Show {
         id: String,
     },
@@ -575,7 +603,12 @@ enum LicenseCommand {
 
 #[derive(Debug, Subcommand)]
 enum ProjectsCommand {
-    List,
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+        #[arg(long, default_value = "name")]
+        sort: String,
+    },
     Cd {
         name: String,
     },
@@ -787,6 +820,15 @@ struct LodePackFile {
     contents: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ExportOptions {
+    no_plugins: bool,
+    no_templates: bool,
+    no_snippets: bool,
+    no_licenses: bool,
+    no_recipes: bool,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct TimeLog {
     #[serde(default)]
@@ -862,16 +904,11 @@ fn run() -> lode_core::Result<()> {
             dry_run,
             overwrite,
         } => add_component(&component, dry_run, overwrite)?,
-        Command::Sync { dry_run } => {
-            println!(
-                "sync {}",
-                if dry_run {
-                    "dry-run complete"
-                } else {
-                    "checked"
-                }
-            );
-        }
+        Command::Sync {
+            dry_run,
+            force,
+            section,
+        } => sync_command(dry_run, force, section.as_deref())?,
         Command::Info { json } => info(json)?,
         Command::Config { command } => config_command(command)?,
         Command::Template { command } => library_command("templates", command, template_paths())?,
@@ -941,8 +978,28 @@ fn run() -> lode_core::Result<()> {
         Command::Workspace { command } => workspace(command)?,
         Command::Daemon { command } => daemon(command),
         Command::Log { command } => log_command(command)?,
-        Command::Export { out } => export_lodepack(out)?,
-        Command::Import { path } => import_lodepack(path)?,
+        Command::Export {
+            out,
+            no_plugins,
+            no_templates,
+            no_snippets,
+            no_licenses,
+            no_recipes,
+        } => export_lodepack(
+            out,
+            ExportOptions {
+                no_plugins,
+                no_templates,
+                no_snippets,
+                no_licenses,
+                no_recipes,
+            },
+        )?,
+        Command::Import {
+            path,
+            no_merge,
+            force,
+        } => import_lodepack(path, no_merge, force)?,
         Command::Serve {
             no_color,
             no_live: _,
@@ -979,6 +1036,53 @@ fn setup() -> lode_core::Result<()> {
     println!(
         "extracted default templates, profiles, snippets, recipes, licenses, and command macros"
     );
+    Ok(())
+}
+
+fn sync_command(dry_run: bool, force: bool, section: Option<&str>) -> lode_core::Result<()> {
+    let sections = match section {
+        Some(section) => vec![section.to_string()],
+        None => vec![
+            "config".to_string(),
+            "templates".to_string(),
+            "agent".to_string(),
+            "metrics".to_string(),
+        ],
+    };
+    if dry_run {
+        for section in sections {
+            println!("would sync {section}");
+        }
+        return Ok(());
+    }
+    for section in sections {
+        match section.as_str() {
+            "config" => {
+                load_global_config()?;
+                println!("synced config");
+            }
+            "templates" => {
+                validate_template_tree(&global_dir()?.join("templates"))?;
+                println!("synced templates");
+            }
+            "agent" | "context" => {
+                agent_sync()?;
+            }
+            "metrics" => {
+                if force || Utf8PathBuf::from(".lode").exists() {
+                    let cwd = current_dir()?;
+                    let report = audit_project(&cwd, &load_global_config()?)?;
+                    save_metrics(&cwd, &report)?;
+                    println!("synced metrics");
+                }
+            }
+            other => {
+                return Err(LodeError::Message(format!(
+                    "unsupported sync section: {other}"
+                )))
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1281,12 +1385,20 @@ fn library_command(
     embedded: &[&str],
 ) -> lode_core::Result<()> {
     match command {
-        LibraryCommand::List => {
-            for item in embedded {
-                println!("{item}");
+        LibraryCommand::List { format } => {
+            if format == "json" {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(embedded)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
+            } else {
+                for item in embedded {
+                    println!("{item}");
+                }
             }
         }
-        LibraryCommand::Show { name } => {
+        LibraryCommand::Show { name, raw: _ } => {
             let mut path = global_dir()?.join(root).join(&name);
             if !path.exists() && matches!(root, "profiles" | "commands" | "recipes") {
                 path = global_dir()?.join(root).join(format!("{name}.toml"));
@@ -1457,7 +1569,11 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
             }
         }
         ProfileCommand::Show { name } => {
-            library_command("profiles", LibraryCommand::Show { name }, &profile_names())?;
+            library_command(
+                "profiles",
+                LibraryCommand::Show { name, raw: true },
+                &profile_names(),
+            )?;
         }
         ProfileCommand::Use { name } => {
             let mut config = load_global_config()?;
@@ -1500,9 +1616,31 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
 
 fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
     match command {
-        SnippetCommand::List { lang } => {
+        SnippetCommand::List { lang, format } => {
             let root = global_dir()?.join("snippets");
-            if let Some(lang) = lang {
+            if format == "json" {
+                let mut snippets = Vec::new();
+                if let Some(lang) = lang {
+                    collect_snippet_assets(&root.join(lang), &mut snippets)?;
+                } else {
+                    collect_snippet_assets(&root, &mut snippets)?;
+                }
+                let values = snippets
+                    .into_iter()
+                    .map(|snippet| {
+                        serde_json::json!({
+                            "lang": snippet.lang,
+                            "name": snippet.name,
+                            "path": snippet.path,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&values)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
+            } else if let Some(lang) = lang {
                 list_dir(root.join(lang))?;
             } else {
                 list_dir(root)?;
@@ -1555,7 +1693,11 @@ fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
             }
         }
         RecipeCommand::Show { name } => {
-            library_command("recipes", LibraryCommand::Show { name }, recipe_names())?;
+            library_command(
+                "recipes",
+                LibraryCommand::Show { name, raw: true },
+                recipe_names(),
+            )?;
         }
         RecipeCommand::Apply { name, dry_run } => apply_recipe(&name, dry_run)?,
         RecipeCommand::Compose { names } => {
@@ -2899,7 +3041,20 @@ fn env_command(command: EnvCommand) -> lode_core::Result<()> {
 
 fn license(command: LicenseCommand) -> lode_core::Result<()> {
     match command {
-        LicenseCommand::List => list_dir(global_dir()?.join("licenses"))?,
+        LicenseCommand::List { format } => {
+            let root = global_dir()?.join("licenses");
+            if format == "json" {
+                let mut items = Vec::new();
+                collect_file_names(&root, &mut items)?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&items)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
+            } else {
+                list_dir(root)?;
+            }
+        }
         LicenseCommand::Show { id } => print!("{}", read_license(&id)?),
         LicenseCommand::Info { id } => {
             let contents = read_license(&id)?;
@@ -3634,10 +3789,32 @@ fn read_template_asset(path: &str) -> lode_core::Result<String> {
 
 fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
     match command {
-        ProjectsCommand::List => {
-            let registry = load_registry()?;
+        ProjectsCommand::List { format, sort } => {
+            let mut registry = load_registry()?;
+            match sort.as_str() {
+                "name" => registry
+                    .projects
+                    .sort_by(|left, right| left.name.cmp(&right.name)),
+                "health" => registry
+                    .projects
+                    .sort_by(|left, right| left.path.exists().cmp(&right.path.exists()).reverse()),
+                "last-seen" => registry
+                    .projects
+                    .sort_by(|left, right| right.last_seen.cmp(&left.last_seen)),
+                other => {
+                    return Err(LodeError::Message(format!(
+                        "unsupported project sort: {other}"
+                    )))
+                }
+            }
             if registry.projects.is_empty() {
                 println!("no registered projects");
+            } else if format == "json" {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&registry.projects)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
             } else {
                 for project in registry.projects {
                     println!(
@@ -4549,22 +4726,30 @@ fn command_version(command: &str) -> Option<String> {
     Some(text.lines().next().unwrap_or("installed").to_string())
 }
 
-fn export_lodepack(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
+fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_core::Result<()> {
     let root = global_dir()?;
     let output = out.unwrap_or_else(|| Utf8PathBuf::from("lode-export.lodepack"));
     let mut pack = LodePack {
         version: 1,
         files: Vec::new(),
     };
-    for path in [
-        "config.toml",
-        "profiles",
-        "templates",
-        "snippets",
-        "licenses",
-        "recipes",
-        "commands",
-    ] {
+    let mut paths = vec!["config.toml", "profiles", "commands"];
+    if !options.no_templates {
+        paths.push("templates");
+    }
+    if !options.no_snippets {
+        paths.push("snippets");
+    }
+    if !options.no_licenses {
+        paths.push("licenses");
+    }
+    if !options.no_recipes {
+        paths.push("recipes");
+    }
+    if !options.no_plugins {
+        paths.push("plugins");
+    }
+    for path in paths {
         collect_pack_files(&root, &root.join(path), &mut pack)?;
     }
     let raw = serde_json::to_string_pretty(&pack)
@@ -4577,7 +4762,7 @@ fn export_lodepack(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn import_lodepack(path: Utf8PathBuf) -> lode_core::Result<()> {
+fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core::Result<()> {
     let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
@@ -4603,6 +4788,15 @@ fn import_lodepack(path: Utf8PathBuf) -> lode_core::Result<()> {
             )));
         }
         let destination = root.join(&file.path);
+        if destination.exists() && no_merge && !force {
+            return Err(LodeError::Message(format!(
+                "import conflict: {} exists",
+                file.path
+            )));
+        }
+        if destination.exists() && !force && file.path != "config.toml" {
+            continue;
+        }
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|source| LodeError::Io {
                 path: parent.as_str().into(),
@@ -5699,6 +5893,31 @@ fn list_dir(path: Utf8PathBuf) -> lode_core::Result<()> {
         })?;
         println!("{}", entry.path().display());
     }
+    Ok(())
+}
+
+fn collect_file_names(path: &Utf8PathBuf, items: &mut Vec<String>) -> lode_core::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+        })?;
+        if child.is_dir() {
+            collect_file_names(&child, items)?;
+        } else if let Some(name) = child.file_name() {
+            items.push(name.to_string());
+        }
+    }
+    items.sort();
     Ok(())
 }
 
