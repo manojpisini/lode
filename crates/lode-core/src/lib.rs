@@ -25,7 +25,8 @@ pub use registry::{
     Registry,
 };
 pub use scaffold::{
-    add_component_to_project, init_project, AddRequest, InitRequest, ProjectConfig, ScaffoldReport,
+    add_component_to_project, init_project, load_scaffold_lock, scaffold_lock_path, sync_project,
+    AddRequest, InitRequest, ProjectConfig, ScaffoldLock, ScaffoldLockEntry, ScaffoldReport,
 };
 pub use secrets::{scan_secrets, SecretFinding, SecretScanReport};
 pub use template::{render_template, slug_to_class, slug_to_ident, RenderContext};

@@ -16,8 +16,8 @@ use lode_core::{
     add_component_to_project, audit_project, check_path, command_names, default_config, fix_path,
     global_dir, init_project, load_global_config, load_metrics, load_registry, profile_names,
     prune_registry, recipe_names, register_project, save_global_config, save_metrics,
-    save_registry, scan_secrets, setup_defaults, template_paths, AddRequest, InitRequest,
-    LodeError,
+    save_registry, scan_secrets, setup_defaults, sync_project, template_paths, AddRequest,
+    InitRequest, LodeError,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -1061,26 +1061,50 @@ fn sync_command(dry_run: bool, force: bool, section: Option<&str>) -> lode_core:
             "metrics".to_string(),
         ],
     };
-    if dry_run {
-        for section in sections {
-            println!("would sync {section}");
-        }
-        return Ok(());
-    }
     for section in sections {
         match section.as_str() {
             "config" => {
+                if dry_run {
+                    println!("would sync config");
+                    continue;
+                }
                 load_global_config()?;
                 println!("synced config");
             }
             "templates" => {
-                validate_template_tree(&global_dir()?.join("templates"))?;
-                println!("synced templates");
+                let cwd = current_dir()?;
+                if cwd.join(".lode").join("project.toml").exists() {
+                    let report = sync_project(cwd, load_global_config()?, force, dry_run)?;
+                    if dry_run {
+                        println!("would sync templates");
+                        for path in report.planned_paths {
+                            println!("would reconcile {path}");
+                        }
+                    } else {
+                        println!(
+                            "synced {} template-backed file(s)",
+                            report.wrote_paths.len()
+                        );
+                    }
+                } else if dry_run {
+                    println!("would sync templates");
+                } else {
+                    validate_template_tree(&global_dir()?.join("templates"))?;
+                    println!("synced templates");
+                }
             }
             "agent" | "context" => {
+                if dry_run {
+                    println!("would sync {section}");
+                    continue;
+                }
                 agent_sync()?;
             }
             "metrics" => {
+                if dry_run {
+                    println!("would sync metrics");
+                    continue;
+                }
                 if force || Utf8PathBuf::from(".lode").exists() {
                     let cwd = current_dir()?;
                     let report = audit_project(&cwd, &load_global_config()?)?;

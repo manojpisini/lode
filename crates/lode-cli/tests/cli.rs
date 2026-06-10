@@ -1365,6 +1365,49 @@ fn sync_refreshes_agent_context_and_supports_dry_run() {
 }
 
 #[test]
+fn sync_templates_reconciles_project_scaffold() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["init", "my-app"])
+        .assert()
+        .success();
+
+    let project = temp.path().join("my-app");
+    assert!(project.join(".lode").join("scaffold.lock").exists());
+    std::fs::remove_file(project.join("README.md")).unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["sync", "--dry-run", "--section", "templates"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would reconcile"));
+
+    assert!(!project.join("README.md").exists());
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["sync", "--section", "templates"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("synced"));
+
+    assert!(project.join("README.md").exists());
+}
+
+#[test]
 fn health_writes_metrics_and_metrics_show_reads_them() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
