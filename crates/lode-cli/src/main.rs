@@ -287,6 +287,10 @@ enum Command {
     },
     Completions {
         shell: String,
+        #[arg(long)]
+        install: bool,
+        #[arg(long)]
+        out: Option<Utf8PathBuf>,
     },
     Version,
     #[command(external_subcommand)]
@@ -1099,7 +1103,11 @@ fn run() -> lode_core::Result<()> {
         } => cp_command(&command, problem.as_deref(), lang.as_deref())?,
         Command::SelfCmd { command } => self_command(command)?,
         Command::Upgrade { check } => upgrade(check)?,
-        Command::Completions { shell } => completions(&shell)?,
+        Command::Completions {
+            shell,
+            install,
+            out,
+        } => completions(&shell, install, out)?,
         Command::Version => println!("{}", env!("CARGO_PKG_VERSION")),
         Command::External(args) => external_command(args)?,
     }
@@ -6247,35 +6255,142 @@ fn upgrade(check: bool) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn completions(shell: &str) -> lode_core::Result<()> {
-    match shell {
-        "bash" => {
-            println!("complete -W 'setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git env license projects toolchain pkg time metrics workspace daemon log export import serve mc tauri gha cp self upgrade completions version' lode");
+fn completions(shell: &str, install: bool, out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
+    let script = completion_script(shell)?;
+    let output_path = if install {
+        Some(out.unwrap_or(default_completion_path(shell)?))
+    } else {
+        out
+    };
+    if let Some(path) = output_path {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+                path: parent.as_str().into(),
+                source,
+            })?;
         }
-        "zsh" => {
-            println!("#compdef lode");
-            println!("_arguments '1: :((setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git env license projects toolchain pkg time metrics workspace daemon log export import serve mc tauri gha cp self upgrade completions version))'");
+        fs::write(&path, script).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        println!("wrote {shell} completions to {path}");
+        if install {
+            println!("{}", completion_install_hint(shell, &path)?);
         }
-        "fish" => {
-            for command in [
-                "setup", "init", "config", "template", "profile", "snippet", "commands", "rules",
-                "sign", "stamp", "log", "self", "upgrade", "version",
-            ] {
-                println!("complete -c lode -f -a {command}");
-            }
-        }
-        "powershell" => {
-            println!(
-                "Register-ArgumentCompleter -Native -CommandName lode -ScriptBlock {{ param($wordToComplete) 'setup','init','config','template','profile','snippet','commands','rules','sign','stamp','log','self','upgrade','version' | Where-Object {{ $_ -like \"$wordToComplete*\" }} }}"
-            );
-        }
+    } else {
+        print!("{script}");
+    }
+    Ok(())
+}
+
+fn completion_script(shell: &str) -> lode_core::Result<String> {
+    let commands = command_words();
+    let script = match shell {
+        "bash" => format!(
+            r#"# lode shell integration
+_lode_chdir_hook() {{
+  if [[ -f ".lode/project.toml" ]]; then
+    lode daemon status --quiet 2>/dev/null || lode daemon start --foreground >/dev/null 2>&1 &
+  fi
+}}
+case ";$PROMPT_COMMAND;" in
+  *";_lode_chdir_hook;"*) ;;
+  *) PROMPT_COMMAND="_lode_chdir_hook${{PROMPT_COMMAND:+; $PROMPT_COMMAND}}" ;;
+esac
+lp() {{ cd "$(lode projects cd "$1")"; }}
+complete -W '{commands}' lode
+"#
+        ),
+        "zsh" => format!(
+            r#"#compdef lode
+# lode shell integration
+autoload -Uz add-zsh-hook
+_lode_chdir_hook() {{
+  if [[ -f ".lode/project.toml" ]]; then
+    lode daemon status --quiet 2>/dev/null || lode daemon start --foreground >/dev/null 2>&1 &
+  fi
+}}
+add-zsh-hook chpwd _lode_chdir_hook
+lp() {{ cd "$(lode projects cd "$1")"; }}
+_arguments '1: :(({commands}))'
+"#
+        ),
+        "fish" => format!(
+            r#"# lode shell integration
+function _lode_hook --on-variable PWD
+  if test -f .lode/project.toml
+    lode daemon status --quiet 2>/dev/null; or lode daemon start --foreground >/dev/null 2>&1 &
+  end
+end
+function lp
+  cd (lode projects cd $argv[1])
+end
+{}
+"#,
+            commands
+                .split_whitespace()
+                .map(|command| format!("complete -c lode -f -a {command}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ),
+        "powershell" | "pwsh" => format!(
+            r#"# lode shell integration
+function Invoke-LodePromptHook {{
+  if (Test-Path ".lode/project.toml") {{
+    lode daemon status --quiet 2>$null
+    if ($LASTEXITCODE -ne 0) {{ Start-Process lode -ArgumentList @("daemon","start","--foreground") -WindowStyle Hidden }}
+  }}
+}}
+function lp($Name) {{ Set-Location (lode projects cd $Name) }}
+Register-ArgumentCompleter -Native -CommandName lode -ScriptBlock {{
+  param($wordToComplete)
+  '{commands}'.Split(' ') | Where-Object {{ $_ -like "$wordToComplete*" }}
+}}
+"#
+        ),
         other => {
             return Err(LodeError::Message(format!(
                 "unsupported completion shell: {other}"
             )))
         }
-    }
-    Ok(())
+    };
+    Ok(script)
+}
+
+fn command_words() -> &'static str {
+    "setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git hooks env license projects toolchain pkg time metrics workspace daemon log export import serve mc tauri gha cp self upgrade completions version"
+}
+
+fn default_completion_path(shell: &str) -> lode_core::Result<Utf8PathBuf> {
+    let file = match shell {
+        "bash" => "lode.bash",
+        "zsh" => "_lode",
+        "fish" => "lode.fish",
+        "powershell" | "pwsh" => "lode.ps1",
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported completion shell: {other}"
+            )))
+        }
+    };
+    Ok(global_dir()?.join("completions").join(file))
+}
+
+fn completion_install_hint(shell: &str, path: &Utf8PathBuf) -> lode_core::Result<String> {
+    let hint = match shell {
+        "bash" => format!("add to ~/.bashrc: source \"{path}\""),
+        "zsh" => format!("copy or link into your fpath, or add to ~/.zshrc: source \"{path}\""),
+        "fish" => format!(
+            "copy to ~/.config/fish/completions/lode.fish or add to config.fish: source \"{path}\""
+        ),
+        "powershell" | "pwsh" => format!("add to $PROFILE: . \"{path}\""),
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported completion shell: {other}"
+            )))
+        }
+    };
+    Ok(hint)
 }
 
 fn serve_dashboard(

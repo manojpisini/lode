@@ -2130,7 +2130,22 @@ fn self_info_clean_upgrade_and_completions_work() {
         .args(["completions", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("complete -W"));
+        .stdout(predicate::str::contains("complete -W"))
+        .stdout(predicate::str::contains("_lode_chdir_hook"))
+        .stdout(predicate::str::contains("lp()"));
+
+    let completion_file = temp.path().join("lode.ps1");
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["completions", "powershell", "--install", "--out"])
+        .arg(&completion_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("wrote powershell completions"));
+
+    let completion = std::fs::read_to_string(completion_file).unwrap();
+    assert!(completion.contains("Register-ArgumentCompleter"));
+    assert!(completion.contains("Invoke-LodePromptHook"));
 }
 
 #[test]
