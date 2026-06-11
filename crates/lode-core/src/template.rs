@@ -36,14 +36,80 @@ impl RenderContext {
 }
 
 pub fn render_template(input: &str, context: &RenderContext) -> String {
-    let mut output = render_blocks(input, context);
-    for (key, value) in &context.values {
-        output = output.replace(&format!("{{{{ {} }}}}", key), value);
-        output = output.replace(&format!("{{{{{} }}}}", key), value);
-        output = output.replace(&format!("{{{{ {} }}}}", key), value);
-        output = output.replace(&format!("{{{{{}}}}}", key), value);
+    render_variables(&render_blocks(input, context), context)
+}
+
+fn render_variables(input: &str, context: &RenderContext) -> String {
+    let mut output = String::new();
+    let mut rest = input;
+    while let Some(start) = rest.find("{{") {
+        output.push_str(&rest[..start]);
+        let after_start = &rest[start + 2..];
+        let Some(end) = after_start.find("}}") else {
+            output.push_str(&rest[start..]);
+            return output;
+        };
+        let expression = after_start[..end].trim();
+        output.push_str(&render_expression(expression, context));
+        rest = &after_start[end + 2..];
     }
+    output.push_str(rest);
     output
+}
+
+fn render_expression(expression: &str, context: &RenderContext) -> String {
+    let mut parts = expression.split('|').map(str::trim);
+    let Some(key) = parts.next() else {
+        return String::new();
+    };
+    let mut value = context.get(key).unwrap_or_default().to_string();
+    for filter in parts {
+        value = apply_filter(&value, filter);
+    }
+    value
+}
+
+fn apply_filter(value: &str, filter: &str) -> String {
+    match filter {
+        "upper" => value.to_ascii_uppercase(),
+        "lower" => value.to_ascii_lowercase(),
+        "snake" | "snake_case" => slug_to_ident(value),
+        "kebab" | "kebab_case" => slug_to_ident(value).replace('_', "-"),
+        "pascal" | "pascal_case" => slug_to_class(value),
+        "camel" | "camel_case" => {
+            let pascal = slug_to_class(value);
+            let mut chars = pascal.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_lowercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+        "title" => value
+            .split_whitespace()
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+        "urlencode" | "url_encode" => url_encode(value),
+        _ => value.to_string(),
+    }
+}
+
+fn url_encode(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 fn render_blocks(input: &str, context: &RenderContext) -> String {
@@ -184,5 +250,36 @@ mod tests {
         assert!(output.contains("before"));
         assert!(output.contains("after"));
         assert!(!output.contains("hidden"));
+    }
+
+    #[test]
+    fn renders_filter_pipelines() {
+        let context = RenderContext::new().with("project", "My Demo App");
+
+        let output = render_template(
+            "{{ project | upper }}\n{{ project | snake }}\n{{ project | kebab }}\n{{ project | pascal }}\n{{ project | camel }}\n",
+            &context,
+        );
+
+        assert!(output.contains("MY DEMO APP"));
+        assert!(output.contains("my_demo_app"));
+        assert!(output.contains("my-demo-app"));
+        assert!(output.contains("MyDemoApp"));
+        assert!(output.contains("myDemoApp"));
+    }
+
+    #[test]
+    fn renders_urlencode_filter() {
+        let context = RenderContext::new().with("license", "MIT OR Apache-2.0");
+
+        let output = render_template(
+            "https://img.shields.io/badge/license-{{ license | urlencode }}-blue.svg",
+            &context,
+        );
+
+        assert_eq!(
+            output,
+            "https://img.shields.io/badge/license-MIT%20OR%20Apache-2.0-blue.svg"
+        );
     }
 }
