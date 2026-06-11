@@ -408,10 +408,23 @@ enum CommandsCommand {
 #[derive(Debug, Subcommand)]
 enum PluginCommand {
     List,
-    Add { source: Utf8PathBuf },
-    Remove { name: String },
-    Update { name: Option<String> },
-    Info { name: String },
+    Search {
+        query: Option<String>,
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
+    Add {
+        source: Utf8PathBuf,
+    },
+    Remove {
+        name: String,
+    },
+    Update {
+        name: Option<String>,
+    },
+    Info {
+        name: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -874,6 +887,17 @@ struct SnippetAsset {
     name: String,
     body: String,
     path: Utf8PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PluginIndexEntry {
+    name: String,
+    version: String,
+    description: String,
+    source: String,
+    installed: bool,
+    path: Option<Utf8PathBuf>,
+    capabilities: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -1931,6 +1955,40 @@ fn command_macro_path(slug: &str, global: bool) -> lode_core::Result<Utf8PathBuf
 fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
     match command {
         PluginCommand::List => list_dir(global_dir()?.join("plugins"))?,
+        PluginCommand::Search { query, format } => {
+            let entries = search_plugin_index(query.as_deref())?;
+            match format.as_str() {
+                "json" => println!(
+                    "{}",
+                    serde_json::to_string_pretty(&entries)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                ),
+                "table" => {
+                    if entries.is_empty() {
+                        println!("no plugins found");
+                    } else {
+                        for entry in entries {
+                            println!(
+                                "{}\t{}\t{}\t{}",
+                                entry.name,
+                                entry.version,
+                                if entry.installed {
+                                    "installed"
+                                } else {
+                                    "available"
+                                },
+                                entry.description
+                            );
+                        }
+                    }
+                }
+                other => {
+                    return Err(LodeError::Message(format!(
+                        "unsupported plugin search format: {other}"
+                    )))
+                }
+            }
+        }
         PluginCommand::Add { source } => {
             if !source.exists() || !source.is_dir() {
                 return Err(LodeError::Message(format!(
@@ -1980,14 +2038,154 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             if !path.exists() {
                 return Err(LodeError::Message(format!("plugin not found: {name}")));
             }
-            println!("name\t{name}");
+            let entry = plugin_index_entry(&path, true)?;
+            println!("name\t{}", entry.name);
+            println!("version\t{}", entry.version);
+            println!("description\t{}", entry.description);
             println!("path\t{path}");
             for child in ["templates", "profiles", "snippets", "recipes", "commands"] {
                 println!("{child}\t{}", status_bool(path.join(child).exists()));
             }
+            if !entry.capabilities.is_empty() {
+                println!("capabilities\t{}", entry.capabilities.join(","));
+            }
         }
     }
     Ok(())
+}
+
+fn search_plugin_index(query: Option<&str>) -> lode_core::Result<Vec<PluginIndexEntry>> {
+    let mut entries = default_plugin_registry();
+    let plugins_dir = global_dir()?.join("plugins");
+    if plugins_dir.exists() {
+        for entry in fs::read_dir(&plugins_dir).map_err(|source| LodeError::Io {
+            path: plugins_dir.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: plugins_dir.as_str().into(),
+                source,
+            })?;
+            let path = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            if path.is_dir() {
+                let installed = plugin_index_entry(&path, true)?;
+                entries.retain(|candidate| candidate.name != installed.name);
+                entries.push(installed);
+            }
+        }
+    }
+
+    if let Some(query) = query {
+        let query = query.to_ascii_lowercase();
+        entries.retain(|entry| {
+            entry.name.to_ascii_lowercase().contains(&query)
+                || entry.description.to_ascii_lowercase().contains(&query)
+                || entry
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability.to_ascii_lowercase().contains(&query))
+        });
+    }
+    entries.sort_by(|left, right| {
+        right
+            .installed
+            .cmp(&left.installed)
+            .then(left.name.cmp(&right.name))
+    });
+    Ok(entries)
+}
+
+fn plugin_index_entry(path: &Utf8PathBuf, installed: bool) -> lode_core::Result<PluginIndexEntry> {
+    let manifest = path.join("plugin.toml");
+    let fallback_name = path
+        .file_name()
+        .map(str::to_string)
+        .unwrap_or_else(|| "plugin".to_string());
+    let mut entry = PluginIndexEntry {
+        name: fallback_name,
+        version: "0.0.0".to_string(),
+        description: "Local Lode plugin".to_string(),
+        source: "local".to_string(),
+        installed,
+        path: Some(path.clone()),
+        capabilities: plugin_capabilities(path),
+    };
+    if manifest.exists() {
+        let raw = fs::read_to_string(&manifest).map_err(|source| LodeError::Io {
+            path: manifest.as_str().into(),
+            source,
+        })?;
+        let value: toml::Value =
+            toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+        let plugin = value.get("plugin").unwrap_or(&value);
+        if let Some(name) = plugin.get("name").and_then(toml::Value::as_str) {
+            entry.name = name.to_string();
+        }
+        if let Some(version) = plugin.get("version").and_then(toml::Value::as_str) {
+            entry.version = version.to_string();
+        }
+        if let Some(description) = plugin.get("description").and_then(toml::Value::as_str) {
+            entry.description = description.to_string();
+        }
+    }
+    Ok(entry)
+}
+
+fn plugin_capabilities(path: &Utf8PathBuf) -> Vec<String> {
+    [
+        "templates",
+        "profiles",
+        "snippets",
+        "recipes",
+        "commands",
+        "hooks",
+        "bin",
+    ]
+    .iter()
+    .filter(|name| path.join(name).exists())
+    .map(|name| (*name).to_string())
+    .collect()
+}
+
+fn default_plugin_registry() -> Vec<PluginIndexEntry> {
+    [
+        (
+            "lode-plugin-tauri",
+            "desktop and Tauri scaffolding, commands, and checks",
+            &["templates", "commands", "recipes"][..],
+        ),
+        (
+            "lode-plugin-minecraft",
+            "Minecraft Fabric, Forge, NeoForge, and Paper project helpers",
+            &["templates", "snippets", "commands"][..],
+        ),
+        (
+            "lode-plugin-competitive",
+            "competitive programming templates, runners, and snippets",
+            &["templates", "snippets", "commands"][..],
+        ),
+        (
+            "lode-plugin-agent-pack",
+            "agent context packs for Claude, Codex, Cursor, and Windsurf",
+            &["templates", "commands", "hooks"][..],
+        ),
+    ]
+    .into_iter()
+    .map(|(name, description, capabilities)| PluginIndexEntry {
+        name: name.to_string(),
+        version: "registry".to_string(),
+        description: description.to_string(),
+        source: "builtin-index".to_string(),
+        installed: false,
+        path: None,
+        capabilities: capabilities
+            .iter()
+            .map(|item| (*item).to_string())
+            .collect(),
+    })
+    .collect()
 }
 
 fn copy_dir_recursive(source: &Utf8PathBuf, destination: &Utf8PathBuf) -> lode_core::Result<()> {

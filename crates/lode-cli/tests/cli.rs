@@ -980,6 +980,11 @@ fn plugin_add_info_and_remove_are_file_backed() {
     let source = temp.path().join("my-plugin");
     std::fs::create_dir_all(source.join("templates")).unwrap();
     std::fs::write(source.join("templates").join("README.md"), "# Plugin\n").unwrap();
+    std::fs::write(
+        source.join("plugin.toml"),
+        "[plugin]\nname = \"my-plugin\"\nversion = \"1.2.3\"\ndescription = \"Test plugin for local templates\"\n",
+    )
+    .unwrap();
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -1000,7 +1005,16 @@ fn plugin_add_info_and_remove_are_file_backed() {
         .args(["plugin", "info", "my-plugin"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("version\t1.2.3"))
         .stdout(predicate::str::contains("templates\tok"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "search", "templates", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"my-plugin\""))
+        .stdout(predicate::str::contains("\"installed\": true"));
 
     lode()
         .env("LODE_CONFIG", &config)
