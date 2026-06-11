@@ -4058,10 +4058,24 @@ fn discover_plugin_hooks(hooks: &mut Vec<DiscoveredHook>) -> lode_core::Result<(
         })?;
         if path.is_dir() {
             let name = path.file_name().unwrap_or("plugin");
-            discover_hook_dir(&format!("plugin:{name}"), &path.join("hooks"), hooks)?;
+            let hooks_dir = path.join("hooks");
+            if hooks_dir.exists() {
+                require_plugin_execute_permission(name, &path)?;
+                discover_hook_dir(&format!("plugin:{name}"), &hooks_dir, hooks)?;
+            }
         }
     }
     Ok(())
+}
+
+fn require_plugin_execute_permission(name: &str, path: &Utf8PathBuf) -> lode_core::Result<()> {
+    let security = read_plugin_security(path)?;
+    if security.execute {
+        return Ok(());
+    }
+    Err(LodeError::Message(format!(
+        "plugin {name} has hooks but does not declare permissions.execute = true"
+    )))
 }
 
 fn discover_hook_dir(

@@ -1659,6 +1659,14 @@ fn hooks_discover_plugin_global_and_project_sources() {
     std::fs::create_dir_all(&plugin_hooks).unwrap();
     std::fs::create_dir_all(&global_hooks).unwrap();
     std::fs::create_dir_all(&project_hooks).unwrap();
+    std::fs::write(
+        lode_root
+            .join("plugins")
+            .join("audit-pack")
+            .join("plugin.toml"),
+        "[plugin]\nname = \"audit-pack\"\nversion = \"0.1.0\"\n\n[permissions]\nexecute = true\n",
+    )
+    .unwrap();
     std::fs::write(plugin_hooks.join("post-init.sh"), "echo plugin\n").unwrap();
     std::fs::write(global_hooks.join("post-init.py"), "print('global')\n").unwrap();
     std::fs::write(project_hooks.join("post-init.ps1"), "Write-Host project\n").unwrap();
@@ -1682,6 +1690,29 @@ fn hooks_discover_plugin_global_and_project_sources() {
         .stdout(predicate::str::contains("plugin:audit-pack\tsh"))
         .stdout(predicate::str::contains("global\tpython"))
         .stdout(predicate::str::contains("project\tpowershell"));
+}
+
+#[test]
+fn hooks_reject_plugin_hooks_without_execute_permission() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let plugin_hooks = temp
+        .path()
+        .join(".lode")
+        .join("plugins")
+        .join("audit-pack")
+        .join("hooks");
+    std::fs::create_dir_all(&plugin_hooks).unwrap();
+    std::fs::write(plugin_hooks.join("post-init.sh"), "echo plugin\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["hooks", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "does not declare permissions.execute = true",
+        ));
 }
 
 #[test]
