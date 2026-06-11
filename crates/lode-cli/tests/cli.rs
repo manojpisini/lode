@@ -2073,10 +2073,11 @@ fn serve_renders_dashboard_snapshot() {
     lode()
         .env("LODE_CONFIG", &config)
         .current_dir(temp.path())
-        .args(["serve", "--no-color", "--no-live"])
+        .args(["serve", "--no-color", "--no-live", "--pane", "metrics"])
         .assert()
         .success()
         .stdout(predicate::str::contains("lode serve"))
+        .stdout(predicate::str::contains("Pane: metrics"))
         .stdout(predicate::str::contains("PROJECT HEALTH"))
         .stdout(predicate::str::contains("CROSS-PROJECT REGISTRY"));
 }

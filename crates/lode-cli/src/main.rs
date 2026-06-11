@@ -252,6 +252,8 @@ enum Command {
         no_color: bool,
         #[arg(long)]
         no_live: bool,
+        #[arg(long)]
+        pane: Option<String>,
     },
     Mc {
         command: String,
@@ -1064,7 +1066,11 @@ fn run() -> lode_core::Result<()> {
             no_merge,
             force,
         } => import_lodepack(path, no_merge, force)?,
-        Command::Serve { no_color, no_live } => serve_dashboard(no_color, no_live)?,
+        Command::Serve {
+            no_color,
+            no_live,
+            pane,
+        } => serve_dashboard(no_color, no_live, pane.as_deref())?,
         Command::Mc { command } => mc_command(&command)?,
         Command::Tauri { command } => tauri_command(&command)?,
         Command::Gha { command, name } => gha_command(&command, name.as_deref())?,
@@ -5997,9 +6003,13 @@ fn completions(shell: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn serve_dashboard(no_color: bool, no_live: bool) -> lode_core::Result<()> {
+fn serve_dashboard(
+    no_color: bool,
+    no_live: bool,
+    initial_pane: Option<&str>,
+) -> lode_core::Result<()> {
     if no_live || !io::stdout().is_terminal() {
-        return serve_dashboard_snapshot(no_color);
+        return serve_dashboard_snapshot(no_color, initial_pane);
     }
 
     enable_raw_mode().map_err(terminal_error)?;
@@ -6008,7 +6018,7 @@ fn serve_dashboard(no_color: bool, no_live: bool) -> lode_core::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(terminal_error)?;
 
-    let result = run_live_dashboard(&mut terminal, no_color);
+    let result = run_live_dashboard(&mut terminal, no_color, initial_pane);
 
     disable_raw_mode().map_err(terminal_error)?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(terminal_error)?;
@@ -6024,8 +6034,9 @@ fn terminal_error(error: io::Error) -> LodeError {
 fn run_live_dashboard(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     no_color: bool,
+    initial_pane: Option<&str>,
 ) -> lode_core::Result<()> {
-    let mut selected = 0usize;
+    let mut selected = dashboard_pane_index(initial_pane)?;
     loop {
         let data = dashboard_data(no_color)?;
         terminal
@@ -6419,17 +6430,20 @@ fn yes_no(value: bool) -> &'static str {
     }
 }
 
-fn serve_dashboard_snapshot(no_color: bool) -> lode_core::Result<()> {
+fn serve_dashboard_snapshot(no_color: bool, initial_pane: Option<&str>) -> lode_core::Result<()> {
     let data = dashboard_data(no_color)?;
     let color = Palette::new(no_color);
+    let selected = dashboard_pane_index(initial_pane)?;
+    let selected_name = DASHBOARD_PANES[selected];
 
     println!("{}", color.cyan("◇ lode serve"));
     println!(
         "{}",
         rule(&format!(
-            " Project: {} | Env: {} | Health: {} | Warn: {} | Fail: {} ",
+            " Project: {} | Env: {} | Pane: {} | Health: {} | Warn: {} | Fail: {} ",
             color.cyan(&data.project),
             color.cyan(&data.env_name),
+            color.cyan(selected_name),
             color.green(&data.score.to_string()),
             color.yellow(&data.convention_violations.to_string()),
             color.red(&data.secret_findings.to_string())
@@ -6538,6 +6552,20 @@ fn serve_dashboard_snapshot(no_color: bool) -> lode_core::Result<()> {
         rule(" ↑↓ Move   Tab Next   Enter Open   r Refresh   q Quit   Auto-refresh: OFF ")
     );
     Ok(())
+}
+
+const DASHBOARD_PANES: [&str; 8] = [
+    "overview", "health", "metrics", "activity", "deps", "registry", "config", "logs",
+];
+
+fn dashboard_pane_index(pane: Option<&str>) -> lode_core::Result<usize> {
+    let Some(pane) = pane else {
+        return Ok(0);
+    };
+    DASHBOARD_PANES
+        .iter()
+        .position(|candidate| *candidate == pane)
+        .ok_or_else(|| LodeError::Message(format!("unsupported dashboard pane: {pane}")))
 }
 
 struct Palette {
