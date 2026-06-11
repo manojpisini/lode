@@ -1630,7 +1630,7 @@ fn hooks_list_status_and_test_are_available() {
         .args(["hooks", "list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("pre-commit"));
+        .stdout(predicate::str::contains("pre-commit").not());
 
     lode()
         .current_dir(temp.path())
@@ -1645,6 +1645,43 @@ fn hooks_list_status_and_test_are_available() {
         .assert()
         .success()
         .stdout(predicate::str::contains("lode scan secrets"));
+}
+
+#[test]
+fn hooks_discover_plugin_global_and_project_sources() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let lode_root = temp.path().join(".lode");
+    let plugin_hooks = lode_root.join("plugins").join("audit-pack").join("hooks");
+    let global_hooks = lode_root.join("hooks");
+    let project = temp.path().join("project");
+    let project_hooks = project.join(".lode").join("hooks");
+    std::fs::create_dir_all(&plugin_hooks).unwrap();
+    std::fs::create_dir_all(&global_hooks).unwrap();
+    std::fs::create_dir_all(&project_hooks).unwrap();
+    std::fs::write(plugin_hooks.join("post-init.sh"), "echo plugin\n").unwrap();
+    std::fs::write(global_hooks.join("post-init.py"), "print('global')\n").unwrap();
+    std::fs::write(project_hooks.join("post-init.ps1"), "Write-Host project\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["hooks", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("post-init\tplugin:audit-pack"))
+        .stdout(predicate::str::contains("post-init\tglobal"))
+        .stdout(predicate::str::contains("post-init\tproject"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["hooks", "test", "post-init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("plugin:audit-pack\tsh"))
+        .stdout(predicate::str::contains("global\tpython"))
+        .stdout(predicate::str::contains("project\tpowershell"));
 }
 
 #[test]

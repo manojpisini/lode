@@ -3975,23 +3975,155 @@ fn hooks_status() -> lode_core::Result<()> {
 fn hooks(command: HooksCommand) -> lode_core::Result<()> {
     match command {
         HooksCommand::List => {
-            println!("pre-commit");
-            println!("pre-push");
+            for hook in discover_hooks()? {
+                println!("{}\t{}\t{}", hook.event, hook.source, hook.path);
+            }
         }
-        HooksCommand::Status => hooks_status()?,
+        HooksCommand::Status => {
+            hooks_status()?;
+            let hooks = discover_hooks()?;
+            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+            for hook in hooks {
+                *counts.entry(hook.event).or_default() += 1;
+            }
+            for (event, count) in counts {
+                println!("{event}\t{count} hook(s)");
+            }
+        }
         HooksCommand::Test { event } => test_hook(&event)?,
     }
     Ok(())
 }
 
 fn test_hook(event: &str) -> lode_core::Result<()> {
-    let script = match event {
-        "pre-commit" => "lode check . && lode scan secrets .",
-        "pre-push" => "lode task test",
-        other => return Err(LodeError::Message(format!("unknown hook event: {other}"))),
-    };
-    println!("hook {event}: {script}");
+    let mut hooks = discover_hooks()?;
+    hooks.retain(|hook| hook.event == event);
+    if hooks.is_empty() {
+        let script = match event {
+            "pre-commit" => "lode check . && lode scan secrets .",
+            "pre-push" => "lode task test",
+            other => return Err(LodeError::Message(format!("unknown hook event: {other}"))),
+        };
+        println!("hook {event}: {script}");
+        return Ok(());
+    }
+    println!("hook execution plan for {event}:");
+    for hook in hooks {
+        println!("{}\t{}\t{}", hook.source, hook.runtime, hook.path);
+    }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiscoveredHook {
+    event: String,
+    source: String,
+    runtime: String,
+    path: Utf8PathBuf,
+}
+
+fn discover_hooks() -> lode_core::Result<Vec<DiscoveredHook>> {
+    let mut hooks = Vec::new();
+    discover_plugin_hooks(&mut hooks)?;
+    discover_hook_dir("global", &global_dir()?.join("hooks"), &mut hooks)?;
+    discover_hook_dir(
+        "project",
+        &Utf8PathBuf::from(".lode").join("hooks"),
+        &mut hooks,
+    )?;
+    hooks.sort_by(|left, right| {
+        hook_source_rank(&left.source)
+            .cmp(&hook_source_rank(&right.source))
+            .then(left.event.cmp(&right.event))
+            .then(left.path.cmp(&right.path))
+    });
+    Ok(hooks)
+}
+
+fn discover_plugin_hooks(hooks: &mut Vec<DiscoveredHook>) -> lode_core::Result<()> {
+    let root = global_asset_dir("plugins")?;
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&root).map_err(|source| LodeError::Io {
+        path: root.as_str().into(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: root.as_str().into(),
+            source,
+        })?;
+        let path = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+        })?;
+        if path.is_dir() {
+            let name = path.file_name().unwrap_or("plugin");
+            discover_hook_dir(&format!("plugin:{name}"), &path.join("hooks"), hooks)?;
+        }
+    }
+    Ok(())
+}
+
+fn discover_hook_dir(
+    source: &str,
+    dir: &Utf8PathBuf,
+    hooks: &mut Vec<DiscoveredHook>,
+) -> lode_core::Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir).map_err(|source| LodeError::Io {
+        path: dir.as_str().into(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: dir.as_str().into(),
+            source,
+        })?;
+        let path = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+        })?;
+        if path.is_file() {
+            if let Some((event, runtime)) = hook_file_event_runtime(&path) {
+                hooks.push(DiscoveredHook {
+                    event,
+                    runtime,
+                    source: source.to_string(),
+                    path,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hook_file_event_runtime(path: &Utf8PathBuf) -> Option<(String, String)> {
+    let file_name = path.file_name()?;
+    let (event, runtime) = file_name
+        .rsplit_once('.')
+        .map(|(event, ext)| (event.to_string(), hook_runtime(ext)))
+        .unwrap_or_else(|| (file_name.to_string(), "sh".to_string()));
+    Some((event, runtime))
+}
+
+fn hook_runtime(extension: &str) -> String {
+    match extension {
+        "ps1" => "powershell",
+        "py" => "python",
+        "js" => "node",
+        "lua" => "lua",
+        _ => "sh",
+    }
+    .to_string()
+}
+
+fn hook_source_rank(source: &str) -> usize {
+    match source {
+        source if source.starts_with("plugin:") => 0,
+        "global" => 1,
+        "project" => 2,
+        _ => 3,
+    }
 }
 
 fn env_command(command: EnvCommand) -> lode_core::Result<()> {
