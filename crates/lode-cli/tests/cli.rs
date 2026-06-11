@@ -1325,9 +1325,21 @@ fn export_filters_and_import_conflict_modes_work() {
         .arg("setup")
         .assert()
         .success();
+    std::fs::write(
+        source.path().join(".lode").join("registry.json"),
+        "{\"projects\":[]}",
+    )
+    .unwrap();
     lode()
         .env("LODE_CONFIG", &source_config)
-        .args(["export", "--no-templates", "--no-snippets", "--out"])
+        .args([
+            "export",
+            "--no-templates",
+            "--no-snippets",
+            "--no-commands",
+            "--include-metrics",
+            "--out",
+        ])
         .arg(&pack)
         .assert()
         .success();
@@ -1335,6 +1347,8 @@ fn export_filters_and_import_conflict_modes_work() {
     let raw = std::fs::read_to_string(&pack).unwrap();
     assert!(!raw.contains("templates/root/README.md"));
     assert!(!raw.contains("snippets/rs/serde-struct.snippet"));
+    assert!(!raw.contains("commands/health.toml"));
+    assert!(raw.contains("registry.json"));
 
     let dest = tempfile::tempdir().unwrap();
     let dest_config = isolated_config(&dest);

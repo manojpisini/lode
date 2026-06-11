@@ -235,6 +235,10 @@ enum Command {
         no_licenses: bool,
         #[arg(long)]
         no_recipes: bool,
+        #[arg(long)]
+        no_commands: bool,
+        #[arg(long)]
+        include_metrics: bool,
     },
     Import {
         path: Utf8PathBuf,
@@ -870,6 +874,8 @@ struct ExportOptions {
     no_snippets: bool,
     no_licenses: bool,
     no_recipes: bool,
+    no_commands: bool,
+    include_metrics: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -1039,6 +1045,8 @@ fn run() -> lode_core::Result<()> {
             no_snippets,
             no_licenses,
             no_recipes,
+            no_commands,
+            include_metrics,
         } => export_lodepack(
             out,
             ExportOptions {
@@ -1047,6 +1055,8 @@ fn run() -> lode_core::Result<()> {
                 no_snippets,
                 no_licenses,
                 no_recipes,
+                no_commands,
+                include_metrics,
             },
         )?,
         Command::Import {
@@ -5185,7 +5195,10 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
         version: 1,
         files: Vec::new(),
     };
-    let mut paths = vec!["config.toml", "profiles", "commands"];
+    let mut paths = vec!["config.toml", "profiles"];
+    if !options.no_commands {
+        paths.push("commands");
+    }
     if !options.no_templates {
         paths.push("templates");
     }
@@ -5200,6 +5213,10 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
     }
     if !options.no_plugins {
         paths.push("plugins");
+    }
+    if options.include_metrics {
+        paths.push("registry.json");
+        paths.push("metrics.json");
     }
     for path in paths {
         collect_pack_files(&root, &root.join(path), &mut pack)?;
