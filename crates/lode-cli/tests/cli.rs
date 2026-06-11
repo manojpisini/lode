@@ -392,6 +392,29 @@ fn init_dry_run_writes_nothing() {
 }
 
 #[test]
+fn new_alias_dry_run_matches_init() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["new", "alias-app", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dry run"))
+        .stdout(predicate::str::contains("alias-app"));
+
+    assert!(!temp.path().join("alias-app").exists());
+}
+
+#[test]
 fn init_creates_default_project_layout() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
@@ -2307,6 +2330,7 @@ fn self_info_clean_upgrade_and_completions_work() {
         .assert()
         .success()
         .stdout(predicate::str::contains("complete -W"))
+        .stdout(predicate::str::contains("new"))
         .stdout(predicate::str::contains("_lode_chdir_hook"))
         .stdout(predicate::str::contains("lp()"));
 

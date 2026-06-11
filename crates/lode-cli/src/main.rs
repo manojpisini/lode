@@ -8,7 +8,7 @@ use std::{
 };
 
 use camino::Utf8PathBuf;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -50,6 +50,7 @@ enum Command {
         #[arg(long)]
         defaults: bool,
     },
+    #[command(alias = "new")]
     Init(InitArgs),
     Add {
         component: String,
@@ -6906,8 +6907,17 @@ Register-ArgumentCompleter -Native -CommandName lode -ScriptBlock {{
     Ok(script)
 }
 
-fn command_words() -> &'static str {
-    "setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git hooks env license projects toolchain pkg time metrics workspace daemon log export import serve mcp lsp mc tauri gha cp self upgrade completions version"
+fn command_words() -> String {
+    let mut words = Cli::command()
+        .get_subcommands()
+        .flat_map(|command| {
+            std::iter::once(command.get_name().to_string())
+                .chain(command.get_all_aliases().map(str::to_string))
+        })
+        .collect::<Vec<_>>();
+    words.sort();
+    words.dedup();
+    words.join(" ")
 }
 
 fn default_completion_path(shell: &str) -> lode_core::Result<Utf8PathBuf> {
