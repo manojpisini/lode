@@ -331,7 +331,12 @@ enum ConfigCommand {
         #[arg(long)]
         section: Option<String>,
     },
-    Validate,
+    Validate {
+        #[arg(long)]
+        defaults: bool,
+        #[arg(long)]
+        project: bool,
+    },
     Diff,
     Set {
         key: String,
@@ -1351,9 +1356,24 @@ fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
                 ),
             }
         }
-        ConfigCommand::Validate => {
-            load_global_config()?;
-            println!("config valid");
+        ConfigCommand::Validate { defaults, project } => {
+            if defaults && project {
+                return Err(LodeError::Message(
+                    "--defaults and --project cannot be used together".to_string(),
+                ));
+            }
+            if project {
+                let value = load_project_config_value()?;
+                validate_config_value_schema(&value)?;
+                println!("project config valid");
+            } else if defaults {
+                let value = toml::Value::try_from(default_config())?;
+                validate_config_value_schema(&value)?;
+                println!("default config valid");
+            } else {
+                load_global_config()?;
+                println!("config valid");
+            }
         }
         ConfigCommand::Diff => {
             let default = default_config();
@@ -1417,6 +1437,21 @@ fn config_section_value(
         .get(section)
         .cloned()
         .ok_or_else(|| LodeError::Message(format!("unknown config section: {section}")))
+}
+
+fn validate_config_value_schema(value: &toml::Value) -> lode_core::Result<()> {
+    let found = value
+        .get("schema_version")
+        .and_then(toml::Value::as_integer)
+        .ok_or_else(|| LodeError::Message("missing schema_version".to_string()))?;
+    if found == i64::from(lode_core::SCHEMA_VERSION) {
+        Ok(())
+    } else {
+        Err(LodeError::SchemaMismatch {
+            expected: lode_core::SCHEMA_VERSION,
+            found: u32::try_from(found).unwrap_or_default(),
+        })
+    }
 }
 
 fn print_config_diff(

@@ -193,6 +193,78 @@ fn config_show_project_reads_project_config() {
 }
 
 #[test]
+fn config_validate_supports_project_and_defaults() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["init", "project-app"])
+        .assert()
+        .success();
+
+    lode()
+        .args(["config", "validate", "--defaults"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("default config valid"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path().join("project-app"))
+        .args(["config", "validate", "--project"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("project config valid"));
+}
+
+#[test]
+fn config_validate_project_schema_mismatch_exits_schema() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["init", "project-app"])
+        .assert()
+        .success();
+
+    let project_config = temp
+        .path()
+        .join("project-app")
+        .join(".lode")
+        .join("project.toml");
+    let raw = std::fs::read_to_string(&project_config).unwrap();
+    std::fs::write(
+        &project_config,
+        raw.replacen("schema_version = 3", "schema_version = 2", 1),
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path().join("project-app"))
+        .args(["config", "validate", "--project"])
+        .assert()
+        .code(6)
+        .stderr(predicate::str::contains("schema version mismatch"));
+}
+
+#[test]
 fn template_and_snippet_lists_support_json() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
