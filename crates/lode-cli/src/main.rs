@@ -110,6 +110,12 @@ enum Command {
         #[arg(long)]
         list_prompts: bool,
     },
+    Lsp {
+        #[arg(long)]
+        stdio: bool,
+        #[arg(long)]
+        capabilities: bool,
+    },
     Agent {
         #[command(subcommand)]
         command: AgentCommand,
@@ -1017,6 +1023,10 @@ fn run() -> lode_core::Result<()> {
             list_resources,
             list_prompts,
         } => mcp_command(http, port, list_tools, list_resources, list_prompts)?,
+        Command::Lsp {
+            stdio,
+            capabilities,
+        } => lsp_command(stdio, capabilities)?,
         Command::Agent { command } => agent_command(command)?,
         Command::Snippet { command } => snippet_command(command)?,
         Command::Task { target, no_store } => task_command(target, no_store)?,
@@ -2542,6 +2552,150 @@ fn run_mcp_stdio() -> lode_core::Result<()> {
         println!("{}", mcp_handle_request(&request));
     }
     Ok(())
+}
+
+fn lsp_command(stdio: bool, capabilities: bool) -> lode_core::Result<()> {
+    if capabilities {
+        println!("{}", json_pretty(&lsp_capabilities())?);
+    }
+    if capabilities && !stdio {
+        return Ok(());
+    }
+    if stdio {
+        return run_lsp_stdio();
+    }
+    println!("lode lsp is available over stdio; run `lode lsp --stdio`");
+    Ok(())
+}
+
+fn run_lsp_stdio() -> lode_core::Result<()> {
+    let mut input = String::new();
+    io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|source| LodeError::Io {
+            path: "stdin".into(),
+            source,
+        })?;
+    for line in input.lines().filter(|line| !line.trim().is_empty()) {
+        let request: Value = serde_json::from_str(line)
+            .map_err(|error| LodeError::Message(format!("invalid LSP request: {error}")))?;
+        if let Some(response) = lsp_handle_request(&request) {
+            println!("{response}");
+        }
+    }
+    Ok(())
+}
+
+fn lsp_handle_request(request: &Value) -> Option<String> {
+    let method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    match method {
+        "initialize" => Some(
+            json!({
+                "jsonrpc": "2.0",
+                "id": request.get("id").cloned().unwrap_or(Value::Null),
+                "result": {
+                    "serverInfo": { "name": "lode-lsp", "version": env!("CARGO_PKG_VERSION") },
+                    "capabilities": lsp_capabilities()
+                }
+            })
+            .to_string(),
+        ),
+        "shutdown" => Some(
+            json!({
+                "jsonrpc": "2.0",
+                "id": request.get("id").cloned().unwrap_or(Value::Null),
+                "result": Value::Null
+            })
+            .to_string(),
+        ),
+        "textDocument/didOpen" | "textDocument/didSave" => {
+            let uri = request
+                .pointer("/params/textDocument/uri")
+                .and_then(Value::as_str)
+                .unwrap_or("file:///unknown");
+            let text = request
+                .pointer("/params/textDocument/text")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            Some(
+                json!({
+                    "jsonrpc": "2.0",
+                    "method": "textDocument/publishDiagnostics",
+                    "params": {
+                        "uri": uri,
+                        "diagnostics": lsp_diagnostics(uri, text)
+                    }
+                })
+                .to_string(),
+            )
+        }
+        "initialized" | "exit" => None,
+        _ => Some(
+            json!({
+                "jsonrpc": "2.0",
+                "id": request.get("id").cloned().unwrap_or(Value::Null),
+                "error": { "code": -32601, "message": format!("method not found: {method}") }
+            })
+            .to_string(),
+        ),
+    }
+}
+
+fn lsp_capabilities() -> Value {
+    json!({
+        "textDocumentSync": {
+            "openClose": true,
+            "change": 1,
+            "save": { "includeText": true }
+        },
+        "diagnosticProvider": {
+            "interFileDependencies": false,
+            "workspaceDiagnostics": false
+        }
+    })
+}
+
+fn lsp_diagnostics(uri: &str, text: &str) -> Vec<Value> {
+    let mut diagnostics = Vec::new();
+    if should_require_signature(uri)
+        && !text
+            .lines()
+            .take(20)
+            .any(|line| line.contains("@file") || line.contains("@project"))
+    {
+        diagnostics.push(json!({
+            "range": {
+                "start": { "line": 0, "character": 0 },
+                "end": { "line": 0, "character": 1 }
+            },
+            "severity": 3,
+            "source": "lode",
+            "message": "file is missing a lode signature header"
+        }));
+    }
+    for (line_index, line) in text.lines().enumerate() {
+        if line.contains("ghp_") || line.contains("github_pat_") {
+            diagnostics.push(json!({
+                "range": {
+                    "start": { "line": line_index, "character": 0 },
+                    "end": { "line": line_index, "character": line.len() }
+                },
+                "severity": 1,
+                "source": "lode",
+                "message": "possible secret token"
+            }));
+        }
+    }
+    diagnostics
+}
+
+fn should_require_signature(uri: &str) -> bool {
+    ["rs", "ts", "js", "py", "go", "java", "c", "cpp", "h", "hpp"]
+        .iter()
+        .any(|extension| uri.ends_with(&format!(".{extension}")))
 }
 
 fn mcp_handle_request(request: &Value) -> String {
@@ -6545,7 +6699,7 @@ Register-ArgumentCompleter -Native -CommandName lode -ScriptBlock {{
 }
 
 fn command_words() -> &'static str {
-    "setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git hooks env license projects toolchain pkg time metrics workspace daemon log export import serve mc tauri gha cp self upgrade completions version"
+    "setup init add sync info config template profile recipe snippet commands task dev build test fmt lint check fix rename rules sign stamp verify clean fresh ship release health explain audit doctor scan git hooks env license projects toolchain pkg time metrics workspace daemon log export import serve mcp lsp mc tauri gha cp self upgrade completions version"
 }
 
 fn default_completion_path(shell: &str) -> lode_core::Result<Utf8PathBuf> {

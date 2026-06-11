@@ -1413,6 +1413,29 @@ fn mcp_stdio_handles_tool_calls() {
 }
 
 #[test]
+fn lsp_stdio_handles_initialize_and_diagnostics() {
+    lode()
+        .write_stdin(
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///demo/src/main.rs","text":"fn main() {\n let token = \"ghp_secret\";\n}\n"}}}
+"#,
+        )
+        .args(["lsp", "--stdio"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lode-lsp"))
+        .stdout(predicate::str::contains("textDocument/publishDiagnostics"))
+        .stdout(predicate::str::contains("missing a lode signature"))
+        .stdout(predicate::str::contains("possible secret token"));
+
+    lode()
+        .args(["lsp", "--capabilities"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("textDocumentSync"));
+}
+
+#[test]
 fn agent_sync_plan_and_export_are_file_backed() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join("_ref_")).unwrap();
