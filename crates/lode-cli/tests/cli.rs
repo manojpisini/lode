@@ -2503,6 +2503,34 @@ fn pkg_dry_run_translates_native_commands() {
         .success()
         .stdout(predicate::str::contains("would run: go vulncheck ./..."))
         .stdout(predicate::str::contains("would run: lode scan secrets"));
+
+    let gradle = tempfile::tempdir().unwrap();
+    std::fs::write(
+        gradle.path().join("build.gradle"),
+        "plugins { id 'java' }\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(gradle.path())
+        .args(["pkg", "why", "junit", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would run: gradle dependencyInsight --dependency junit",
+        ));
+
+    let maven = tempfile::tempdir().unwrap();
+    std::fs::write(maven.path().join("pom.xml"), "<project />\n").unwrap();
+
+    lode()
+        .current_dir(maven.path())
+        .args(["pkg", "update", "org.junit.jupiter:junit-jupiter", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would run: mvn versions:use-latest-releases -DgenerateBackupPoms=false -Dincludes=org.junit.jupiter:junit-jupiter",
+        ));
 }
 
 #[test]

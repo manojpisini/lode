@@ -5227,6 +5227,8 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 "pyproject.toml",
                 "go.mod",
                 "build.gradle",
+                "settings.gradle",
+                "pom.xml",
             ] {
                 if Utf8PathBuf::from(file).exists() {
                     println!("{file}");
@@ -5239,7 +5241,11 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
         PkgCommand::Update { name, dry_run } => {
             let args = package_update_args(&manager, name.as_deref())?;
             if dry_run {
-                println!("would run: {} {}", manager, args.join(" "));
+                println!(
+                    "would run: {} {}",
+                    package_command(&manager),
+                    args.join(" ")
+                );
             } else {
                 run_package_manager(&manager, args)?;
             }
@@ -5266,7 +5272,11 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
         PkgCommand::Lock { dry_run } => {
             let args = package_lock_args(&manager)?;
             if dry_run {
-                println!("would run: {} {}", manager, args.join(" "));
+                println!(
+                    "would run: {} {}",
+                    package_command(&manager),
+                    args.join(" ")
+                );
             } else {
                 run_package_manager(&manager, args)?;
             }
@@ -5305,20 +5315,28 @@ fn run_package_manager(manager: &str, args: Vec<String>) -> lode_core::Result<()
             "no supported package manager files found".to_string(),
         ));
     }
-    let status = ProcessCommand::new(manager)
+    let command = package_command(manager);
+    let status = ProcessCommand::new(command)
         .args(&args)
         .status()
         .map_err(|source| LodeError::Io {
-            path: manager.into(),
+            path: command.into(),
             source,
         })?;
     if status.success() {
         Ok(())
     } else {
         Err(LodeError::Message(format!(
-            "{manager} {} failed with {status}",
+            "{command} {} failed with {status}",
             args.join(" ")
         )))
+    }
+}
+
+fn package_command(manager: &str) -> &str {
+    match manager {
+        "maven" => "mvn",
+        other => other,
     }
 }
 
@@ -5328,7 +5346,7 @@ fn run_or_print_package_manager(
     dry_run: bool,
 ) -> lode_core::Result<()> {
     if dry_run {
-        println!("would run: {} {}", manager, args.join(" "));
+        println!("would run: {} {}", package_command(manager), args.join(" "));
         Ok(())
     } else {
         run_package_manager(manager, args)
@@ -5343,6 +5361,14 @@ fn package_outdated_args(manager: &str) -> lode_core::Result<Vec<String>> {
         "pip" => Ok(vec!["list".into(), "--outdated".into()]),
         "go" => Ok(vec!["list".into(), "-m".into(), "-u".into(), "all".into()]),
         "bundler" => Ok(vec!["outdated".into()]),
+        "gradle" => Ok(vec![
+            "dependencyUpdates".into(),
+            "-Drevision=release".into(),
+        ]),
+        "maven" => Ok(vec![
+            "versions:display-dependency-updates".into(),
+            "versions:display-plugin-updates".into(),
+        ]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
@@ -5360,6 +5386,11 @@ fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<V
         "pip" => vec!["install".to_string(), "-U".to_string()],
         "go" => vec!["get".to_string(), "-u".to_string()],
         "bundler" => vec!["update".to_string()],
+        "gradle" => vec!["--refresh-dependencies".to_string()],
+        "maven" => vec![
+            "versions:use-latest-releases".to_string(),
+            "-DgenerateBackupPoms=false".to_string(),
+        ],
         _ => {
             return Err(LodeError::Message(
                 "no supported package manager files found".to_string(),
@@ -5367,7 +5398,11 @@ fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<V
         }
     };
     if let Some(name) = name {
-        args.push(name.to_string());
+        if manager == "maven" {
+            args.push(format!("-Dincludes={name}"));
+        } else {
+            args.push(name.to_string());
+        }
     } else if manager == "go" {
         args.push("./...".to_string());
     } else if manager == "pip" {
@@ -5389,6 +5424,8 @@ fn package_audit_args(manager: &str) -> lode_core::Result<Vec<String>> {
         "pip" => Ok(vec!["audit".into()]),
         "go" => Ok(vec!["vulncheck".into(), "./...".into()]),
         "bundler" => Ok(vec!["audit".into(), "check".into()]),
+        "gradle" => Ok(vec!["dependencyCheckAnalyze".into()]),
+        "maven" => Ok(vec!["org.owasp:dependency-check-maven:check".into()]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
@@ -5410,6 +5447,11 @@ fn package_lock_args(manager: &str) -> lode_core::Result<Vec<String>> {
         "pip" => Ok(vec!["freeze".into()]),
         "go" => Ok(vec!["mod".into(), "tidy".into()]),
         "bundler" => Ok(vec!["lock".into()]),
+        "gradle" => Ok(vec!["dependencies".into(), "--write-locks".into()]),
+        "maven" => Ok(vec![
+            "dependency:go-offline".into(),
+            "-DgenerateBackupPoms=false".into(),
+        ]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
@@ -5426,6 +5468,12 @@ fn package_why_args(manager: &str, name: &str) -> lode_core::Result<Vec<String>>
         "pip" => Ok(vec!["show".into(), name.into()]),
         "go" => Ok(vec!["mod".into(), "why".into(), name.into()]),
         "bundler" => Ok(vec!["why".into(), name.into()]),
+        "gradle" => Ok(vec![
+            "dependencyInsight".into(),
+            "--dependency".into(),
+            name.into(),
+        ]),
+        "maven" => Ok(vec!["dependency:tree".into(), format!("-Dincludes={name}")]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
@@ -5440,6 +5488,12 @@ fn package_info_args(manager: &str, name: &str) -> lode_core::Result<Vec<String>
         "pip" => Ok(vec!["show".into(), name.into()]),
         "go" => Ok(vec!["list".into(), "-m".into(), name.into()]),
         "bundler" => Ok(vec!["info".into(), name.into()]),
+        "gradle" => Ok(vec![
+            "dependencyInsight".into(),
+            "--dependency".into(),
+            name.into(),
+        ]),
+        "maven" => Ok(vec!["dependency:tree".into(), format!("-Dincludes={name}")]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
@@ -5453,6 +5507,8 @@ fn package_graph(format: &str) -> lode_core::Result<()> {
         ("pyproject.toml", "python"),
         ("go.mod", "go"),
         ("build.gradle", "gradle"),
+        ("settings.gradle", "gradle"),
+        ("pom.xml", "maven"),
     ];
     match format {
         "json" => {
@@ -5885,6 +5941,12 @@ fn detect_package_manager() -> Option<String> {
         Some("go".to_string())
     } else if Utf8PathBuf::from("Gemfile.lock").exists() || Utf8PathBuf::from("Gemfile").exists() {
         Some("bundler".to_string())
+    } else if Utf8PathBuf::from("build.gradle").exists()
+        || Utf8PathBuf::from("settings.gradle").exists()
+    {
+        Some("gradle".to_string())
+    } else if Utf8PathBuf::from("pom.xml").exists() {
+        Some("maven".to_string())
     } else {
         None
     }
