@@ -588,6 +588,7 @@ fn add_component_items(component: &str, items: &mut Vec<ManifestItem>) {
             items.push(item("vscode/settings.json", ".vscode/settings.json"));
             items.push(item("vscode/extensions.json", ".vscode/extensions.json"));
             items.push(item("vscode/tasks.json", ".vscode/tasks.json"));
+            items.push(item("vscode/launch.json", ".vscode/launch.json"));
         }
         "zed" => {
             items.push(item("zed/settings.json", ".zed/settings.json"));
@@ -595,6 +596,10 @@ fn add_component_items(component: &str, items: &mut Vec<ManifestItem>) {
         }
         "nvim" | "neovim" => {
             items.push(item("neovim/lode.lua", ".config/nvim/lua/lode.lua"));
+            items.push(item(
+                "neovim/snippets.lua",
+                ".config/nvim/lua/lode/snippets.lua",
+            ));
         }
         "agent" | "agent-all" => {
             items.push(item("agent/CLAUDE.md", "CLAUDE.md"));

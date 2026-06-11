@@ -475,6 +475,11 @@ fn init_with_rust_profile_creates_language_files() {
             .unwrap()
             .contains("lode: open dashboard")
     );
+    assert!(
+        std::fs::read_to_string(project.join(".vscode").join("launch.json"))
+            .unwrap()
+            .contains("lode serve")
+    );
 }
 
 #[test]
@@ -523,6 +528,16 @@ fn add_editor_integrations_scaffolds_files() {
     )
     .unwrap()
     .contains("daemon_auto_start"));
+    assert!(std::fs::read_to_string(
+        project
+            .join(".config")
+            .join("nvim")
+            .join("lua")
+            .join("lode")
+            .join("snippets.lua")
+    )
+    .unwrap()
+    .contains("lode_header"));
 }
 
 #[test]

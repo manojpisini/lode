@@ -151,9 +151,11 @@ const TEMPLATE_PATHS: &[&str] = &[
     "vscode/settings.json",
     "vscode/extensions.json",
     "vscode/tasks.json",
+    "vscode/launch.json",
     "zed/settings.json",
     "zed/tasks.json",
     "neovim/lode.lua",
+    "neovim/snippets.lua",
     "agent/AGENTS.md",
     "agent/CLAUDE.md",
     "agent/CODEX.md",
@@ -412,6 +414,28 @@ fn vscode_tasks() -> String {
     .to_string()
 }
 
+fn vscode_launch() -> String {
+    r#"{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Lode: serve dashboard",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "lode serve"
+    },
+    {
+      "name": "Lode: run tests",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "lode test"
+    }
+  ]
+}
+"#
+    .to_string()
+}
+
 fn zed_settings() -> String {
     r#"{
   "tab_size": 2,
@@ -497,6 +521,32 @@ return M
     .to_string()
 }
 
+fn neovim_snippets_lua() -> String {
+    r#"return {
+  lode_header = {
+    prefix = "lode-header",
+    body = {
+      "---",
+      "title: ${1:title}",
+      "created: ${2:today}",
+      "updated: ${2:today}",
+      "owner: ${3:owner}",
+      "---",
+      "",
+      "$0",
+    },
+    description = "Lode metadata header",
+  },
+  lode_task = {
+    prefix = "lode-task",
+    body = { "- [ ] ${1:task}" },
+    description = "Lode markdown task",
+  },
+}
+"#
+    .to_string()
+}
+
 pub fn template_contents(path: &str, context: &RenderContext) -> String {
     let project = context.get("project").unwrap_or("project");
     let ident = slug_to_ident(project);
@@ -563,9 +613,11 @@ pub fn template_contents(path: &str, context: &RenderContext) -> String {
         "vscode/settings.json" => vscode_settings(),
         "vscode/extensions.json" => vscode_extensions(),
         "vscode/tasks.json" => vscode_tasks(),
+        "vscode/launch.json" => vscode_launch(),
         "zed/settings.json" => zed_settings(),
         "zed/tasks.json" => zed_tasks(),
         "neovim/lode.lua" => neovim_lode_lua(),
+        "neovim/snippets.lua" => neovim_snippets_lua(),
         "agent/AGENTS.md" | "agent/CLAUDE.md" | "agent/CODEX.md" => format!("# Agent Context for {project}\n\nRead `_ref_` for permanent truth and `_ctx_` for current working context.\n"),
         "agent/.cursorrules" | "agent/.windsurfrules" => "Follow `_ref_/CONVENTIONS.md`; prefer small, verified changes.\n".to_string(),
         "agent/.mcp.json" => "{\n  \"servers\": {}\n}\n".to_string(),
