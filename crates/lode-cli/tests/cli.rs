@@ -124,6 +124,39 @@ fn config_show_defaults_prints_valid_json() {
 }
 
 #[test]
+fn config_show_supports_section_filtering() {
+    lode()
+        .args([
+            "config",
+            "show",
+            "--defaults",
+            "--section",
+            "identity",
+            "--format",
+            "toml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("author"))
+        .stdout(predicate::str::contains("license"))
+        .stdout(predicate::str::contains("schema_version").not());
+
+    lode()
+        .args([
+            "config",
+            "show",
+            "--defaults",
+            "--section",
+            "git",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"initial_branch\""));
+}
+
+#[test]
 fn template_and_snippet_lists_support_json() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

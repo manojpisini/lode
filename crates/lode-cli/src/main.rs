@@ -326,6 +326,8 @@ enum ConfigCommand {
         format: OutputFormat,
         #[arg(long)]
         defaults: bool,
+        #[arg(long)]
+        section: Option<String>,
     },
     Validate,
     Diff,
@@ -1319,17 +1321,22 @@ fn run_git_in<const N: usize>(project_dir: &Utf8PathBuf, args: [&str; N]) -> lod
 
 fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
     match command {
-        ConfigCommand::Show { format, defaults } => {
+        ConfigCommand::Show {
+            format,
+            defaults,
+            section,
+        } => {
             let config = if defaults {
                 default_config()
             } else {
                 load_global_config()?
             };
+            let value = config_section_value(&config, section.as_deref())?;
             match format {
-                OutputFormat::Toml => println!("{}", toml::to_string_pretty(&config)?),
+                OutputFormat::Toml => println!("{}", toml::to_string_pretty(&value)?),
                 OutputFormat::Json => println!(
                     "{}",
-                    serde_json::to_string_pretty(&config)
+                    serde_json::to_string_pretty(&value)
                         .map_err(|error| LodeError::Message(error.to_string()))?
                 ),
             }
@@ -1375,6 +1382,20 @@ fn default_config_value(key: &str) -> lode_core::Result<String> {
         _ => return Err(LodeError::Message(format!("unsupported config key: {key}"))),
     };
     Ok(value)
+}
+
+fn config_section_value(
+    config: &lode_core::LodeConfig,
+    section: Option<&str>,
+) -> lode_core::Result<toml::Value> {
+    let value = toml::Value::try_from(config)?;
+    let Some(section) = section else {
+        return Ok(value);
+    };
+    value
+        .get(section)
+        .cloned()
+        .ok_or_else(|| LodeError::Message(format!("unknown config section: {section}")))
 }
 
 fn print_config_diff(
