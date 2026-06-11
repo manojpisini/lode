@@ -2390,6 +2390,32 @@ fn release_bumps_cargo_version() {
     assert!(std::fs::read_to_string(temp.path().join("Cargo.toml"))
         .unwrap()
         .contains("version = \"0.1.1\""));
+    assert!(!temp
+        .path()
+        .join(".lode")
+        .join("release.rollback.json")
+        .exists());
+}
+
+#[test]
+fn release_bumps_workspace_cargo_version() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("Cargo.toml"),
+        "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"1.2.3\"\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["release", "--bump", "minor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1.3.0"));
+
+    assert!(std::fs::read_to_string(temp.path().join("Cargo.toml"))
+        .unwrap()
+        .contains("version = \"1.3.0\""));
 }
 
 #[test]

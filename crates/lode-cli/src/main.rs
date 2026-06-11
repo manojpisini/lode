@@ -3061,13 +3061,105 @@ fn release(version: Option<String>, bump: Option<String>, dry_run: bool) -> lode
     if files.is_empty() {
         return Err(LodeError::Message("no version files found".to_string()));
     }
+    let rollback = build_release_rollback(&files, &current, &next)?;
+    if !dry_run {
+        write_release_rollback(&rollback)?;
+    }
     for file in files {
         if dry_run {
             println!("would update {file} {current} -> {next}");
         } else {
-            update_version_file(&file, &next)?;
+            if let Err(error) = update_version_file(&file, &next) {
+                apply_release_rollback(&rollback)?;
+                return Err(error);
+            }
             println!("updated {file} to {next}");
         }
+    }
+    if !dry_run {
+        clear_release_rollback()?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ReleaseRollback {
+    from: String,
+    to: String,
+    files: Vec<ReleaseRollbackFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ReleaseRollbackFile {
+    path: Utf8PathBuf,
+    contents: String,
+}
+
+fn build_release_rollback(
+    files: &[String],
+    from: &str,
+    to: &str,
+) -> lode_core::Result<ReleaseRollback> {
+    let mut rollback = ReleaseRollback {
+        from: from.to_string(),
+        to: to.to_string(),
+        files: Vec::new(),
+    };
+    for file in files {
+        let contents = fs::read_to_string(file).map_err(|source| LodeError::Io {
+            path: file.into(),
+            source,
+        })?;
+        rollback.files.push(ReleaseRollbackFile {
+            path: Utf8PathBuf::from(file),
+            contents,
+        });
+    }
+    Ok(rollback)
+}
+
+fn release_rollback_path() -> Utf8PathBuf {
+    Utf8PathBuf::from(".lode").join("release.rollback.json")
+}
+
+fn write_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
+    let path = release_rollback_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(rollback)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn apply_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
+    for file in &rollback.files {
+        fs::write(&file.path, &file.contents).map_err(|source| LodeError::Io {
+            path: file.path.as_str().into(),
+            source,
+        })?;
+    }
+    clear_release_rollback()?;
+    eprintln!(
+        "release rollback applied: {} -> {}",
+        rollback.to, rollback.from
+    );
+    Ok(())
+}
+
+fn clear_release_rollback() -> lode_core::Result<()> {
+    let path = release_rollback_path();
+    if path.exists() {
+        fs::remove_file(&path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
     }
     Ok(())
 }
@@ -3075,14 +3167,15 @@ fn release(version: Option<String>, bump: Option<String>, dry_run: bool) -> lode
 fn detect_project_version() -> Option<String> {
     for file in version_files() {
         let raw = fs::read_to_string(&file).ok()?;
-        if file == "Cargo.toml" || file == "pyproject.toml" {
-            for line in raw.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("version") {
-                    return trimmed
-                        .split_once('=')
-                        .map(|(_, value)| value.trim().trim_matches('"').to_string());
-                }
+        if file == "Cargo.toml" {
+            if let Some(version) = toml_section_version(&raw, "package")
+                .or_else(|| toml_section_version(&raw, "workspace.package"))
+            {
+                return Some(version);
+            }
+        } else if file == "pyproject.toml" {
+            if let Some(version) = toml_section_version(&raw, "project") {
+                return Some(version);
             }
         } else if file == "package.json" {
             let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -3090,6 +3183,23 @@ fn detect_project_version() -> Option<String> {
                 .get("version")
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_string);
+        }
+    }
+    None
+}
+
+fn toml_section_version(raw: &str, wanted_section: &str) -> Option<String> {
+    let mut section = "";
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            section = trimmed.trim_matches(['[', ']']);
+            continue;
+        }
+        if section == wanted_section && trimmed.starts_with("version") {
+            return trimmed
+                .split_once('=')
+                .map(|(_, value)| value.trim().trim_matches('"').to_string());
         }
     }
     None
@@ -3139,23 +3249,36 @@ fn update_version_file(file: &str, next: &str) -> lode_core::Result<()> {
         serde_json::to_string_pretty(&value)
             .map_err(|error| LodeError::Message(error.to_string()))?
             + "\n"
+    } else if file == "Cargo.toml" {
+        update_toml_version(&raw, next, &["package", "workspace.package"])
+    } else if file == "pyproject.toml" {
+        update_toml_version(&raw, next, &["project"])
     } else {
-        raw.lines()
-            .map(|line| {
-                if line.trim_start().starts_with("version") {
-                    format!("version = \"{next}\"")
-                } else {
-                    line.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-            + "\n"
+        raw
     };
     fs::write(file, updated).map_err(|source| LodeError::Io {
         path: file.into(),
         source,
     })
+}
+
+fn update_toml_version(raw: &str, next: &str, sections: &[&str]) -> String {
+    let mut section = "";
+    let mut updated = false;
+    let mut lines = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            section = trimmed.trim_matches(['[', ']']);
+        }
+        if !updated && sections.contains(&section) && trimmed.starts_with("version") {
+            lines.push(format!("version = \"{next}\""));
+            updated = true;
+        } else {
+            lines.push(line.to_string());
+        }
+    }
+    lines.join("\n") + "\n"
 }
 
 fn doctor(json: bool) -> lode_core::Result<()> {
