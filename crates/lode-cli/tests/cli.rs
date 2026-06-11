@@ -1544,10 +1544,43 @@ fn workspace_init_add_list_and_graph_are_file_backed() {
 
     lode()
         .current_dir(temp.path())
+        .args(["workspace", "list", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"crates/app\""));
+
+    lode()
+        .current_dir(temp.path())
         .args(["workspace", "graph"])
         .assert()
         .success()
         .stdout(predicate::str::contains("-> crates/app"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["workspace", "graph", "--format", "dot"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("digraph workspace"));
+
+    lode()
+        .current_dir(temp.path())
+        .args([
+            "workspace",
+            "run",
+            "test",
+            "--pkg",
+            "app",
+            "--parallel",
+            "2",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("parallel requested: 2"))
+        .stdout(predicate::str::contains(
+            "would run: make -C crates/app test",
+        ));
 
     lode()
         .current_dir(temp.path())

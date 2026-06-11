@@ -764,7 +764,10 @@ enum MetricsCommand {
 #[derive(Debug, Subcommand)]
 enum WorkspaceCommand {
     Init,
-    List,
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
     Add {
         name: String,
     },
@@ -775,8 +778,17 @@ enum WorkspaceCommand {
     },
     Run {
         target: String,
+        #[arg(long)]
+        pkg: Option<String>,
+        #[arg(long)]
+        parallel: Option<usize>,
+        #[arg(long)]
+        dry_run: bool,
     },
-    Graph,
+    Graph {
+        #[arg(long, default_value = "ascii")]
+        format: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -5376,11 +5388,16 @@ fn status_bool(value: bool) -> &'static str {
 fn workspace(command: WorkspaceCommand) -> lode_core::Result<()> {
     match command {
         WorkspaceCommand::Init => workspace_init()?,
-        WorkspaceCommand::List => workspace_list()?,
+        WorkspaceCommand::List { format } => workspace_list(&format)?,
         WorkspaceCommand::Add { name } => workspace_add(&name)?,
         WorkspaceCommand::Remove { name, confirm } => workspace_remove(&name, confirm)?,
-        WorkspaceCommand::Run { target } => workspace_run(&target)?,
-        WorkspaceCommand::Graph => workspace_graph()?,
+        WorkspaceCommand::Run {
+            target,
+            pkg,
+            parallel,
+            dry_run,
+        } => workspace_run(&target, pkg.as_deref(), parallel, dry_run)?,
+        WorkspaceCommand::Graph { format } => workspace_graph(&format)?,
     }
     Ok(())
 }
@@ -5484,26 +5501,59 @@ fn workspace_remove(name: &str, confirm: bool) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn workspace_list() -> lode_core::Result<()> {
+fn workspace_list(format: &str) -> lode_core::Result<()> {
     let members = workspace_members()?;
-    if members.is_empty() {
-        println!("workspace has no members");
-    } else {
-        for member in members {
-            println!("{member}");
+    match format {
+        "json" => println!(
+            "{}",
+            serde_json::to_string_pretty(&members)
+                .map_err(|error| LodeError::Message(error.to_string()))?
+        ),
+        "table" => {
+            if members.is_empty() {
+                println!("workspace has no members");
+            } else {
+                for member in members {
+                    println!("{member}");
+                }
+            }
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported workspace list format: {other}"
+            )))
         }
     }
     Ok(())
 }
 
-fn workspace_run(target: &str) -> lode_core::Result<()> {
-    let members = workspace_members()?;
+fn workspace_run(
+    target: &str,
+    pkg: Option<&str>,
+    parallel: Option<usize>,
+    dry_run: bool,
+) -> lode_core::Result<()> {
+    let mut members = workspace_members()?;
+    if let Some(pkg) = pkg {
+        members.retain(|member| member == pkg || member.ends_with(&format!("/{pkg}")));
+    }
     if members.is_empty() {
+        if dry_run {
+            println!("would run make {target}");
+            return Ok(());
+        }
         return run_make(target);
+    }
+    if let Some(parallel) = parallel {
+        println!("parallel requested: {parallel}");
     }
     for member in members {
         println!("==> {member}: {target}");
         let makefile = Utf8PathBuf::from(&member).join("Makefile");
+        if dry_run {
+            println!("would run: make -C {member} {target}");
+            continue;
+        }
         if makefile.exists() {
             let status = ProcessCommand::new("make")
                 .arg("-C")
@@ -5526,10 +5576,36 @@ fn workspace_run(target: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn workspace_graph() -> lode_core::Result<()> {
-    println!("workspace");
-    for member in workspace_members()? {
-        println!("  -> {member}");
+fn workspace_graph(format: &str) -> lode_core::Result<()> {
+    let members = workspace_members()?;
+    match format {
+        "ascii" => {
+            println!("workspace");
+            for member in members {
+                println!("  -> {member}");
+            }
+        }
+        "dot" => {
+            println!("digraph workspace {{");
+            println!("  root [label=\"workspace\"];");
+            for member in members {
+                println!("  root -> \"{member}\";");
+            }
+            println!("}}");
+        }
+        "json" => {
+            let graph = json!({
+                "root": "workspace",
+                "members": members,
+                "edges": members.iter().map(|member| json!({"from": "workspace", "to": member})).collect::<Vec<_>>()
+            });
+            println!("{}", json_pretty(&graph)?);
+        }
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported workspace graph format: {other}"
+            )))
+        }
     }
     Ok(())
 }
