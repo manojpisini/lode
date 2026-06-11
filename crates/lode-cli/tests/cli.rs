@@ -45,6 +45,20 @@ fn setup_defaults_creates_config_and_dirs() {
         .join("root")
         .join("README.md")
         .exists());
+    assert!(temp
+        .path()
+        .join(".lode")
+        .join("licenses")
+        .join("GPL-3.0-only.txt")
+        .exists());
+    assert!(std::fs::read_to_string(
+        temp.path()
+            .join(".lode")
+            .join("licenses")
+            .join("MPL-2.0.txt")
+    )
+    .unwrap()
+    .contains("Mozilla Public License"));
 }
 
 #[test]

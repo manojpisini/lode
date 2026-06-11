@@ -271,6 +271,9 @@ const LICENSES: &[&str] = &[
     "MIT OR Apache-2.0",
     "BSD-3-Clause",
     "ISC",
+    "GPL-3.0-only",
+    "MPL-2.0",
+    "Unlicense",
 ];
 
 pub fn profile_names() -> Vec<&'static str> {
@@ -504,9 +507,14 @@ fn recipe_contents(recipe: &str) -> String {
 
 fn license_contents(license: &str) -> String {
     match license {
-        "MIT" => "MIT License\n\nCopyright (c) {{ year }} {{ author }}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy.\n".to_string(),
-        "Apache-2.0" => "Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/\n".to_string(),
-        "MIT OR Apache-2.0" => "Licensed under either of Apache License, Version 2.0 or MIT license at your option.\n".to_string(),
+        "MIT" => "MIT License\n\nCopyright (c) {{ year }} {{ author }}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.\n".to_string(),
+        "Apache-2.0" => "Apache License\nVersion 2.0, January 2004\nhttps://www.apache.org/licenses/LICENSE-2.0\n\nCopyright {{ year }} {{ author }}\n\nLicensed under the Apache License, Version 2.0. You may not use this file except in compliance with the License. You may obtain a copy of the License at the URL above.\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n".to_string(),
+        "MIT OR Apache-2.0" => "Licensed under either of\n\n- Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0)\n- MIT license (https://opensource.org/license/mit)\n\nat your option.\n".to_string(),
+        "BSD-3-Clause" => "BSD 3-Clause License\n\nCopyright (c) {{ year }}, {{ author }}\n\nRedistribution and use in source and binary forms, with or without modification, are permitted provided that the BSD 3-Clause License conditions are met.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED.\n".to_string(),
+        "ISC" => "ISC License\n\nCopyright (c) {{ year }} {{ author }}\n\nPermission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the copyright notice and this permission notice appear in all copies.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE.\n".to_string(),
+        "GPL-3.0-only" => "GNU General Public License v3.0 only\n\nCopyright (c) {{ year }} {{ author }}\n\nThis project is licensed under the GNU General Public License version 3 only. See https://www.gnu.org/licenses/gpl-3.0.en.html for the complete license terms.\n\nSPDX-License-Identifier: GPL-3.0-only\n".to_string(),
+        "MPL-2.0" => "Mozilla Public License Version 2.0\n\nCopyright (c) {{ year }} {{ author }}\n\nThis Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, you can obtain one at https://mozilla.org/MPL/2.0/.\n\nSPDX-License-Identifier: MPL-2.0\n".to_string(),
+        "Unlicense" => "The Unlicense\n\nThis is free and unencumbered software released into the public domain.\n\nAnyone is free to copy, modify, publish, use, compile, sell, or distribute this software, either in source code form or as a compiled binary, for any purpose.\n\nSee https://unlicense.org/ for the complete public-domain dedication.\n".to_string(),
         other => format!("{other}\n\nDefault license placeholder. Replace with full license text if needed.\n"),
     }
 }
