@@ -6142,13 +6142,21 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
         DaemonCommand::Status { quiet, json } => {
             let state =
                 fs::read_to_string(daemon_state_path()?).unwrap_or_else(|_| "inactive".to_string());
-            let active = state.lines().next().unwrap_or("inactive") == "active";
+            let runtime = load_daemon_runtime_state()?;
+            let active = runtime.active;
             if json {
-                println!("{{\"active\":{active},\"state\":{:?}}}", state.trim());
+                println!(
+                    "{}",
+                    serde_json::to_string(&runtime)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
             } else if quiet {
                 println!("{}", if active { "active" } else { "inactive" });
             } else {
                 println!("daemon status: {}", state.trim());
+                println!("uptime_s: {}", runtime.uptime_s);
+                println!("events: {}", runtime.events);
+                println!("watchers: {}", runtime.watchers.join(","));
             }
         }
         DaemonCommand::Log { tail, follow } => {
@@ -7247,8 +7255,40 @@ fn daemon_state_path() -> lode_core::Result<Utf8PathBuf> {
     Ok(global_dir()?.join("cache").join("daemon-state.txt"))
 }
 
+fn daemon_runtime_state_path() -> lode_core::Result<Utf8PathBuf> {
+    Ok(global_dir()?.join("cache").join("daemon-state.json"))
+}
+
 fn daemon_log_path() -> lode_core::Result<Utf8PathBuf> {
     Ok(global_dir()?.join("logs").join("daemon.log"))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DaemonRuntimeState {
+    active: bool,
+    foreground: bool,
+    project: Option<String>,
+    started_at: String,
+    updated_at: String,
+    uptime_s: u64,
+    events: u64,
+    watchers: Vec<String>,
+}
+
+impl Default for DaemonRuntimeState {
+    fn default() -> Self {
+        let now = now_timestamp();
+        Self {
+            active: false,
+            foreground: false,
+            project: None,
+            started_at: now.clone(),
+            updated_at: now,
+            uptime_s: 0,
+            events: 0,
+            watchers: Vec::new(),
+        }
+    }
 }
 
 fn write_daemon_state(state: &str) -> lode_core::Result<()> {
@@ -7262,7 +7302,8 @@ fn write_daemon_state(state: &str) -> lode_core::Result<()> {
     fs::write(&path, state).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
-    })
+    })?;
+    write_daemon_runtime_state(&runtime_state_from_text(state)?)
 }
 
 fn append_daemon_log(line: &str) -> lode_core::Result<()> {
@@ -7279,7 +7320,133 @@ fn append_daemon_log(line: &str) -> lode_core::Result<()> {
     fs::write(&path, current).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
+    })?;
+    let mut state = load_daemon_runtime_state()?;
+    state.events += 1;
+    state.updated_at = now_timestamp();
+    state.uptime_s = daemon_uptime_seconds(&state);
+    write_daemon_runtime_state(&state)
+}
+
+fn runtime_state_from_text(state: &str) -> lode_core::Result<DaemonRuntimeState> {
+    let mut runtime = load_daemon_runtime_state().unwrap_or_default();
+    let now = now_timestamp();
+    let active = state.lines().next().unwrap_or("inactive") == "active";
+    if active && !runtime.active {
+        runtime.started_at = now.clone();
+        runtime.events = 0;
+    }
+    runtime.active = active;
+    runtime.updated_at = now;
+    runtime.uptime_s = daemon_uptime_seconds(&runtime);
+    runtime.foreground = state
+        .lines()
+        .find_map(|line| line.strip_prefix("foreground="))
+        .map(|value| value == "true")
+        .unwrap_or(false);
+    let rename = state
+        .lines()
+        .find_map(|line| line.strip_prefix("rename="))
+        .map(|value| value == "true")
+        .unwrap_or(active);
+    let sign = state
+        .lines()
+        .find_map(|line| line.strip_prefix("sign="))
+        .map(|value| value == "true")
+        .unwrap_or(active);
+    let stamp = state
+        .lines()
+        .find_map(|line| line.strip_prefix("stamp="))
+        .map(|value| value == "true")
+        .unwrap_or(active);
+    runtime.watchers = [
+        (rename, "rename"),
+        (sign, "headers"),
+        (stamp, "path_sync"),
+        (active, "env_drift"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, name)| enabled.then_some(name.to_string()))
+    .collect();
+    runtime.project = current_dir()
+        .ok()
+        .and_then(|path| path.file_name().map(str::to_string));
+    Ok(runtime)
+}
+
+fn load_daemon_runtime_state() -> lode_core::Result<DaemonRuntimeState> {
+    let path = daemon_runtime_state_path()?;
+    if !path.exists() {
+        return Ok(DaemonRuntimeState::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let mut state: DaemonRuntimeState =
+        serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+    state.uptime_s = daemon_uptime_seconds(&state);
+    Ok(state)
+}
+
+fn write_daemon_runtime_state(state: &DaemonRuntimeState) -> lode_core::Result<()> {
+    let path = daemon_runtime_state_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(state)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
     })
+}
+
+fn daemon_uptime_seconds(state: &DaemonRuntimeState) -> u64 {
+    if !state.active {
+        return 0;
+    }
+    parse_timestamp_seconds(&state.started_at)
+        .map(|started| unix_seconds().saturating_sub(started))
+        .unwrap_or_default()
+}
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or_default()
+}
+
+fn parse_timestamp_seconds(timestamp: &str) -> Option<u64> {
+    let date = timestamp.get(0..10)?;
+    let time = timestamp.get(11..19)?;
+    let mut date_parts = date.split('-').map(|part| part.parse::<i64>().ok());
+    let year = date_parts.next()??;
+    let month = date_parts.next()??;
+    let day = date_parts.next()??;
+    let mut time_parts = time.split(':').map(|part| part.parse::<u64>().ok());
+    let hour = time_parts.next()??;
+    let minute = time_parts.next()??;
+    let second = time_parts.next()??;
+    let days = days_from_civil(year, month, day)?;
+    Some(days as u64 * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> Option<i64> {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let year = year - i64::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let month = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * month + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era * 146_097 + doe - 719_468)
 }
 
 fn task_command(target: Option<String>, no_store: bool) -> lode_core::Result<()> {

@@ -2045,7 +2045,19 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
         .args(["daemon", "status", "--json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"active\":true"));
+        .stdout(predicate::str::contains("\"active\":true"))
+        .stdout(predicate::str::contains("\"watchers\""))
+        .stdout(predicate::str::contains("headers"));
+
+    let state = std::fs::read_to_string(
+        temp.path()
+            .join(".lode")
+            .join("cache")
+            .join("daemon-state.json"),
+    )
+    .unwrap();
+    assert!(state.contains("\"events\""));
+    assert!(state.contains("\"foreground\""));
 
     lode()
         .env("LODE_CONFIG", &config)
