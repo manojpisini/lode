@@ -327,6 +327,8 @@ enum ConfigCommand {
         #[arg(long)]
         defaults: bool,
         #[arg(long)]
+        project: bool,
+        #[arg(long)]
         section: Option<String>,
     },
     Validate,
@@ -1324,14 +1326,22 @@ fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
         ConfigCommand::Show {
             format,
             defaults,
+            project,
             section,
         } => {
-            let config = if defaults {
-                default_config()
+            if defaults && project {
+                return Err(LodeError::Message(
+                    "--defaults and --project cannot be used together".to_string(),
+                ));
+            }
+            let value = if project {
+                load_project_config_value()?
+            } else if defaults {
+                toml::Value::try_from(default_config())?
             } else {
-                load_global_config()?
+                toml::Value::try_from(load_global_config()?)?
             };
-            let value = config_section_value(&config, section.as_deref())?;
+            let value = config_section_value(value, section.as_deref())?;
             match format {
                 OutputFormat::Toml => println!("{}", toml::to_string_pretty(&value)?),
                 OutputFormat::Json => println!(
@@ -1384,11 +1394,22 @@ fn default_config_value(key: &str) -> lode_core::Result<String> {
     Ok(value)
 }
 
+fn load_project_config_value() -> lode_core::Result<toml::Value> {
+    let path = Utf8PathBuf::from(".lode").join("project.toml");
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
 fn config_section_value(
-    config: &lode_core::LodeConfig,
+    value: toml::Value,
     section: Option<&str>,
 ) -> lode_core::Result<toml::Value> {
-    let value = toml::Value::try_from(config)?;
     let Some(section) = section else {
         return Ok(value);
     };

@@ -157,6 +157,42 @@ fn config_show_supports_section_filtering() {
 }
 
 #[test]
+fn config_show_project_reads_project_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["init", "project-app"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path().join("project-app"))
+        .args([
+            "config",
+            "show",
+            "--project",
+            "--section",
+            "project",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\": \"project-app\""))
+        .stdout(predicate::str::contains("\"created_by\": \"lode\""));
+}
+
+#[test]
 fn template_and_snippet_lists_support_json() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
