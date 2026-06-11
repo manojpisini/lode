@@ -99,9 +99,18 @@ fn render_expression(expression: &str, context: &RenderContext) -> String {
 }
 
 fn apply_filter(value: &str, filter: &str) -> String {
-    match filter {
+    let (name, argument) = filter_call(filter);
+    match name {
         "upper" => value.to_ascii_uppercase(),
         "lower" => value.to_ascii_lowercase(),
+        "trim" => value.trim().to_string(),
+        "default" => {
+            if value.is_empty() {
+                argument.unwrap_or_default()
+            } else {
+                value.to_string()
+            }
+        }
         "snake" | "snake_case" => slug_to_ident(value),
         "kebab" | "kebab_case" => slug_to_ident(value).replace('_', "-"),
         "pascal" | "pascal_case" => slug_to_class(value),
@@ -127,6 +136,33 @@ fn apply_filter(value: &str, filter: &str) -> String {
         "urlencode" | "url_encode" => url_encode(value),
         _ => value.to_string(),
     }
+}
+
+fn filter_call(filter: &str) -> (&str, Option<String>) {
+    let Some(open) = filter.find('(') else {
+        return (filter.trim(), None);
+    };
+    if !filter.ends_with(')') {
+        return (filter.trim(), None);
+    }
+    let name = filter[..open].trim();
+    let argument = filter[open + 1..filter.len() - 1].trim();
+    (name, Some(parse_filter_argument(argument)))
+}
+
+fn parse_filter_argument(argument: &str) -> String {
+    let quoted = argument
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            argument
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        });
+    quoted
+        .unwrap_or(argument)
+        .replace("\\\"", "\"")
+        .replace("\\'", "'")
 }
 
 fn url_encode(value: &str) -> String {
@@ -407,6 +443,21 @@ mod tests {
             output,
             "https://img.shields.io/badge/license-MIT%20OR%20Apache-2.0-blue.svg"
         );
+    }
+
+    #[test]
+    fn renders_default_and_trim_filters() {
+        let context = RenderContext::new()
+            .with("repo_url", "")
+            .with("name", "  Demo App  ");
+
+        let output = render_template(
+            "git clone {{ repo_url | default(\"<repo-url>\") }}\n{{ name | trim | kebab }}",
+            &context,
+        );
+
+        assert!(output.contains("git clone <repo-url>"));
+        assert!(output.contains("demo-app"));
     }
 
     #[test]
