@@ -2304,6 +2304,47 @@ fn pkg_update_dry_run_prints_manager_command() {
 }
 
 #[test]
+fn pkg_dry_run_translates_native_commands() {
+    let node = tempfile::tempdir().unwrap();
+    std::fs::write(node.path().join("pnpm-lock.yaml"), "lockfileVersion: '9'\n").unwrap();
+
+    lode()
+        .current_dir(node.path())
+        .args(["pkg", "outdated", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would run: pnpm outdated"));
+
+    lode()
+        .current_dir(node.path())
+        .args(["pkg", "why", "react", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would run: pnpm why react"));
+
+    let python = tempfile::tempdir().unwrap();
+    std::fs::write(python.path().join("requirements.txt"), "requests==2.0.0\n").unwrap();
+
+    lode()
+        .current_dir(python.path())
+        .args(["pkg", "info", "requests", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would run: pip show requests"));
+
+    let go = tempfile::tempdir().unwrap();
+    std::fs::write(go.path().join("go.sum"), "example.com/mod v1.0.0 h1:abc\n").unwrap();
+
+    lode()
+        .current_dir(go.path())
+        .args(["pkg", "audit", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would run: go vulncheck ./..."))
+        .stdout(predicate::str::contains("would run: lode scan secrets"));
+}
+
+#[test]
 fn pkg_graph_json_reports_manifest() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(temp.path().join("Cargo.toml"), "[package]\nname='x'\n").unwrap();

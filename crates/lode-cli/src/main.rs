@@ -721,18 +721,28 @@ enum ToolchainCommand {
 #[derive(Debug, Subcommand)]
 enum PkgCommand {
     List,
-    Outdated,
+    Outdated {
+        #[arg(long)]
+        dry_run: bool,
+    },
     Update {
         name: Option<String>,
         #[arg(long)]
         dry_run: bool,
     },
-    Audit,
+    Audit {
+        #[arg(long)]
+        dry_run: bool,
+    },
     Why {
         name: String,
+        #[arg(long)]
+        dry_run: bool,
     },
     Info {
         name: String,
+        #[arg(long)]
+        dry_run: bool,
     },
     Lock {
         #[arg(long)]
@@ -4800,7 +4810,9 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 }
             }
         }
-        PkgCommand::Outdated => run_package_manager(&manager, package_outdated_args(&manager))?,
+        PkgCommand::Outdated { dry_run } => {
+            run_or_print_package_manager(&manager, package_outdated_args(&manager)?, dry_run)?
+        }
         PkgCommand::Update { name, dry_run } => {
             let args = package_update_args(&manager, name.as_deref())?;
             if dry_run {
@@ -4809,17 +4821,25 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 run_package_manager(&manager, args)?;
             }
         }
-        PkgCommand::Audit => {
-            run_package_manager(&manager, package_audit_args(&manager))?;
-            scan(ScanCommand::Secrets {
-                path: Some(current_dir()?),
-                staged: false,
-                json: false,
-                quiet: false,
-            })?;
+        PkgCommand::Audit { dry_run } => {
+            run_or_print_package_manager(&manager, package_audit_args(&manager)?, dry_run)?;
+            if dry_run {
+                println!("would run: lode scan secrets {}", current_dir()?);
+            } else {
+                scan(ScanCommand::Secrets {
+                    path: Some(current_dir()?),
+                    staged: false,
+                    json: false,
+                    quiet: false,
+                })?;
+            }
         }
-        PkgCommand::Why { name } => package_why(&manager, &name)?,
-        PkgCommand::Info { name } => package_info(&manager, &name)?,
+        PkgCommand::Why { name, dry_run } => {
+            run_or_print_package_manager(&manager, package_why_args(&manager, &name)?, dry_run)?
+        }
+        PkgCommand::Info { name, dry_run } => {
+            run_or_print_package_manager(&manager, package_info_args(&manager, &name)?, dry_run)?
+        }
         PkgCommand::Lock { dry_run } => {
             let args = package_lock_args(&manager)?;
             if dry_run {
@@ -4879,13 +4899,30 @@ fn run_package_manager(manager: &str, args: Vec<String>) -> lode_core::Result<()
     }
 }
 
-fn package_outdated_args(manager: &str) -> Vec<String> {
+fn run_or_print_package_manager(
+    manager: &str,
+    args: Vec<String>,
+    dry_run: bool,
+) -> lode_core::Result<()> {
+    if dry_run {
+        println!("would run: {} {}", manager, args.join(" "));
+        Ok(())
+    } else {
+        run_package_manager(manager, args)
+    }
+}
+
+fn package_outdated_args(manager: &str) -> lode_core::Result<Vec<String>> {
     match manager {
-        "cargo" => vec!["tree".into(), "--depth".into(), "1".into()],
-        "npm" | "pnpm" | "yarn" | "bun" => vec!["outdated".into()],
-        "uv" => vec!["pip".into(), "list".into(), "--outdated".into()],
-        "go" => vec!["list".into(), "-m".into(), "-u".into(), "all".into()],
-        _ => vec!["--version".into()],
+        "cargo" => Ok(vec!["outdated".into()]),
+        "npm" | "pnpm" | "yarn" | "bun" => Ok(vec!["outdated".into()]),
+        "uv" => Ok(vec!["pip".into(), "list".into(), "--outdated".into()]),
+        "pip" => Ok(vec!["list".into(), "--outdated".into()]),
+        "go" => Ok(vec!["list".into(), "-m".into(), "-u".into(), "all".into()]),
+        "bundler" => Ok(vec!["outdated".into()]),
+        _ => Err(LodeError::Message(
+            "no supported package manager files found".to_string(),
+        )),
     }
 }
 
@@ -4897,7 +4934,9 @@ fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<V
         "yarn" => vec!["upgrade".to_string()],
         "bun" => vec!["update".to_string()],
         "uv" => vec!["lock".to_string(), "--upgrade".to_string()],
+        "pip" => vec!["install".to_string(), "-U".to_string()],
         "go" => vec!["get".to_string(), "-u".to_string()],
+        "bundler" => vec!["update".to_string()],
         _ => {
             return Err(LodeError::Message(
                 "no supported package manager files found".to_string(),
@@ -4908,20 +4947,28 @@ fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<V
         args.push(name.to_string());
     } else if manager == "go" {
         args.push("./...".to_string());
+    } else if manager == "pip" {
+        return Err(LodeError::Message(
+            "pip update requires a package name".to_string(),
+        ));
     }
     Ok(args)
 }
 
-fn package_audit_args(manager: &str) -> Vec<String> {
+fn package_audit_args(manager: &str) -> lode_core::Result<Vec<String>> {
     match manager {
-        "cargo" => vec!["tree".into(), "--duplicates".into()],
-        "npm" => vec!["audit".into()],
-        "pnpm" => vec!["audit".into()],
-        "yarn" => vec!["audit".into()],
-        "bun" => vec!["audit".into()],
-        "uv" => vec!["pip".into(), "check".into()],
-        "go" => vec!["list".into(), "-m".into(), "all".into()],
-        _ => vec!["--version".into()],
+        "cargo" => Ok(vec!["audit".into()]),
+        "npm" => Ok(vec!["audit".into()]),
+        "pnpm" => Ok(vec!["audit".into()]),
+        "yarn" => Ok(vec!["audit".into()]),
+        "bun" => Ok(vec!["audit".into()]),
+        "uv" => Ok(vec!["pip".into(), "check".into()]),
+        "pip" => Ok(vec!["audit".into()]),
+        "go" => Ok(vec!["vulncheck".into(), "./...".into()]),
+        "bundler" => Ok(vec!["audit".into(), "check".into()]),
+        _ => Err(LodeError::Message(
+            "no supported package manager files found".to_string(),
+        )),
     }
 }
 
@@ -4937,35 +4984,39 @@ fn package_lock_args(manager: &str) -> lode_core::Result<Vec<String>> {
         "yarn" => Ok(vec!["install".into(), "--mode=update-lockfile".into()]),
         "bun" => Ok(vec!["install".into(), "--lockfile-only".into()]),
         "uv" => Ok(vec!["lock".into()]),
+        "pip" => Ok(vec!["freeze".into()]),
         "go" => Ok(vec!["mod".into(), "tidy".into()]),
+        "bundler" => Ok(vec!["lock".into()]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
     }
 }
 
-fn package_why(manager: &str, name: &str) -> lode_core::Result<()> {
+fn package_why_args(manager: &str, name: &str) -> lode_core::Result<Vec<String>> {
     match manager {
-        "cargo" => run_package_manager(manager, vec!["tree".into(), "-i".into(), name.into()]),
-        "npm" => run_package_manager(manager, vec!["explain".into(), name.into()]),
-        "pnpm" | "yarn" => run_package_manager(manager, vec!["why".into(), name.into()]),
-        "bun" => run_package_manager(manager, vec!["pm".into(), "why".into(), name.into()]),
-        "uv" => run_package_manager(manager, vec!["pip".into(), "show".into(), name.into()]),
-        "go" => run_package_manager(manager, vec!["mod".into(), "why".into(), name.into()]),
+        "cargo" => Ok(vec!["tree".into(), "-i".into(), name.into()]),
+        "npm" => Ok(vec!["explain".into(), name.into()]),
+        "pnpm" | "yarn" => Ok(vec!["why".into(), name.into()]),
+        "bun" => Ok(vec!["pm".into(), "why".into(), name.into()]),
+        "uv" => Ok(vec!["pip".into(), "show".into(), name.into()]),
+        "pip" => Ok(vec!["show".into(), name.into()]),
+        "go" => Ok(vec!["mod".into(), "why".into(), name.into()]),
+        "bundler" => Ok(vec!["why".into(), name.into()]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
     }
 }
 
-fn package_info(manager: &str, name: &str) -> lode_core::Result<()> {
+fn package_info_args(manager: &str, name: &str) -> lode_core::Result<Vec<String>> {
     match manager {
-        "cargo" => run_package_manager(manager, vec!["search".into(), name.into()]),
-        "npm" | "pnpm" | "yarn" | "bun" => {
-            run_package_manager(manager, vec!["info".into(), name.into()])
-        }
-        "uv" => run_package_manager(manager, vec!["pip".into(), "show".into(), name.into()]),
-        "go" => run_package_manager(manager, vec!["list".into(), "-m".into(), name.into()]),
+        "cargo" => Ok(vec!["search".into(), name.into()]),
+        "npm" | "pnpm" | "yarn" | "bun" => Ok(vec!["info".into(), name.into()]),
+        "uv" => Ok(vec!["pip".into(), "show".into(), name.into()]),
+        "pip" => Ok(vec!["show".into(), name.into()]),
+        "go" => Ok(vec!["list".into(), "-m".into(), name.into()]),
+        "bundler" => Ok(vec!["info".into(), name.into()]),
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
@@ -5390,7 +5441,7 @@ fn required_tools_for_project() -> Vec<&'static str> {
 }
 
 fn detect_package_manager() -> Option<String> {
-    if Utf8PathBuf::from("Cargo.toml").exists() {
+    if Utf8PathBuf::from("Cargo.lock").exists() || Utf8PathBuf::from("Cargo.toml").exists() {
         Some("cargo".to_string())
     } else if Utf8PathBuf::from("bun.lockb").exists() {
         Some("bun".to_string())
@@ -5402,10 +5453,15 @@ fn detect_package_manager() -> Option<String> {
         || Utf8PathBuf::from("package.json").exists()
     {
         Some("npm".to_string())
-    } else if Utf8PathBuf::from("pyproject.toml").exists() {
+    } else if Utf8PathBuf::from("uv.lock").exists() || Utf8PathBuf::from("pyproject.toml").exists()
+    {
         Some("uv".to_string())
-    } else if Utf8PathBuf::from("go.mod").exists() {
+    } else if Utf8PathBuf::from("requirements.txt").exists() {
+        Some("pip".to_string())
+    } else if Utf8PathBuf::from("go.sum").exists() || Utf8PathBuf::from("go.mod").exists() {
         Some("go".to_string())
+    } else if Utf8PathBuf::from("Gemfile.lock").exists() || Utf8PathBuf::from("Gemfile").exists() {
+        Some("bundler".to_string())
     } else {
         None
     }
