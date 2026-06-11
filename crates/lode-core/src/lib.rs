@@ -17,7 +17,7 @@ pub use config::{
 pub use convention::{check_path, fix_path, normalize_name, ConventionReport, ConventionViolation};
 pub use error::{ExitCode, LodeError, Result};
 pub use install::{
-    ensure_global_workspace, global_config_path, global_dir, load_global_config,
+    ensure_global_workspace, global_asset_dir, global_config_path, global_dir, load_global_config,
     save_global_config, setup_defaults, SetupReport,
 };
 pub use registry::{

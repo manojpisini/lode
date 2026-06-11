@@ -62,6 +62,42 @@ fn setup_defaults_creates_config_and_dirs() {
 }
 
 #[test]
+fn setup_and_export_respect_template_dir_override() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let templates = temp.path().join("custom-templates");
+    let pack = temp.path().join("override.lodepack");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .env("LODE_TEMPLATES", &templates)
+        .arg("setup")
+        .assert()
+        .success();
+
+    assert!(templates.join("root").join("README.md").exists());
+    assert!(!temp
+        .path()
+        .join(".lode")
+        .join("templates")
+        .join("root")
+        .join("README.md")
+        .exists());
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .env("LODE_TEMPLATES", &templates)
+        .args(["export", "--out"])
+        .arg(&pack)
+        .assert()
+        .success();
+
+    assert!(std::fs::read_to_string(pack)
+        .unwrap()
+        .contains("templates/root/README.md"));
+}
+
+#[test]
 fn config_show_defaults_prints_valid_toml() {
     lode()
         .arg("config")

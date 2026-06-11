@@ -16,6 +16,19 @@ const GLOBAL_DIRS: &[&str] = &[
     "commands",
 ];
 
+fn global_dir_env(child: &str) -> Option<&'static str> {
+    match child {
+        "templates" => Some("LODE_TEMPLATES"),
+        "profiles" => Some("LODE_PROFILES"),
+        "snippets" => Some("LODE_SNIPPETS"),
+        "licenses" => Some("LODE_LICENSES"),
+        "plugins" => Some("LODE_PLUGINS"),
+        "recipes" => Some("LODE_RECIPES"),
+        "commands" => Some("LODE_COMMANDS_DIR"),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetupReport {
     pub global_dir: Utf8PathBuf,
@@ -47,12 +60,21 @@ pub fn global_config_path() -> Result<Utf8PathBuf> {
     Ok(global_dir()?.join("config.toml"))
 }
 
+pub fn global_asset_dir(child: &str) -> Result<Utf8PathBuf> {
+    if let Some(var) = global_dir_env(child) {
+        if let Ok(path) = env::var(var) {
+            return Ok(Utf8PathBuf::from(path));
+        }
+    }
+    Ok(global_dir()?.join(child))
+}
+
 pub fn ensure_global_workspace() -> Result<()> {
     let dir = global_dir()?;
     create_dir_all(&dir)?;
 
     for child in GLOBAL_DIRS {
-        create_dir_all(&dir.join(child))?;
+        create_dir_all(&global_asset_dir(child)?)?;
     }
 
     Ok(())
@@ -69,7 +91,7 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
     create_dir_all(&dir)?;
 
     for child in GLOBAL_DIRS {
-        let path = dir.join(child);
+        let path = global_asset_dir(child)?;
         if !path.exists() {
             created_dirs.push(path.clone());
         }
@@ -98,7 +120,7 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
             assets::AssetKind::Recipe => "recipes",
             assets::AssetKind::License => "licenses",
         };
-        let destination = dir.join(root).join(asset.path);
+        let destination = global_asset_dir(root)?.join(asset.path);
         if overwrite || !destination.exists() {
             if let Some(parent) = destination.parent() {
                 create_dir_all(&parent.to_path_buf())?;
@@ -171,6 +193,18 @@ mod tests {
         assert_eq!(
             global_config_path().unwrap(),
             Utf8PathBuf::from_path_buf(config).unwrap()
+        );
+    }
+
+    #[test]
+    fn global_asset_dir_respects_specific_overrides() {
+        let temp = tempfile::tempdir().unwrap();
+        let templates = temp.path().join("custom-templates");
+        let _templates_guard = EnvGuard::set("LODE_TEMPLATES", templates.to_str().unwrap());
+
+        assert_eq!(
+            global_asset_dir("templates").unwrap(),
+            Utf8PathBuf::from_path_buf(templates).unwrap()
         );
     }
 }

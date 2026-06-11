@@ -16,10 +16,10 @@ use crossterm::{
 };
 use lode_core::{
     add_component_to_project, audit_project, check_path, command_names, default_config, fix_path,
-    global_dir, init_project, load_global_config, load_metrics, load_registry, profile_names,
-    prune_registry, recipe_names, register_project, save_global_config, save_metrics,
-    save_registry, scan_secrets, setup_defaults, sync_project, template_paths, AddRequest,
-    InitRequest, LodeError,
+    global_asset_dir, global_dir, init_project, load_global_config, load_metrics, load_registry,
+    profile_names, prune_registry, recipe_names, register_project, save_global_config,
+    save_metrics, save_registry, scan_secrets, setup_defaults, sync_project, template_paths,
+    AddRequest, InitRequest, LodeError,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -1152,7 +1152,7 @@ fn sync_command(dry_run: bool, force: bool, section: Option<&str>) -> lode_core:
                 } else if dry_run {
                     println!("would sync templates");
                 } else {
-                    validate_template_tree(&global_dir()?.join("templates"))?;
+                    validate_template_tree(&global_asset_dir("templates")?)?;
                     println!("synced templates");
                 }
             }
@@ -1498,9 +1498,9 @@ fn library_command(
             }
         }
         LibraryCommand::Show { name, raw: _ } => {
-            let mut path = global_dir()?.join(root).join(&name);
+            let mut path = global_asset_dir(root)?.join(&name);
             if !path.exists() && matches!(root, "profiles" | "commands" | "recipes") {
-                path = global_dir()?.join(root).join(format!("{name}.toml"));
+                path = global_asset_dir(root)?.join(format!("{name}.toml"));
             }
             if path.exists() {
                 print!(
@@ -1519,7 +1519,7 @@ fn library_command(
         LibraryCommand::Diff { name } => {
             require_template_library(root)?;
             let relative = safe_relative_path(&name)?;
-            let path = global_dir()?.join(root).join(&relative);
+            let path = global_asset_dir(root)?.join(&relative);
             let current = fs::read_to_string(&path).unwrap_or_default();
             let default = embedded_template(&name)?;
             if current == default {
@@ -1532,7 +1532,7 @@ fn library_command(
         LibraryCommand::Reset { name } => {
             require_template_library(root)?;
             let relative = safe_relative_path(&name)?;
-            let path = global_dir()?.join(root).join(relative);
+            let path = global_asset_dir(root)?.join(relative);
             let contents = embedded_template(&name)?;
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(|source| LodeError::Io {
@@ -1554,7 +1554,7 @@ fn library_command(
                 }
                 println!("validated {} templates", embedded.len());
             } else {
-                let root = global_dir()?.join(root);
+                let root = global_asset_dir(root)?;
                 validate_template_tree(&root)?;
                 println!("templates valid");
             }
@@ -1681,7 +1681,7 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
             println!("active profile: {name}");
         }
         ProfileCommand::New { name } => {
-            let path = global_dir()?.join("profiles").join(format!("{name}.toml"));
+            let path = global_asset_dir("profiles")?.join(format!("{name}.toml"));
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(|source| LodeError::Io {
                     path: parent.as_str().into(),
@@ -1697,7 +1697,7 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
             println!("created profile {name}");
         }
         ProfileCommand::Delete { name } => {
-            let path = global_dir()?.join("profiles").join(format!("{name}.toml"));
+            let path = global_asset_dir("profiles")?.join(format!("{name}.toml"));
             if profile_names().iter().any(|profile| *profile == name) {
                 return Err(LodeError::Message(format!(
                     "refusing to delete embedded profile: {name}"
@@ -1716,7 +1716,7 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
 fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
     match command {
         SnippetCommand::List { lang, format } => {
-            let root = global_dir()?.join("snippets");
+            let root = global_asset_dir("snippets")?;
             if format == "json" {
                 let mut snippets = Vec::new();
                 if let Some(lang) = lang {
@@ -1815,7 +1815,7 @@ fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
 }
 
 fn new_recipe(name: &str) -> lode_core::Result<()> {
-    let path = global_dir()?.join("recipes").join(format!("{name}.toml"));
+    let path = global_asset_dir("recipes")?.join(format!("{name}.toml"));
     if path.exists() {
         return Err(LodeError::Message(format!("recipe already exists: {name}")));
     }
@@ -1920,7 +1920,7 @@ fn export_command_macros(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
         version: 1,
         files: Vec::new(),
     };
-    let global = global_dir()?.join("commands");
+    let global = global_asset_dir("commands")?;
     collect_command_macro_files(&global, "global", &mut pack)?;
     let local = Utf8PathBuf::from(".lode").join("commands");
     collect_command_macro_files(&local, "project", &mut pack)?;
@@ -1982,7 +1982,7 @@ fn collect_command_macro_files(
 fn command_macro_path(slug: &str, global: bool) -> lode_core::Result<Utf8PathBuf> {
     let relative = safe_relative_path(&format!("{slug}.toml"))?;
     if global {
-        Ok(global_dir()?.join("commands").join(relative))
+        Ok(global_asset_dir("commands")?.join(relative))
     } else {
         Ok(Utf8PathBuf::from(".lode").join("commands").join(relative))
     }
@@ -1990,7 +1990,7 @@ fn command_macro_path(slug: &str, global: bool) -> lode_core::Result<Utf8PathBuf
 
 fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
     match command {
-        PluginCommand::List => list_dir(global_dir()?.join("plugins"))?,
+        PluginCommand::List => list_dir(global_asset_dir("plugins")?)?,
         PluginCommand::Search { query, format } => {
             let entries = search_plugin_index(query.as_deref())?;
             match format.as_str() {
@@ -2034,7 +2034,7 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             let name = source
                 .file_name()
                 .ok_or_else(|| LodeError::Message("plugin source has no name".to_string()))?;
-            let destination = global_dir()?.join("plugins").join(name);
+            let destination = global_asset_dir("plugins")?.join(name);
             if destination.exists() {
                 return Err(LodeError::Message(format!("plugin already exists: {name}")));
             }
@@ -2042,9 +2042,7 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             println!("added plugin {name}");
         }
         PluginCommand::Remove { name } => {
-            let path = global_dir()?
-                .join("plugins")
-                .join(safe_relative_path(&name)?);
+            let path = global_asset_dir("plugins")?.join(safe_relative_path(&name)?);
             if !path.exists() {
                 return Err(LodeError::Message(format!("plugin not found: {name}")));
             }
@@ -2056,9 +2054,7 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
         }
         PluginCommand::Update { name } => {
             if let Some(name) = name {
-                let path = global_dir()?
-                    .join("plugins")
-                    .join(safe_relative_path(&name)?);
+                let path = global_asset_dir("plugins")?.join(safe_relative_path(&name)?);
                 if !path.exists() {
                     return Err(LodeError::Message(format!("plugin not found: {name}")));
                 }
@@ -2068,9 +2064,7 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             }
         }
         PluginCommand::Info { name } => {
-            let path = global_dir()?
-                .join("plugins")
-                .join(safe_relative_path(&name)?);
+            let path = global_asset_dir("plugins")?.join(safe_relative_path(&name)?);
             if !path.exists() {
                 return Err(LodeError::Message(format!("plugin not found: {name}")));
             }
@@ -2092,7 +2086,7 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
 
 fn search_plugin_index(query: Option<&str>) -> lode_core::Result<Vec<PluginIndexEntry>> {
     let mut entries = default_plugin_registry();
-    let plugins_dir = global_dir()?.join("plugins");
+    let plugins_dir = global_asset_dir("plugins")?;
     if plugins_dir.exists() {
         for entry in fs::read_dir(&plugins_dir).map_err(|source| LodeError::Io {
             path: plugins_dir.as_str().into(),
@@ -2481,7 +2475,7 @@ fn mcp_read_resource(request: &Value) -> std::result::Result<Value, (i64, String
 
 fn snippet_inventory() -> Vec<String> {
     let mut snippets = Vec::new();
-    if let Ok(root) = global_dir().map(|root| root.join("snippets")) {
+    if let Ok(root) = global_asset_dir("snippets") {
         let _ = collect_snippet_assets(&root, &mut snippets);
     }
     snippets
@@ -2677,7 +2671,7 @@ fn resolve_command_path(slug: &str) -> lode_core::Result<Utf8PathBuf> {
         Utf8PathBuf::from(".lode")
             .join("commands")
             .join(format!("{slug}.toml")),
-        global_dir()?.join("commands").join(format!("{slug}.toml")),
+        global_asset_dir("commands")?.join(format!("{slug}.toml")),
     ];
     for candidate in candidates {
         if candidate.exists() {
@@ -3558,7 +3552,7 @@ fn env_command(command: EnvCommand) -> lode_core::Result<()> {
 fn license(command: LicenseCommand) -> lode_core::Result<()> {
     match command {
         LicenseCommand::List { format } => {
-            let root = global_dir()?.join("licenses");
+            let root = global_asset_dir("licenses")?;
             if format == "json" {
                 let mut items = Vec::new();
                 collect_file_names(&root, &mut items)?;
@@ -3673,7 +3667,7 @@ fn add_license(id: &str, file: Option<Utf8PathBuf>, text: Option<&str>) -> lode_
 
 fn license_path(id: &str) -> lode_core::Result<Utf8PathBuf> {
     let relative = safe_relative_path(&format!("{id}.txt"))?;
-    Ok(global_dir()?.join("licenses").join(relative))
+    Ok(global_asset_dir("licenses")?.join(relative))
 }
 
 fn project_license_id() -> lode_core::Result<Option<String>> {
@@ -3843,8 +3837,8 @@ fn read_env_entries(contents: &str) -> std::collections::BTreeMap<String, String
 
 fn read_license(id: &str) -> lode_core::Result<String> {
     let candidates = [
-        global_dir()?.join("licenses").join(format!("{id}.txt")),
-        global_dir()?.join("licenses").join(id),
+        global_asset_dir("licenses")?.join(format!("{id}.txt")),
+        global_asset_dir("licenses")?.join(id),
     ];
     for path in candidates {
         if path.exists() {
@@ -3864,7 +3858,7 @@ fn add_snippet(
     desc: Option<&str>,
 ) -> lode_core::Result<()> {
     let relative = safe_relative_path(&format!("{lang}/{name}.snippet"))?;
-    let path = global_dir()?.join("snippets").join(relative);
+    let path = global_asset_dir("snippets")?.join(relative);
     if path.exists() {
         return Err(LodeError::Message(format!(
             "snippet already exists: {name}"
@@ -3948,7 +3942,7 @@ fn insert_text_at_line(existing: &str, snippet: &str, line: usize) -> String {
 }
 
 fn resolve_snippet_path(name: &str, lang: Option<&str>) -> lode_core::Result<Utf8PathBuf> {
-    let root = global_dir()?.join("snippets");
+    let root = global_asset_dir("snippets")?;
     if let Some(lang) = lang {
         let relative = safe_relative_path(&format!("{lang}/{name}.snippet"))?;
         let path = root.join(relative);
@@ -4002,7 +3996,7 @@ fn collect_snippet_named(
 }
 
 fn search_snippets(query: &str) -> lode_core::Result<()> {
-    let root = global_dir()?.join("snippets");
+    let root = global_asset_dir("snippets")?;
     let mut matches = Vec::new();
     collect_snippet_matches(&root, query, &mut matches)?;
     for path in matches {
@@ -4052,7 +4046,7 @@ fn export_snippets(
     format: &str,
     out: Option<Utf8PathBuf>,
 ) -> lode_core::Result<()> {
-    let root = global_dir()?.join("snippets");
+    let root = global_asset_dir("snippets")?;
     let scan_root = lang.map_or(root.clone(), |lang| root.join(lang));
     let mut snippets = Vec::new();
     collect_snippet_assets(&scan_root, &mut snippets)?;
@@ -4252,7 +4246,7 @@ fn render_plain_snippets(snippets: &[SnippetAsset]) -> String {
 }
 
 fn apply_recipe(name: &str, dry_run: bool) -> lode_core::Result<()> {
-    let recipe_path = global_dir()?.join("recipes").join(format!("{name}.toml"));
+    let recipe_path = global_asset_dir("recipes")?.join(format!("{name}.toml"));
     let raw = fs::read_to_string(&recipe_path).map_err(|source| LodeError::Io {
         path: recipe_path.as_str().into(),
         source,
@@ -4296,7 +4290,7 @@ fn apply_recipe(name: &str, dry_run: bool) -> lode_core::Result<()> {
 }
 
 fn read_template_asset(path: &str) -> lode_core::Result<String> {
-    let template_path = global_dir()?.join("templates").join(path);
+    let template_path = global_asset_dir("templates")?.join(path);
     fs::read_to_string(&template_path).map_err(|source| LodeError::Io {
         path: template_path.as_str().into(),
         source,
@@ -5263,31 +5257,32 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
         version: 1,
         files: Vec::new(),
     };
-    let mut paths = vec!["config.toml", "profiles"];
+    collect_pack_files_as(&root.join("config.toml"), "config.toml", &mut pack)?;
+    let mut paths = vec![("profiles", global_asset_dir("profiles")?)];
     if !options.no_commands {
-        paths.push("commands");
+        paths.push(("commands", global_asset_dir("commands")?));
     }
     if !options.no_templates {
-        paths.push("templates");
+        paths.push(("templates", global_asset_dir("templates")?));
     }
     if !options.no_snippets {
-        paths.push("snippets");
+        paths.push(("snippets", global_asset_dir("snippets")?));
     }
     if !options.no_licenses {
-        paths.push("licenses");
+        paths.push(("licenses", global_asset_dir("licenses")?));
     }
     if !options.no_recipes {
-        paths.push("recipes");
+        paths.push(("recipes", global_asset_dir("recipes")?));
     }
     if !options.no_plugins {
-        paths.push("plugins");
+        paths.push(("plugins", global_asset_dir("plugins")?));
     }
     if options.include_metrics {
-        paths.push("registry.json");
-        paths.push("metrics.json");
+        collect_pack_files_as(&root.join("registry.json"), "registry.json", &mut pack)?;
+        collect_pack_files_as(&root.join("metrics.json"), "metrics.json", &mut pack)?;
     }
-    for path in paths {
-        collect_pack_files(&root, &root.join(path), &mut pack)?;
+    for (prefix, path) in paths {
+        collect_pack_files_as(&path, prefix, &mut pack)?;
     }
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
@@ -5296,6 +5291,46 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
         source,
     })?;
     println!("exported {} files to {output}", pack.files.len());
+    Ok(())
+}
+
+fn collect_pack_files_as(
+    path: &Utf8PathBuf,
+    prefix: &str,
+    pack: &mut LodePack,
+) -> lode_core::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if path.is_dir() {
+        for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let child = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+            let child_prefix = format!(
+                "{}/{}",
+                prefix.trim_end_matches('/'),
+                entry.file_name().to_string_lossy()
+            );
+            collect_pack_files_as(&child, &child_prefix, pack)?;
+        }
+        return Ok(());
+    }
+    let contents = fs::read_to_string(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    pack.files.push(LodePackFile {
+        path: prefix.replace('\\', "/"),
+        contents,
+    });
     Ok(())
 }
 
@@ -5324,7 +5359,7 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
                 file.path
             )));
         }
-        let destination = root.join(&file.path);
+        let destination = lodepack_destination(&root, &file.path)?;
         if destination.exists() && no_merge && !force {
             return Err(LodeError::Message(format!(
                 "import conflict: {} exists",
@@ -5347,6 +5382,19 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
     }
     println!("imported {} files from {path}", pack.files.len());
     Ok(())
+}
+
+fn lodepack_destination(root: &Utf8PathBuf, path: &str) -> lode_core::Result<Utf8PathBuf> {
+    let normalized = path.replace('\\', "/");
+    let Some((first, rest)) = normalized.split_once('/') else {
+        return Ok(root.join(normalized));
+    };
+    match first {
+        "templates" | "profiles" | "snippets" | "licenses" | "plugins" | "recipes" | "commands" => {
+            Ok(global_asset_dir(first)?.join(rest))
+        }
+        _ => Ok(root.join(normalized)),
+    }
 }
 
 fn collect_pack_files(
