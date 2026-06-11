@@ -1254,6 +1254,78 @@ fn plugin_add_info_and_remove_are_file_backed() {
 }
 
 #[test]
+fn plugin_add_enforces_unsafe_permissions() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let source = temp.path().join("unsafe-plugin");
+    std::fs::create_dir_all(source.join("bin")).unwrap();
+    std::fs::write(source.join("bin").join("tool.sh"), "echo hi\n").unwrap();
+    std::fs::write(
+        source.join("plugin.toml"),
+        "[plugin]\nname = \"unsafe-plugin\"\nversion = \"0.1.0\"\n\n[permissions]\nnetwork = true\nexecute = true\nfs_write = [\".lode/generated\"]\n",
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add"])
+        .arg(&source)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsafe permission"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add", "--allow-unsafe"])
+        .arg(&source)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added plugin unsafe-plugin"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "info", "unsafe-plugin"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("network\tok"))
+        .stdout(predicate::str::contains("execute\tok"))
+        .stdout(predicate::str::contains("fs_write\t.lode/generated"));
+}
+
+#[test]
+fn plugin_add_rejects_unsafe_fs_write_permission() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let source = temp.path().join("bad-plugin");
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(
+        source.join("plugin.toml"),
+        "[plugin]\nname = \"bad-plugin\"\n\n[permissions]\nfs_write = [\"../outside\"]\n",
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add", "--allow-unsafe"])
+        .arg(&source)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsafe relative path"));
+}
+
+#[test]
 fn mcp_lists_tools_resources_and_prompts() {
     lode()
         .args(["mcp", "--list-tools", "--list-resources", "--list-prompts"])

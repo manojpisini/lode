@@ -437,6 +437,8 @@ enum PluginCommand {
     },
     Add {
         source: Utf8PathBuf,
+        #[arg(long)]
+        allow_unsafe: bool,
     },
     Remove {
         name: String,
@@ -2102,12 +2104,16 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
                 }
             }
         }
-        PluginCommand::Add { source } => {
+        PluginCommand::Add {
+            source,
+            allow_unsafe,
+        } => {
             if !source.exists() || !source.is_dir() {
                 return Err(LodeError::Message(format!(
                     "plugin source must be a directory: {source}"
                 )));
             }
+            enforce_plugin_permissions(&source, allow_unsafe)?;
             let name = source
                 .file_name()
                 .ok_or_else(|| LodeError::Message("plugin source has no name".to_string()))?;
@@ -2156,9 +2162,91 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             if !entry.capabilities.is_empty() {
                 println!("capabilities\t{}", entry.capabilities.join(","));
             }
+            let security = read_plugin_security(&path)?;
+            println!("network\t{}", status_bool(security.network));
+            println!("execute\t{}", status_bool(security.execute));
+            if !security.fs_write.is_empty() {
+                println!("fs_write\t{}", security.fs_write.join(","));
+            }
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct PluginSecurity {
+    network: bool,
+    execute: bool,
+    fs_write: Vec<String>,
+}
+
+fn enforce_plugin_permissions(source: &Utf8PathBuf, allow_unsafe: bool) -> lode_core::Result<()> {
+    let security = read_plugin_security(source)?;
+    for path in &security.fs_write {
+        safe_relative_path(path)?;
+    }
+    let has_executable_surface = source.join("bin").exists() || source.join("hooks").exists();
+    if has_executable_surface && !security.execute {
+        return Err(LodeError::Message(
+            "plugin contains bin/ or hooks/ but does not declare permissions.execute = true"
+                .to_string(),
+        ));
+    }
+    let unsafe_reasons = [
+        (security.network, "network"),
+        (security.execute || has_executable_surface, "execute"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, reason)| enabled.then_some(reason))
+    .collect::<Vec<_>>();
+    if !unsafe_reasons.is_empty() && !allow_unsafe {
+        return Err(LodeError::Message(format!(
+            "plugin requests unsafe permission(s): {}; rerun with --allow-unsafe after review",
+            unsafe_reasons.join(",")
+        )));
+    }
+    Ok(())
+}
+
+fn read_plugin_security(path: &Utf8PathBuf) -> lode_core::Result<PluginSecurity> {
+    let manifest = path.join("plugin.toml");
+    if !manifest.exists() {
+        return Ok(PluginSecurity::default());
+    }
+    let raw = fs::read_to_string(&manifest).map_err(|source| LodeError::Io {
+        path: manifest.as_str().into(),
+        source,
+    })?;
+    let value: toml::Value =
+        toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+    let Some(permissions) = value.get("permissions") else {
+        return Ok(PluginSecurity::default());
+    };
+    let network = permissions
+        .get("network")
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(false);
+    let execute = permissions
+        .get("execute")
+        .or_else(|| permissions.get("fs_execute"))
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(false);
+    let fs_write = permissions
+        .get("fs_write")
+        .and_then(toml::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(PluginSecurity {
+        network,
+        execute,
+        fs_write,
+    })
 }
 
 fn search_plugin_index(query: Option<&str>) -> lode_core::Result<Vec<PluginIndexEntry>> {
