@@ -148,6 +148,7 @@ pub fn load_global_config() -> Result<config::LodeConfig> {
         path: PathBuf::from(path.as_str()),
         source,
     })?;
+    let raw = migrate_config_source_if_needed(&path, &raw)?;
     let config: config::LodeConfig =
         toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
             path: PathBuf::from(path.as_str()),
@@ -166,6 +167,123 @@ pub fn save_global_config(config: &config::LodeConfig) -> Result<()> {
         path: PathBuf::from(path.as_str()),
         source,
     })
+}
+
+fn migrate_config_source_if_needed(path: &Utf8PathBuf, raw: &str) -> Result<String> {
+    let mut value: toml::Value =
+        toml::from_str(raw).map_err(|source| LodeError::TomlDeserialize {
+            path: PathBuf::from(path.as_str()),
+            source,
+        })?;
+    let schema_version = value
+        .get("schema_version")
+        .and_then(toml::Value::as_integer)
+        .unwrap_or(0);
+    let schema_version = u32::try_from(schema_version).unwrap_or(0);
+
+    if schema_version == config::SCHEMA_VERSION {
+        return Ok(raw.to_string());
+    }
+    if schema_version > config::SCHEMA_VERSION {
+        return Err(LodeError::SchemaMismatch {
+            expected: config::SCHEMA_VERSION,
+            found: schema_version,
+        });
+    }
+
+    let backup_path = backup_config(path, schema_version, raw)?;
+    let mut defaults = toml::Value::try_from(config::default_config())?;
+    merge_toml_defaults(&mut defaults, value);
+    value = defaults;
+    if let Some(table) = value.as_table_mut() {
+        table.insert(
+            "schema_version".to_string(),
+            toml::Value::Integer(i64::from(config::SCHEMA_VERSION)),
+        );
+    }
+    let migrated = toml::to_string_pretty(&value)?;
+    fs::write(path, &migrated).map_err(|source| LodeError::Io {
+        path: PathBuf::from(path.as_str()),
+        source,
+    })?;
+    prune_config_backups(path)?;
+    eprintln!(
+        "config migrated: schema v{} -> v{}; backup: {}",
+        schema_version,
+        config::SCHEMA_VERSION,
+        backup_path
+    );
+    Ok(migrated)
+}
+
+fn merge_toml_defaults(defaults: &mut toml::Value, existing: toml::Value) {
+    match (defaults, existing) {
+        (toml::Value::Table(defaults), toml::Value::Table(existing)) => {
+            for (key, value) in existing {
+                if key == "schema_version" {
+                    continue;
+                }
+                match defaults.get_mut(&key) {
+                    Some(default_value) => merge_toml_defaults(default_value, value),
+                    None => {
+                        defaults.insert(key, value);
+                    }
+                }
+            }
+        }
+        (defaults, existing) => *defaults = existing,
+    }
+}
+
+fn backup_config(path: &Utf8PathBuf, schema_version: u32, raw: &str) -> Result<Utf8PathBuf> {
+    let backup_path = Utf8PathBuf::from(format!("{}.bak-schema-{}", path, schema_version));
+    fs::write(&backup_path, raw).map_err(|source| LodeError::Io {
+        path: PathBuf::from(backup_path.as_str()),
+        source,
+    })?;
+    Ok(backup_path)
+}
+
+fn prune_config_backups(path: &Utf8PathBuf) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    let Some(name) = path.file_name() else {
+        return Ok(());
+    };
+    let prefix = format!("{name}.bak-schema-");
+    let mut backups = Vec::new();
+    let entries = fs::read_dir(parent).map_err(|source| LodeError::Io {
+        path: PathBuf::from(parent.as_str()),
+        source,
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: PathBuf::from(parent.as_str()),
+            source,
+        })?;
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        if file_name.starts_with(&prefix) {
+            let modified = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            backups.push((
+                modified,
+                Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
+                    LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+                })?,
+            ));
+        }
+    }
+    backups.sort_by(|left, right| right.0.cmp(&left.0));
+    for (_, backup) in backups.into_iter().skip(5) {
+        fs::remove_file(&backup).map_err(|source| LodeError::Io {
+            path: PathBuf::from(backup.as_str()),
+            source,
+        })?;
+    }
+    Ok(())
 }
 
 fn create_dir_all(path: &Utf8PathBuf) -> Result<()> {
@@ -206,5 +324,60 @@ mod tests {
             global_asset_dir("templates").unwrap(),
             Utf8PathBuf::from_path_buf(templates).unwrap()
         );
+    }
+
+    #[test]
+    fn old_global_config_is_migrated_and_backed_up() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join(".lode").join("config.toml");
+        let _guard = EnvGuard::set("LODE_CONFIG", config_path.to_str().unwrap());
+
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        fs::write(
+            &config_path,
+            r#"
+schema_version = 2
+active_profile = "systems/rust-cli"
+
+[identity]
+author = "Ada"
+"#,
+        )
+        .unwrap();
+
+        let config = load_global_config().unwrap();
+
+        assert_eq!(config.schema_version, config::SCHEMA_VERSION);
+        assert_eq!(config.identity.author, "Ada");
+        assert_eq!(config.identity.email, "you@example.com");
+        assert_eq!(config.active_profile.as_deref(), Some("systems/rust-cli"));
+        assert!(config_path
+            .with_file_name("config.toml.bak-schema-2")
+            .exists());
+        assert!(fs::read_to_string(&config_path)
+            .unwrap()
+            .contains("schema_version = 3"));
+    }
+
+    #[test]
+    fn future_global_config_schema_is_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join(".lode").join("config.toml");
+        let _guard = EnvGuard::set("LODE_CONFIG", config_path.to_str().unwrap());
+
+        fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        let mut config = config::default_config();
+        config.schema_version = config::SCHEMA_VERSION + 1;
+        fs::write(&config_path, toml::to_string_pretty(&config).unwrap()).unwrap();
+
+        let error = load_global_config().unwrap_err();
+
+        assert!(matches!(
+            error,
+            LodeError::SchemaMismatch {
+                expected: config::SCHEMA_VERSION,
+                found
+            } if found == config::SCHEMA_VERSION + 1
+        ));
     }
 }
