@@ -932,6 +932,44 @@ fn commands_run_executes_project_local_shell_macro() {
 }
 
 #[test]
+fn custom_command_direct_invocation_supports_help_and_dry_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let commands_dir = temp.path().join(".lode").join("commands");
+    std::fs::create_dir_all(&commands_dir).unwrap();
+    std::fs::write(
+        commands_dir.join("deploy.toml"),
+        "description = \"Deploy app\"\n\n[[steps]]\nkind = \"shell\"\nrun = \"echo deployed> deployed.txt\"\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["deploy", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deploy app"))
+        .stdout(predicate::str::contains("--dry-run"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["deploy", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("step 1 [shell]"))
+        .stdout(predicate::str::contains("echo deployed"));
+
+    assert!(!temp.path().join("deployed.txt").exists());
+
+    lode()
+        .env("LODE_NO_CUSTOM_COMMANDS", "1")
+        .current_dir(temp.path())
+        .arg("deploy")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("custom commands are disabled"));
+}
+
+#[test]
 fn commands_add_export_and_remove_local_macro() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

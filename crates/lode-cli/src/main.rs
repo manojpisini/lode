@@ -33,7 +33,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 #[derive(Debug, Parser)]
-#[command(name = "lode", version, about = "Personal coding preference system")]
+#[command(
+    name = "lode",
+    version,
+    about = "Personal coding preference system",
+    allow_external_subcommands = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -284,6 +289,8 @@ enum Command {
         shell: String,
     },
     Version,
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Debug, Args)]
@@ -1083,6 +1090,7 @@ fn run() -> lode_core::Result<()> {
         Command::Upgrade { check } => upgrade(check)?,
         Command::Completions { shell } => completions(&shell)?,
         Command::Version => println!("{}", env!("CARGO_PKG_VERSION")),
+        Command::External(args) => external_command(args)?,
     }
 
     Ok(())
@@ -2727,6 +2735,60 @@ fn run_command_macro(slug: &str, dry_run: bool) -> lode_core::Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn external_command(args: Vec<String>) -> lode_core::Result<()> {
+    let Some(slug) = args.first() else {
+        return Err(LodeError::Message("missing command slug".to_string()));
+    };
+    if env::var_os("LODE_NO_CUSTOM_COMMANDS").is_some() {
+        return Err(LodeError::Message(
+            "custom commands are disabled by LODE_NO_CUSTOM_COMMANDS".to_string(),
+        ));
+    }
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        return show_command_macro_help(slug);
+    }
+    let dry_run = args.iter().any(|arg| arg == "--dry-run");
+    let forwarded_args = args
+        .iter()
+        .skip(1)
+        .filter(|arg| arg.as_str() != "--dry-run")
+        .cloned()
+        .collect::<Vec<_>>();
+    if !forwarded_args.is_empty() {
+        println!("custom command args: {}", forwarded_args.join(" "));
+    }
+    run_command_macro(slug, dry_run)
+}
+
+fn show_command_macro_help(slug: &str) -> lode_core::Result<()> {
+    let path = resolve_command_path(slug)?;
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let value: toml::Value =
+        toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+    println!("lode {slug}");
+    if let Some(description) = value.get("description").and_then(toml::Value::as_str) {
+        println!("{description}");
+    }
+    if let Some(steps) = value.get("steps").and_then(toml::Value::as_array) {
+        println!("steps:");
+        for (index, step) in steps.iter().enumerate() {
+            let kind = step
+                .get("kind")
+                .and_then(toml::Value::as_str)
+                .unwrap_or("shell");
+            let run = step.get("run").and_then(toml::Value::as_str).unwrap_or("");
+            println!("  {}. [{kind}] {run}", index + 1);
+        }
+    }
+    println!("flags:");
+    println!("  --dry-run    preview steps without executing");
+    println!("  --help       show this command definition");
     Ok(())
 }
 
