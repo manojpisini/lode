@@ -53,6 +53,15 @@ fn render_template_inner<'a>(
     resolver: &(dyn Fn(&str) -> Option<String> + 'a),
     include_depth: usize,
 ) -> String {
+    if include_depth < 16 {
+        if let Some(parent) = extends_template(input) {
+            if let Some(parent_source) = resolver(parent) {
+                let blocks = extract_template_blocks(input);
+                let inherited = apply_block_overrides(&parent_source, &blocks);
+                return render_template_inner(&inherited, context, resolver, include_depth + 1);
+            }
+        }
+    }
     render_variables(
         &render_blocks(input, context, resolver, include_depth),
         context,
@@ -211,14 +220,71 @@ fn for_tag(trimmed: &str) -> Option<(&str, &str)> {
 fn include_tag(trimmed: &str) -> Option<&str> {
     let inner = trimmed.strip_prefix("{%")?.strip_suffix("%}")?.trim();
     let include = inner.strip_prefix("include")?.trim();
-    include
+    quoted_tag_value(include)
+}
+
+fn extends_template(input: &str) -> Option<&str> {
+    input
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .and_then(extends_tag)
+}
+
+fn extends_tag(trimmed: &str) -> Option<&str> {
+    let inner = trimmed.strip_prefix("{%")?.strip_suffix("%}")?.trim();
+    let parent = inner.strip_prefix("extends")?.trim();
+    quoted_tag_value(parent)
+}
+
+fn quoted_tag_value(value: &str) -> Option<&str> {
+    value
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
         .or_else(|| {
-            include
+            value
                 .strip_prefix('\'')
                 .and_then(|value| value.strip_suffix('\''))
         })
+}
+
+fn extract_template_blocks(input: &str) -> BTreeMap<String, String> {
+    let lines = input.lines().collect::<Vec<_>>();
+    let mut blocks = BTreeMap::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let trimmed = lines[index].trim();
+        if let Some(name) = block_tag_value(trimmed, "block") {
+            let (body, next) = collect_block(&lines, index + 1, "endblock");
+            blocks.insert(name.to_string(), body);
+            index = next;
+        } else {
+            index += 1;
+        }
+    }
+    blocks
+}
+
+fn apply_block_overrides(parent: &str, blocks: &BTreeMap<String, String>) -> String {
+    let lines = parent.lines().collect::<Vec<_>>();
+    let mut output = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let trimmed = lines[index].trim();
+        if let Some(name) = block_tag_value(trimmed, "block") {
+            let (default_body, next) = collect_block(&lines, index + 1, "endblock");
+            output.push(blocks.get(name).cloned().unwrap_or(default_body));
+            index = next;
+        } else {
+            output.push(lines[index].to_string());
+            index += 1;
+        }
+    }
+    let mut rendered = output.join("\n");
+    if parent.ends_with('\n') {
+        rendered.push('\n');
+    }
+    rendered
 }
 
 fn collect_block(lines: &[&str], start: usize, end_tag: &str) -> (String, usize) {
@@ -371,5 +437,43 @@ mod tests {
             });
 
         assert!(output.lines().count() < 20);
+    }
+
+    #[test]
+    fn renders_extends_and_blocks() {
+        let context = RenderContext::new().with("project", "demo");
+
+        let output = render_template_with_resolver(
+            "{% extends \"base.md\" %}\n{% block title %}\n{{ project | title }}\n{% endblock %}\n{% block body %}\nchild body\n{% endblock %}\n",
+            &context,
+            &|name| match name {
+                "base.md" => Some("#\n{% block title %}\nUntitled\n{% endblock %}\n{% block body %}\ndefault\n{% endblock %}\nfooter\n".to_string()),
+                _ => None,
+            },
+        );
+
+        assert!(output.contains("Demo"));
+        assert!(output.contains("child body"));
+        assert!(output.contains("footer"));
+        assert!(!output.contains("default"));
+    }
+
+    #[test]
+    fn extends_keeps_parent_default_blocks() {
+        let context = RenderContext::new();
+
+        let output = render_template_with_resolver(
+            "{% extends \"base.md\" %}\n{% block title %}\nChild\n{% endblock %}\n",
+            &context,
+            &|name| {
+                match name {
+                "base.md" => Some("{% block title %}\nParent\n{% endblock %}\n{% block body %}\ndefault body\n{% endblock %}\n".to_string()),
+                _ => None,
+            }
+            },
+        );
+
+        assert!(output.contains("Child"));
+        assert!(output.contains("default body"));
     }
 }
