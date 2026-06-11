@@ -152,6 +152,7 @@ const TEMPLATE_PATHS: &[&str] = &[
     "vscode/extensions.json",
     "vscode/tasks.json",
     "zed/settings.json",
+    "zed/tasks.json",
     "neovim/lode.lua",
     "agent/AGENTS.md",
     "agent/CLAUDE.md",
@@ -346,6 +347,156 @@ pub fn default_assets(context: &RenderContext) -> Vec<RenderedAsset> {
     assets
 }
 
+fn vscode_settings() -> String {
+    r#"{
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.rulers": [100],
+  "editor.trimAutoWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/.git": true,
+    "**/dist": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/*.lock": true
+  },
+  "lode.binaryPath": "lode",
+  "lode.startDaemonOnOpen": true,
+  "lode.stampOnSave": true,
+  "lode.enforceRenameOnSave": true,
+  "lode.showStatusBar": true,
+  "lode.showDiagnostics": true,
+  "lode.useLsp": true,
+  "lode.checkOnSave": false,
+  "lode.mcpPort": 3847
+}
+"#
+    .to_string()
+}
+
+fn vscode_extensions() -> String {
+    r#"{
+  "recommendations": [
+    "lode-rs.lode-vscode",
+    "EditorConfig.EditorConfig",
+    "tamasfe.even-better-toml",
+    "usernamehw.errorlens"
+  ]
+}
+"#
+    .to_string()
+}
+
+fn vscode_tasks() -> String {
+    r#"{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "lode: check conventions", "type": "shell", "command": "lode check", "problemMatcher": [] },
+    { "label": "lode: fix conventions", "type": "shell", "command": "lode fix", "problemMatcher": [] },
+    { "label": "lode: sign file", "type": "shell", "command": "lode sign ${file}", "problemMatcher": [] },
+    { "label": "lode: audit", "type": "shell", "command": "lode audit", "problemMatcher": [] },
+    { "label": "lode: scan secrets", "type": "shell", "command": "lode scan secrets", "problemMatcher": [] },
+    { "label": "lode: open dashboard", "type": "shell", "command": "lode serve", "problemMatcher": [] },
+    { "label": "lode: agent sync", "type": "shell", "command": "lode agent sync", "problemMatcher": [] },
+    { "label": "lode: daemon start", "type": "shell", "command": "lode daemon start", "problemMatcher": [] },
+    { "label": "lode: daemon stop", "type": "shell", "command": "lode daemon stop", "problemMatcher": [] }
+  ]
+}
+"#
+    .to_string()
+}
+
+fn zed_settings() -> String {
+    r#"{
+  "tab_size": 2,
+  "hard_tabs": false,
+  "format_on_save": "on",
+  "formatter": "language_server"
+}
+"#
+    .to_string()
+}
+
+fn zed_tasks() -> String {
+    r#"[
+  { "label": "lode: check conventions", "command": "lode", "args": ["check"] },
+  { "label": "lode: fix conventions", "command": "lode", "args": ["fix"] },
+  { "label": "lode: sign file", "command": "lode", "args": ["sign", "$ZED_FILE"] },
+  { "label": "lode: stamp file", "command": "lode", "args": ["stamp", "$ZED_FILE"] },
+  { "label": "lode: audit", "command": "lode", "args": ["audit"] },
+  { "label": "lode: scan secrets", "command": "lode", "args": ["scan", "secrets"] },
+  { "label": "lode: time today", "command": "lode", "args": ["time", "today"] },
+  { "label": "lode: open dashboard", "command": "lode", "args": ["serve"] },
+  { "label": "lode: git commit", "command": "lode", "args": ["git", "commit"] },
+  { "label": "lode: release", "command": "lode", "args": ["release"] },
+  { "label": "lode: agent sync", "command": "lode", "args": ["agent", "sync"] },
+  { "label": "lode: daemon start", "command": "lode", "args": ["daemon", "start"] },
+  { "label": "lode: daemon stop", "command": "lode", "args": ["daemon", "stop"] }
+]
+"#
+    .to_string()
+}
+
+fn neovim_lode_lua() -> String {
+    r#"local M = {}
+
+M.opts = {
+  binary = "lode",
+  daemon_auto_start = true,
+  stamp_on_save = true,
+  enforce_rename = true,
+  use_lsp = true,
+  show_statusline = true,
+  which_key_prefix = "<leader>l",
+}
+
+local function in_lode_project()
+  return vim.fn.filereadable(".lode/project.toml") == 1
+end
+
+local function run(args)
+  vim.fn.jobstart(vim.list_extend({ M.opts.binary }, args), { detach = true })
+end
+
+function M.setup(opts)
+  M.opts = vim.tbl_extend("force", M.opts, opts or {})
+  vim.api.nvim_create_autocmd("VimEnter", {
+    callback = function()
+      if M.opts.daemon_auto_start and in_lode_project() then
+        run({ "daemon", "start" })
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    callback = function()
+      if M.opts.stamp_on_save and in_lode_project() then
+        run({ "stamp", vim.fn.expand("%:p") })
+      end
+    end,
+  })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "c", function() run({ "check" }) end, { desc = "Lode check" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "f", function() run({ "fix" }) end, { desc = "Lode fix" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "s", function() run({ "sign", vim.fn.expand("%:p") }) end, { desc = "Lode sign file" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "t", function() run({ "stamp", vim.fn.expand("%:p") }) end, { desc = "Lode stamp file" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "a", function() run({ "audit" }) end, { desc = "Lode audit" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "v", function() vim.cmd("terminal lode serve") end, { desc = "Lode dashboard" })
+end
+
+function M.statusline()
+  return "lode"
+end
+
+return M
+"#
+    .to_string()
+}
+
 pub fn template_contents(path: &str, context: &RenderContext) -> String {
     let project = context.get("project").unwrap_or("project");
     let ident = slug_to_ident(project);
@@ -409,11 +560,12 @@ pub fn template_contents(path: &str, context: &RenderContext) -> String {
         "docker/Dockerfile" => "FROM alpine:3.20\nWORKDIR /app\nCOPY . .\nCMD [\"sh\"]\n".to_string(),
         "docker/compose.yml" => "services:\n  app:\n    build: .\n    env_file: .env.example\n".to_string(),
         "devcontainer/devcontainer.json" => "{\n  \"name\": \"{{ project }}\",\n  \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\"\n}\n".replace("{{ project }}", project),
-        "vscode/settings.json" => "{\n  \"editor.formatOnSave\": true\n}\n".to_string(),
-        "vscode/extensions.json" => "{\n  \"recommendations\": []\n}\n".to_string(),
-        "vscode/tasks.json" => "{\n  \"version\": \"2.0.0\",\n  \"tasks\": [{\"label\":\"verify\",\"type\":\"shell\",\"command\":\"make verify\"}]\n}\n".to_string(),
-        "zed/settings.json" => "{\n  \"format_on_save\": \"on\"\n}\n".to_string(),
-        "neovim/lode.lua" => "vim.keymap.set('n', '<leader>lv', ':make verify<CR>')\n".to_string(),
+        "vscode/settings.json" => vscode_settings(),
+        "vscode/extensions.json" => vscode_extensions(),
+        "vscode/tasks.json" => vscode_tasks(),
+        "zed/settings.json" => zed_settings(),
+        "zed/tasks.json" => zed_tasks(),
+        "neovim/lode.lua" => neovim_lode_lua(),
         "agent/AGENTS.md" | "agent/CLAUDE.md" | "agent/CODEX.md" => format!("# Agent Context for {project}\n\nRead `_ref_` for permanent truth and `_ctx_` for current working context.\n"),
         "agent/.cursorrules" | "agent/.windsurfrules" => "Follow `_ref_/CONVENTIONS.md`; prefer small, verified changes.\n".to_string(),
         "agent/.mcp.json" => "{\n  \"servers\": {}\n}\n".to_string(),

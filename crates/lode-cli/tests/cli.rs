@@ -465,6 +465,64 @@ fn init_with_rust_profile_creates_language_files() {
         .join("ci.yml")
         .exists());
     assert!(project.join(".vscode").join("settings.json").exists());
+    assert!(
+        std::fs::read_to_string(project.join(".vscode").join("settings.json"))
+            .unwrap()
+            .contains("lode.startDaemonOnOpen")
+    );
+    assert!(
+        std::fs::read_to_string(project.join(".vscode").join("tasks.json"))
+            .unwrap()
+            .contains("lode: open dashboard")
+    );
+}
+
+#[test]
+fn add_editor_integrations_scaffolds_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["init", "editor-app"])
+        .assert()
+        .success();
+
+    let project = temp.path().join("editor-app");
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["add", "zed"])
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["add", "nvim"])
+        .assert()
+        .success();
+
+    assert!(
+        std::fs::read_to_string(project.join(".zed").join("tasks.json"))
+            .unwrap()
+            .contains("lode: daemon start")
+    );
+    assert!(std::fs::read_to_string(
+        project
+            .join(".config")
+            .join("nvim")
+            .join("lua")
+            .join("lode.lua")
+    )
+    .unwrap()
+    .contains("daemon_auto_start"));
 }
 
 #[test]
