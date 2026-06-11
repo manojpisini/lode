@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     assets, config, global_dir,
-    template::{render_template, slug_to_class, slug_to_ident, RenderContext},
+    template::{
+        render_template, render_template_with_resolver, slug_to_class, slug_to_ident, RenderContext,
+    },
     LodeError, Result,
 };
 
@@ -144,10 +146,7 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
         let contents = if item.template == "lode/project.toml" {
             project_config_toml(&request.name, profile, &request.components)?
         } else {
-            render_template(
-                &resolve_template(&project_dir, item.template, &context),
-                &context,
-            )
+            render_project_template(&project_dir, item.template, &context)
         };
         write_file(&destination, &contents)?;
         lock_entries.push(ScaffoldLockEntry {
@@ -222,10 +221,7 @@ pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
         if let Some(parent) = destination.parent() {
             create_dir_all(&parent.to_path_buf())?;
         }
-        let contents = render_template(
-            &resolve_template(&request.project_dir, item.template, &context),
-            &context,
-        );
+        let contents = render_project_template(&request.project_dir, item.template, &context);
         write_file(&destination, &contents)?;
         let relative = destination
             .strip_prefix(&request.project_dir)
@@ -280,10 +276,7 @@ pub fn sync_project(
         let destination = project_dir.join(rendered_destination);
         planned_paths.push(destination.clone());
 
-        let mut contents = render_template(
-            &resolve_template(&project_dir, item.template, &context),
-            &context,
-        );
+        let mut contents = render_project_template(&project_dir, item.template, &context);
         if destination.exists() {
             let existing = fs::read_to_string(&destination).map_err(|source| LodeError::Io {
                 path: PathBuf::from(destination.as_str()),
@@ -400,6 +393,17 @@ fn resolve_template(project_dir: &Utf8PathBuf, template: &str, context: &RenderC
         }
     }
     assets::template_contents(template, context)
+}
+
+fn render_project_template(
+    project_dir: &Utf8PathBuf,
+    template: &str,
+    context: &RenderContext,
+) -> String {
+    let source = resolve_template(project_dir, template, context);
+    render_template_with_resolver(&source, context, &|include| {
+        Some(resolve_template(project_dir, include, context))
+    })
 }
 
 fn content_hash(contents: &str) -> String {
@@ -732,6 +736,39 @@ mod tests {
             .entries
             .iter()
             .any(|entry| entry.destination == Utf8PathBuf::from("README.md")));
+    }
+
+    #[test]
+    fn project_templates_can_include_partials() {
+        let temp = tempfile::tempdir().unwrap();
+        let base_path = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        let project = base_path.join("my-app");
+        let templates = project.join(".lode").join("templates");
+        let readme_override = templates.join("root").join("README.md");
+        let partial = templates.join("partials").join("badge.md");
+        fs::create_dir_all(readme_override.parent().unwrap()).unwrap();
+        fs::create_dir_all(partial.parent().unwrap()).unwrap();
+        fs::write(
+            &readme_override,
+            "# {{ project }}\n{% include \"partials/badge.md\" %}\n",
+        )
+        .unwrap();
+        fs::write(&partial, "badge={{ project | kebab }}\n").unwrap();
+
+        init_project(InitRequest {
+            name: "my-app".to_string(),
+            base_path,
+            config: config::default_config(),
+            profile: None,
+            components: Vec::new(),
+            dry_run: false,
+            overwrite: true,
+        })
+        .unwrap();
+
+        let readme = fs::read_to_string(project.join("README.md")).unwrap();
+        assert!(readme.contains("# my-app"));
+        assert!(readme.contains("badge=my-app"));
     }
 
     #[test]

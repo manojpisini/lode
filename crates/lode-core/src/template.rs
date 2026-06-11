@@ -36,7 +36,27 @@ impl RenderContext {
 }
 
 pub fn render_template(input: &str, context: &RenderContext) -> String {
-    render_variables(&render_blocks(input, context), context)
+    render_template_with_resolver(input, context, &|_| None)
+}
+
+pub fn render_template_with_resolver<'a>(
+    input: &str,
+    context: &RenderContext,
+    resolver: &(dyn Fn(&str) -> Option<String> + 'a),
+) -> String {
+    render_template_inner(input, context, resolver, 0)
+}
+
+fn render_template_inner<'a>(
+    input: &str,
+    context: &RenderContext,
+    resolver: &(dyn Fn(&str) -> Option<String> + 'a),
+    include_depth: usize,
+) -> String {
+    render_variables(
+        &render_blocks(input, context, resolver, include_depth),
+        context,
+    )
 }
 
 fn render_variables(input: &str, context: &RenderContext) -> String {
@@ -112,7 +132,12 @@ fn url_encode(value: &str) -> String {
     encoded
 }
 
-fn render_blocks(input: &str, context: &RenderContext) -> String {
+fn render_blocks<'a>(
+    input: &str,
+    context: &RenderContext,
+    resolver: &(dyn Fn(&str) -> Option<String> + 'a),
+    include_depth: usize,
+) -> String {
     let lines = input.lines().collect::<Vec<_>>();
     let mut output = Vec::new();
     let mut index = 0;
@@ -125,7 +150,12 @@ fn render_blocks(input: &str, context: &RenderContext) -> String {
                 .map(|value| !value.is_empty() && value != "false")
                 .unwrap_or(false)
             {
-                output.push(render_template(&body, context));
+                output.push(render_template_inner(
+                    &body,
+                    context,
+                    resolver,
+                    include_depth,
+                ));
             }
             index = next;
         } else if let Some((binding, list_name)) = for_tag(trimmed) {
@@ -133,10 +163,27 @@ fn render_blocks(input: &str, context: &RenderContext) -> String {
             if let Some(items) = context.get_list(list_name) {
                 for item in items {
                     let child = context.clone().with(binding, item);
-                    output.push(render_template(&body, &child));
+                    output.push(render_template_inner(
+                        &body,
+                        &child,
+                        resolver,
+                        include_depth,
+                    ));
                 }
             }
             index = next;
+        } else if let Some(include) = include_tag(trimmed) {
+            if include_depth < 16 {
+                if let Some(source) = resolver(include) {
+                    output.push(render_template_inner(
+                        &source,
+                        context,
+                        resolver,
+                        include_depth + 1,
+                    ));
+                }
+            }
+            index += 1;
         } else {
             output.push(lines[index].to_string());
             index += 1;
@@ -159,6 +206,19 @@ fn for_tag(trimmed: &str) -> Option<(&str, &str)> {
     let rest = inner.strip_prefix("for")?.trim();
     let (binding, list_name) = rest.split_once(" in ")?;
     Some((binding.trim(), list_name.trim()))
+}
+
+fn include_tag(trimmed: &str) -> Option<&str> {
+    let inner = trimmed.strip_prefix("{%")?.strip_suffix("%}")?.trim();
+    let include = inner.strip_prefix("include")?.trim();
+    include
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            include
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
 }
 
 fn collect_block(lines: &[&str], start: usize, end_tag: &str) -> (String, usize) {
@@ -281,5 +341,35 @@ mod tests {
             output,
             "https://img.shields.io/badge/license-MIT%20OR%20Apache-2.0-blue.svg"
         );
+    }
+
+    #[test]
+    fn renders_includes_with_resolver() {
+        let context = RenderContext::new().with("project", "demo");
+
+        let output = render_template_with_resolver(
+            "before\n{% include \"partials/name.txt\" %}\nafter\n",
+            &context,
+            &|name| match name {
+                "partials/name.txt" => Some("project={{ project | upper }}".to_string()),
+                _ => None,
+            },
+        );
+
+        assert!(output.contains("before"));
+        assert!(output.contains("project=DEMO"));
+        assert!(output.contains("after"));
+    }
+
+    #[test]
+    fn include_recursion_is_bounded() {
+        let context = RenderContext::new();
+
+        let output =
+            render_template_with_resolver("{% include \"loop\" %}\nend\n", &context, &|name| {
+                (name == "loop").then(|| "{% include \"loop\" %}".to_string())
+            });
+
+        assert!(output.lines().count() < 20);
     }
 }
