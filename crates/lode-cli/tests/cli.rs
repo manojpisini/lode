@@ -1497,25 +1497,35 @@ fn mcp_lists_tools_resources_and_prompts() {
         .success()
         .stdout(predicate::str::contains("\"tools\""))
         .stdout(predicate::str::contains("lode_config_show"))
+        .stdout(predicate::str::contains("lode_scan_foreign"))
         .stdout(predicate::str::contains("lode://config"))
         .stdout(predicate::str::contains("lode-project-review"));
 }
 
 #[test]
 fn mcp_stdio_handles_tool_calls() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+
     lode()
-        .write_stdin(
-            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lode_template_list","arguments":{}}}
-"#,
-        )
+        .write_stdin(format!(
+            "{}\n{}\n{}\n{}\n",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lode_template_list","arguments":{}}}"#,
+            format!(
+                r#"{{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"lode_scan_foreign","arguments":{{"path":"{}"}}}}}}"#,
+                temp.path().to_string_lossy().replace('\\', "\\\\")
+            )
+        ))
         .arg("mcp")
         .assert()
         .success()
         .stdout(predicate::str::contains("\"serverInfo\""))
         .stdout(predicate::str::contains("\"tools\""))
-        .stdout(predicate::str::contains("root/README.md"));
+        .stdout(predicate::str::contains("root/README.md"))
+        .stdout(predicate::str::contains("\"package_manager\":\"npm\""))
+        .stdout(predicate::str::contains("\"migration_actions\""));
 }
 
 #[test]

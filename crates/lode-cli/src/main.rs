@@ -2571,6 +2571,16 @@ fn mcp_tools() -> Value {
                 "inputSchema": { "type": "object", "properties": {} }
             },
             {
+                "name": "lode_scan_foreign",
+                "description": "Analyse a non-Lode project and return a local adoption/migration report.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Project path to inspect. Defaults to the current working directory." }
+                    }
+                }
+            },
+            {
                 "name": "lode_time_today",
                 "description": "Return total tracked time from .lode/time-log.json for today.",
                 "inputSchema": { "type": "object", "properties": {} }
@@ -2820,6 +2830,19 @@ fn mcp_call_tool(request: &Value) -> std::result::Result<Value, (i64, String)> {
             let cwd = current_dir().map_err(|error| (-32603, error.to_string()))?;
             serde_json::to_value(
                 audit_project(&cwd, &config).map_err(|error| (-32603, error.to_string()))?,
+            )
+            .map_err(|error| (-32603, error.to_string()))?
+        }
+        "lode_scan_foreign" => {
+            let path = request
+                .pointer("/params/arguments/path")
+                .and_then(Value::as_str)
+                .map(Utf8PathBuf::from)
+                .map(Ok)
+                .unwrap_or_else(current_dir)
+                .map_err(|error| (-32603, error.to_string()))?;
+            serde_json::to_value(
+                scan_foreign_project(&path).map_err(|error| (-32603, error.to_string()))?,
             )
             .map_err(|error| (-32603, error.to_string()))?
         }
