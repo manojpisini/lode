@@ -2728,7 +2728,9 @@ fn pkg_graph_json_reports_manifest() {
         .args(["pkg", "graph", "--format", "json"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"kind\": \"cargo\""));
+        .stdout(predicate::str::contains("\"manager\": \"cargo\""))
+        .stdout(predicate::str::contains("\"kind\": \"cargo\""))
+        .stdout(predicate::str::contains("\"edges\""));
 }
 
 #[test]
@@ -2742,6 +2744,7 @@ fn pkg_graph_dot_reports_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains("digraph packages"))
+        .stdout(predicate::str::contains("manager=npm"))
         .stdout(predicate::str::contains("project -> node"));
 }
 

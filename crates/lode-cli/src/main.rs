@@ -5763,21 +5763,36 @@ fn package_graph(format: &str) -> lode_core::Result<()> {
         ("settings.gradle", "gradle"),
         ("pom.xml", "maven"),
     ];
+    let found = manifests
+        .iter()
+        .filter(|(file, _)| Utf8PathBuf::from(*file).exists())
+        .map(|(file, kind)| serde_json::json!({ "file": file, "kind": kind }))
+        .collect::<Vec<_>>();
+    let manager = detect_package_manager();
     match format {
         "json" => {
-            let found = manifests
-                .iter()
-                .filter(|(file, _)| Utf8PathBuf::from(*file).exists())
-                .map(|(file, kind)| serde_json::json!({ "file": file, "kind": kind }))
-                .collect::<Vec<_>>();
+            let graph = json!({
+                "manager": manager,
+                "manifests": found,
+                "edges": found.iter().filter_map(|manifest| {
+                    Some(json!({
+                        "from": "project",
+                        "to": manifest.get("kind")?.as_str()?,
+                        "label": manifest.get("file")?.as_str()?
+                    }))
+                }).collect::<Vec<_>>()
+            });
             println!(
                 "{}",
-                serde_json::to_string_pretty(&found)
+                serde_json::to_string_pretty(&graph)
                     .map_err(|error| LodeError::Message(error.to_string()))?
             );
         }
         "ascii" => {
-            println!("project");
+            println!(
+                "project manager={}",
+                manager.as_deref().unwrap_or("unknown")
+            );
             for (file, kind) in manifests {
                 if Utf8PathBuf::from(file).exists() {
                     println!("`- {kind} ({file})");
@@ -5786,7 +5801,10 @@ fn package_graph(format: &str) -> lode_core::Result<()> {
         }
         "dot" => {
             println!("digraph packages {{");
-            println!("  project;");
+            println!(
+                "  project [label=\"project\\nmanager={}\"];",
+                manager.as_deref().unwrap_or("unknown")
+            );
             for (file, kind) in manifests {
                 if Utf8PathBuf::from(file).exists() {
                     println!("  project -> {kind} [label=\"{file}\"];");
