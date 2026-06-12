@@ -55,10 +55,20 @@ fn render_template_inner<'a>(
 ) -> String {
     if include_depth < 16 {
         if let Some(parent) = extends_template(input) {
-            if let Some(parent_source) = resolver(parent) {
+            if safe_template_reference(parent) {
+                if let Some(parent_source) = resolver(parent) {
+                    let blocks = extract_template_blocks(input);
+                    let inherited = apply_block_overrides(&parent_source, &blocks);
+                    return render_template_inner(&inherited, context, resolver, include_depth + 1);
+                }
+            } else {
                 let blocks = extract_template_blocks(input);
-                let inherited = apply_block_overrides(&parent_source, &blocks);
-                return render_template_inner(&inherited, context, resolver, include_depth + 1);
+                return render_template_inner(
+                    &blocks.into_values().collect::<Vec<_>>().join("\n"),
+                    context,
+                    resolver,
+                    include_depth + 1,
+                );
             }
         }
     }
@@ -218,7 +228,7 @@ fn render_blocks<'a>(
             }
             index = next;
         } else if let Some(include) = include_tag(trimmed) {
-            if include_depth < 16 {
+            if include_depth < 16 && safe_template_reference(include) {
                 if let Some(source) = resolver(include) {
                     output.push(render_template_inner(
                         &source,
@@ -282,6 +292,14 @@ fn quoted_tag_value(value: &str) -> Option<&str> {
                 .strip_prefix('\'')
                 .and_then(|value| value.strip_suffix('\''))
         })
+}
+
+fn safe_template_reference(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains("..")
+        && !value.contains(':')
+        && !value.starts_with('/')
+        && !value.starts_with('\\')
 }
 
 fn extract_template_blocks(input: &str) -> BTreeMap<String, String> {
@@ -479,6 +497,21 @@ mod tests {
     }
 
     #[test]
+    fn skips_unsafe_include_paths() {
+        let context = RenderContext::new();
+
+        let output = render_template_with_resolver(
+            "before\n{% include \"../secret.txt\" %}\n{% include \"C:/secret.txt\" %}\nafter\n",
+            &context,
+            &|name| Some(format!("unsafe={name}")),
+        );
+
+        assert!(output.contains("before"));
+        assert!(output.contains("after"));
+        assert!(!output.contains("unsafe="));
+    }
+
+    #[test]
     fn include_recursion_is_bounded() {
         let context = RenderContext::new();
 
@@ -526,5 +559,19 @@ mod tests {
 
         assert!(output.contains("Child"));
         assert!(output.contains("default body"));
+    }
+
+    #[test]
+    fn unsafe_extends_does_not_resolve_parent() {
+        let context = RenderContext::new();
+
+        let output = render_template_with_resolver(
+            "{% extends \"../base.md\" %}\n{% block body %}\nchild body\n{% endblock %}\n",
+            &context,
+            &|name| Some(format!("unsafe={name}")),
+        );
+
+        assert!(output.contains("child body"));
+        assert!(!output.contains("unsafe="));
     }
 }
