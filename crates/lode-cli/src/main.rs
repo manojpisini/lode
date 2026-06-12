@@ -2144,15 +2144,16 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
                     "plugin source must be a directory: {source}"
                 )));
             }
+            let entry = require_plugin_manifest(&source)?;
+            safe_relative_path(&entry.name)?;
             enforce_plugin_permissions(&source, allow_unsafe)?;
-            let name = source
-                .file_name()
-                .ok_or_else(|| LodeError::Message("plugin source has no name".to_string()))?;
-            let destination = global_asset_dir("plugins")?.join(name);
+            let name = entry.name;
+            let destination = global_asset_dir("plugins")?.join(&name);
             if destination.exists() {
                 return Err(LodeError::Message(format!("plugin already exists: {name}")));
             }
             copy_dir_recursive(&source, &destination)?;
+            write_plugin_install_receipt(&destination, &source, allow_unsafe)?;
             println!("added plugin {name}");
         }
         PluginCommand::Remove { name } => {
@@ -2199,16 +2200,41 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             if !security.fs_write.is_empty() {
                 println!("fs_write\t{}", security.fs_write.join(","));
             }
+            if let Some(receipt) = read_plugin_install_receipt(&path)? {
+                println!("trusted\t{}", status_bool(receipt.reviewed));
+                println!("installed_at\t{}", receipt.installed_at);
+                println!("installed_from\t{}", receipt.source);
+            }
         }
     }
     Ok(())
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct PluginSecurity {
     network: bool,
     execute: bool,
     fs_write: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PluginInstallReceipt {
+    schema_version: u32,
+    source: String,
+    installed_at: String,
+    reviewed: bool,
+    allow_unsafe: bool,
+    permissions: PluginSecurity,
+}
+
+fn require_plugin_manifest(source: &Utf8PathBuf) -> lode_core::Result<PluginIndexEntry> {
+    let manifest = source.join("plugin.toml");
+    if !manifest.exists() {
+        return Err(LodeError::Message(
+            "plugin manifest required: plugin.toml".to_string(),
+        ));
+    }
+    plugin_index_entry(source, false)
 }
 
 fn enforce_plugin_permissions(source: &Utf8PathBuf, allow_unsafe: bool) -> lode_core::Result<()> {
@@ -2278,6 +2304,44 @@ fn read_plugin_security(path: &Utf8PathBuf) -> lode_core::Result<PluginSecurity>
         execute,
         fs_write,
     })
+}
+
+fn write_plugin_install_receipt(
+    destination: &Utf8PathBuf,
+    source: &Utf8PathBuf,
+    allow_unsafe: bool,
+) -> lode_core::Result<()> {
+    let receipt = PluginInstallReceipt {
+        schema_version: 3,
+        source: source.to_string(),
+        installed_at: now_timestamp(),
+        reviewed: true,
+        allow_unsafe,
+        permissions: read_plugin_security(destination)?,
+    };
+    let path = destination.join(".lode-install.json");
+    let raw = serde_json::to_string_pretty(&receipt)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn read_plugin_install_receipt(
+    path: &Utf8PathBuf,
+) -> lode_core::Result<Option<PluginInstallReceipt>> {
+    let receipt = path.join(".lode-install.json");
+    if !receipt.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&receipt).map_err(|source| LodeError::Io {
+        path: receipt.as_str().into(),
+        source,
+    })?;
+    serde_json::from_str(&raw)
+        .map(Some)
+        .map_err(|error| LodeError::Message(error.to_string()))
 }
 
 fn search_plugin_index(query: Option<&str>) -> lode_core::Result<Vec<PluginIndexEntry>> {

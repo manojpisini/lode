@@ -1331,7 +1331,20 @@ fn plugin_add_info_and_remove_are_file_backed() {
         .assert()
         .success()
         .stdout(predicate::str::contains("version\t1.2.3"))
-        .stdout(predicate::str::contains("templates\tok"));
+        .stdout(predicate::str::contains("templates\tok"))
+        .stdout(predicate::str::contains("trusted\tok"))
+        .stdout(predicate::str::contains("installed_from"));
+
+    let receipt = std::fs::read_to_string(
+        temp.path()
+            .join(".lode")
+            .join("plugins")
+            .join("my-plugin")
+            .join(".lode-install.json"),
+    )
+    .unwrap();
+    assert!(receipt.contains("\"schema_version\": 3"));
+    assert!(receipt.contains("\"reviewed\": true"));
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -1419,6 +1432,28 @@ fn plugin_add_rejects_unsafe_fs_write_permission() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("unsafe relative path"));
+}
+
+#[test]
+fn plugin_add_requires_manifest() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let source = temp.path().join("manifestless-plugin");
+    std::fs::create_dir_all(source.join("templates")).unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add"])
+        .arg(&source)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("plugin manifest required"));
 }
 
 #[test]
