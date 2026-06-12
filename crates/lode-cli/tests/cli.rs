@@ -1764,6 +1764,38 @@ fn hooks_list_status_and_test_are_available() {
 }
 
 #[test]
+fn hooks_run_executes_project_hook() {
+    let temp = tempfile::tempdir().unwrap();
+    let hooks = temp.path().join(".lode").join("hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    std::fs::write(
+        hooks.join("post-init.ps1"),
+        "Set-Content -NoNewline -Path hook-output.txt -Value ran\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["hooks", "run", "post-init", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would run hook project"))
+        .stdout(predicate::str::contains("post-init.ps1"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["hooks", "run", "post-init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("running hook project"));
+
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("hook-output.txt")).unwrap(),
+        "ran"
+    );
+}
+
+#[test]
 fn hooks_discover_plugin_global_and_project_sources() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

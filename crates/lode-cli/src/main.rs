@@ -618,7 +618,14 @@ enum GitCommand {
 enum HooksCommand {
     List,
     Status,
-    Test { event: String },
+    Test {
+        event: String,
+    },
+    Run {
+        event: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -4178,6 +4185,7 @@ fn hooks(command: HooksCommand) -> lode_core::Result<()> {
             }
         }
         HooksCommand::Test { event } => test_hook(&event)?,
+        HooksCommand::Run { event, dry_run } => run_hooks(&event, dry_run)?,
     }
     Ok(())
 }
@@ -4199,6 +4207,64 @@ fn test_hook(event: &str) -> lode_core::Result<()> {
         println!("{}\t{}\t{}", hook.source, hook.runtime, hook.path);
     }
     Ok(())
+}
+
+fn run_hooks(event: &str, dry_run: bool) -> lode_core::Result<()> {
+    let mut hooks = discover_hooks()?;
+    hooks.retain(|hook| hook.event == event);
+    if hooks.is_empty() {
+        return Err(LodeError::Message(format!(
+            "no hooks found for event: {event}"
+        )));
+    }
+    for hook in hooks {
+        let (program, args) = hook_command(&hook)?;
+        if dry_run {
+            println!(
+                "would run hook {}\t{}\t{} {}",
+                hook.source,
+                hook.runtime,
+                program,
+                args.join(" ")
+            );
+            continue;
+        }
+        println!(
+            "running hook {}\t{}\t{}",
+            hook.source, hook.runtime, hook.path
+        );
+        let status = ProcessCommand::new(program)
+            .args(&args)
+            .status()
+            .map_err(|source| LodeError::Io {
+                path: program.into(),
+                source,
+            })?;
+        if !status.success() {
+            return Err(LodeError::Message(format!(
+                "hook {} {} failed with {status}",
+                hook.source, hook.path
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn hook_command(hook: &DiscoveredHook) -> lode_core::Result<(&'static str, Vec<String>)> {
+    let path = hook.path.to_string();
+    match hook.runtime.as_str() {
+        "powershell" => Ok((
+            "powershell",
+            vec!["-NoProfile".to_string(), "-File".to_string(), path],
+        )),
+        "python" => Ok(("python", vec![path])),
+        "node" => Ok(("node", vec![path])),
+        "lua" => Ok(("lua", vec![path])),
+        "sh" => Ok(("sh", vec![path])),
+        other => Err(LodeError::Message(format!(
+            "unsupported hook runtime: {other}"
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
