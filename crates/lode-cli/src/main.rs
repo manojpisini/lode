@@ -6872,12 +6872,29 @@ fn self_command(command: SelfCommand) -> lode_core::Result<()> {
                 path: "current_exe".into(),
                 source,
             })?;
+            let root = global_dir()?;
             println!("version\t{}", env!("CARGO_PKG_VERSION"));
             println!("executable\t{}", exe.display());
-            println!("global_dir\t{}", global_dir()?);
+            println!("global_dir\t{root}");
+            println!("schema_version\t3");
+            for name in [
+                "templates",
+                "profiles",
+                "snippets",
+                "licenses",
+                "recipes",
+                "plugins",
+                "commands",
+            ] {
+                println!("{name}\t{}", count_dir_entries(&root.join(name))?);
+            }
+            println!(
+                "upgrade_cache\t{}",
+                count_dir_entries(&root.join("cache").join("upgrade"))?
+            );
         }
         SelfCommand::Clean { dry_run } => {
-            for path in [global_dir()?.join("cache"), global_dir()?.join("logs")] {
+            for path in self_clean_targets()? {
                 if dry_run {
                     println!("would clean {path}");
                 } else if path.exists() {
@@ -6928,6 +6945,37 @@ fn self_command(command: SelfCommand) -> lode_core::Result<()> {
         }
     }
     Ok(())
+}
+
+fn count_dir_entries(path: &Utf8PathBuf) -> lode_core::Result<usize> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let mut count = 0;
+    for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })? {
+        entry.map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn self_clean_targets() -> lode_core::Result<Vec<Utf8PathBuf>> {
+    let root = global_dir()?;
+    let logs = root.join("logs");
+    Ok(vec![
+        root.join("cache").join("upgrade"),
+        daemon_state_path()?,
+        daemon_runtime_state_path()?,
+        logs.join("daemon.log.1"),
+        logs.join("daemon.log.2"),
+        logs.join("daemon.log.3"),
+    ])
 }
 
 fn upgrade(check: bool) -> lode_core::Result<()> {

@@ -2352,14 +2352,42 @@ fn self_info_clean_upgrade_and_completions_work() {
         .args(["self", "info"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("global_dir"));
+        .stdout(predicate::str::contains("global_dir"))
+        .stdout(predicate::str::contains("schema_version\t3"))
+        .stdout(predicate::str::contains("templates\t"))
+        .stdout(predicate::str::contains("upgrade_cache\t"));
 
     lode()
         .env("LODE_CONFIG", &config)
         .args(["self", "clean", "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("would clean"));
+        .stdout(predicate::str::contains("upgrade"))
+        .stdout(predicate::str::contains("daemon-state.json"));
+
+    let root = temp.path().join(".lode");
+    std::fs::create_dir_all(root.join("cache").join("upgrade")).unwrap();
+    std::fs::write(
+        root.join("cache").join("upgrade").join("lode-new"),
+        "binary\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("cache").join("daemon-state.txt"), "active\n").unwrap();
+    std::fs::write(root.join("cache").join("daemon-state.json"), "{}\n").unwrap();
+    std::fs::create_dir_all(root.join("logs")).unwrap();
+    std::fs::write(root.join("logs").join("daemon.log.1"), "old\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["self", "clean"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cleaned"));
+
+    assert!(!root.join("cache").join("upgrade").exists());
+    assert!(!root.join("cache").join("daemon-state.txt").exists());
+    assert!(!root.join("cache").join("daemon-state.json").exists());
+    assert!(!root.join("logs").join("daemon.log.1").exists());
 
     lode()
         .env("LODE_CONFIG", &config)
