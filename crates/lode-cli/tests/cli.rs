@@ -724,6 +724,39 @@ fn scan_secrets_quiet_supports_staged_flag() {
 }
 
 #[test]
+fn scan_foreign_reports_migration_actions() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+    std::fs::write(temp.path().join("BadName.TXT"), "hello\n").unwrap();
+
+    lode()
+        .args(["scan", "foreign"])
+        .arg(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("foreign project scan"))
+        .stdout(predicate::str::contains("lode_project\tmissing"))
+        .stdout(predicate::str::contains("package_manager\tnpm"))
+        .stdout(predicate::str::contains("package.json"))
+        .stdout(predicate::str::contains("action\trun lode init"));
+}
+
+#[test]
+fn scan_foreign_supports_json() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("go.mod"), "module example.com/demo\n").unwrap();
+
+    lode()
+        .args(["scan", "foreign", "--json"])
+        .arg(temp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"package_manager\": \"go\""))
+        .stdout(predicate::str::contains("\"lode_project\": false"))
+        .stdout(predicate::str::contains("\"migration_actions\""));
+}
+
+#[test]
 fn init_registers_project_and_projects_list_shows_it() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

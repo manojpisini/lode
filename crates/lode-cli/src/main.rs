@@ -552,6 +552,11 @@ enum ScanCommand {
         #[arg(long)]
         quiet: bool,
     },
+    Foreign {
+        path: Option<Utf8PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -3550,8 +3555,100 @@ fn scan(command: ScanCommand) -> lode_core::Result<()> {
                 });
             }
         }
+        ScanCommand::Foreign { path, json } => {
+            let path = path.unwrap_or(current_dir()?);
+            let report = scan_foreign_project(&path)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .map_err(|error| LodeError::Message(error.to_string()))?
+                );
+            } else {
+                println!("foreign project scan: {}", report.path);
+                println!("lode_project\t{}", status_bool(report.lode_project));
+                println!(
+                    "package_manager\t{}",
+                    report.package_manager.as_deref().unwrap_or("none")
+                );
+                println!("manifests\t{}", report.manifests.join(","));
+                println!("convention_violations\t{}", report.convention_violations);
+                println!("secret_findings\t{}", report.secret_findings);
+                for action in &report.migration_actions {
+                    println!("action\t{action}");
+                }
+            }
+        }
     }
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct ForeignScanReport {
+    path: Utf8PathBuf,
+    lode_project: bool,
+    package_manager: Option<String>,
+    manifests: Vec<String>,
+    convention_checked: usize,
+    convention_violations: usize,
+    secret_findings: usize,
+    migration_actions: Vec<String>,
+}
+
+fn scan_foreign_project(path: &Utf8PathBuf) -> lode_core::Result<ForeignScanReport> {
+    let config = default_config();
+    let convention = check_path(path, &config)?;
+    let secrets = scan_secrets(path)?;
+    let manifests = project_manifests(path);
+    let lode_project = path.join(".lode").join("project.toml").exists();
+    let package_manager = detect_package_manager_in(path);
+    let mut migration_actions = Vec::new();
+    if !lode_project {
+        let name = path.file_name().unwrap_or("project");
+        let parent = path
+            .parent()
+            .map(|parent| parent.to_string())
+            .unwrap_or_else(|| ".".to_string());
+        migration_actions.push(format!("run lode init {name} --path {parent}"));
+    }
+    if !path.join(".editorconfig").exists() {
+        migration_actions.push("add editorconfig defaults with lode add editorconfig".to_string());
+    }
+    if !path.join(".gitignore").exists() {
+        migration_actions
+            .push("add root gitignore defaults with lode sync --section templates".to_string());
+    }
+    if convention.violations.is_empty() && secrets.findings.is_empty() {
+        migration_actions.push("project is ready for lode adoption review".to_string());
+    }
+    Ok(ForeignScanReport {
+        path: path.clone(),
+        lode_project,
+        package_manager,
+        manifests,
+        convention_checked: convention.checked,
+        convention_violations: convention.violations.len(),
+        secret_findings: secrets.findings.len(),
+        migration_actions,
+    })
+}
+
+fn project_manifests(path: &Utf8PathBuf) -> Vec<String> {
+    [
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "go.mod",
+        "build.gradle",
+        "settings.gradle",
+        "pom.xml",
+        "Gemfile",
+    ]
+    .iter()
+    .filter(|manifest| path.join(manifest).exists())
+    .map(|manifest| (*manifest).to_string())
+    .collect()
 }
 
 fn convention_check(args: CheckArgs) -> lode_core::Result<()> {
@@ -5987,32 +6084,31 @@ fn required_tools_for_project() -> Vec<&'static str> {
 }
 
 fn detect_package_manager() -> Option<String> {
-    if Utf8PathBuf::from("Cargo.lock").exists() || Utf8PathBuf::from("Cargo.toml").exists() {
+    detect_package_manager_in(&Utf8PathBuf::from("."))
+}
+
+fn detect_package_manager_in(root: &Utf8PathBuf) -> Option<String> {
+    if root.join("Cargo.lock").exists() || root.join("Cargo.toml").exists() {
         Some("cargo".to_string())
-    } else if Utf8PathBuf::from("bun.lockb").exists() {
+    } else if root.join("bun.lockb").exists() {
         Some("bun".to_string())
-    } else if Utf8PathBuf::from("pnpm-lock.yaml").exists() {
+    } else if root.join("pnpm-lock.yaml").exists() {
         Some("pnpm".to_string())
-    } else if Utf8PathBuf::from("yarn.lock").exists() {
+    } else if root.join("yarn.lock").exists() {
         Some("yarn".to_string())
-    } else if Utf8PathBuf::from("package-lock.json").exists()
-        || Utf8PathBuf::from("package.json").exists()
-    {
+    } else if root.join("package-lock.json").exists() || root.join("package.json").exists() {
         Some("npm".to_string())
-    } else if Utf8PathBuf::from("uv.lock").exists() || Utf8PathBuf::from("pyproject.toml").exists()
-    {
+    } else if root.join("uv.lock").exists() || root.join("pyproject.toml").exists() {
         Some("uv".to_string())
-    } else if Utf8PathBuf::from("requirements.txt").exists() {
+    } else if root.join("requirements.txt").exists() {
         Some("pip".to_string())
-    } else if Utf8PathBuf::from("go.sum").exists() || Utf8PathBuf::from("go.mod").exists() {
+    } else if root.join("go.sum").exists() || root.join("go.mod").exists() {
         Some("go".to_string())
-    } else if Utf8PathBuf::from("Gemfile.lock").exists() || Utf8PathBuf::from("Gemfile").exists() {
+    } else if root.join("Gemfile.lock").exists() || root.join("Gemfile").exists() {
         Some("bundler".to_string())
-    } else if Utf8PathBuf::from("build.gradle").exists()
-        || Utf8PathBuf::from("settings.gradle").exists()
-    {
+    } else if root.join("build.gradle").exists() || root.join("settings.gradle").exists() {
         Some("gradle".to_string())
-    } else if Utf8PathBuf::from("pom.xml").exists() {
+    } else if root.join("pom.xml").exists() {
         Some("maven".to_string())
     } else {
         None
