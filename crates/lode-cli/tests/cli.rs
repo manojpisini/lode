@@ -2222,6 +2222,7 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
 
     lode()
         .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
         .args(["daemon", "start", "--no-rename", "--foreground"])
         .assert()
         .success()
@@ -2229,6 +2230,7 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
 
     lode()
         .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
         .args(["daemon", "status", "--json"])
         .assert()
         .success()
@@ -2245,6 +2247,12 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
     .unwrap();
     assert!(state.contains("\"events\""));
     assert!(state.contains("\"foreground\""));
+
+    let project_state =
+        std::fs::read_to_string(temp.path().join(".lode").join("daemon-state.json")).unwrap();
+    assert!(project_state.contains("\"schema_version\": 3"));
+    assert!(project_state.contains("\"file_count\""));
+    assert!(project_state.contains("\"content_hash\""));
 
     lode()
         .env("LODE_CONFIG", &config)

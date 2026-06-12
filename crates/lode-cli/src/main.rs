@@ -1,6 +1,8 @@
 use std::{
-    collections::BTreeMap,
-    env, fs, io,
+    collections::{hash_map::DefaultHasher, BTreeMap},
+    env, fs,
+    hash::{Hash, Hasher},
+    io,
     io::{IsTerminal, Read},
     process::{Command as ProcessCommand, ExitCode},
     thread,
@@ -6544,6 +6546,7 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
 fn run_foreground_daemon(rename: bool, sign: bool, stamp: bool) -> lode_core::Result<()> {
     let root = current_dir()?;
     let mut snapshot = snapshot_project(&root)?;
+    write_project_daemon_snapshot(&root, &snapshot)?;
     let once = env::var_os("LODE_DAEMON_ONCE").is_some() || !io::stdin().is_terminal();
     let interactive = io::stdin().is_terminal();
 
@@ -6580,6 +6583,7 @@ fn run_foreground_daemon(rename: bool, sign: bool, stamp: bool) -> lode_core::Re
         let changed = changed_files(&snapshot, &next);
         if !changed.is_empty() {
             record_daemon_activity(&root, &changed)?;
+            write_project_daemon_snapshot(&root, &next)?;
             println!("daemon observed {} changed file(s)", changed.len());
         }
         snapshot = next;
@@ -6655,7 +6659,14 @@ fn snapshot_dir(
 fn should_skip_watch_path(name: &str) -> bool {
     matches!(
         name,
-        ".git" | "target" | "node_modules" | ".venv" | "dist" | "build" | ".lodepack"
+        ".git"
+            | "target"
+            | "node_modules"
+            | ".venv"
+            | "dist"
+            | "build"
+            | ".lodepack"
+            | "daemon-state.json"
     )
 }
 
@@ -6684,6 +6695,67 @@ fn record_daemon_activity(root: &Utf8PathBuf, changed: &[String]) -> lode_core::
         task: Some("daemon activity".to_string()),
     });
     save_time_log(&log)
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectDaemonState {
+    schema_version: u32,
+    project: Option<String>,
+    updated_at: String,
+    file_count: usize,
+    files: BTreeMap<String, ProjectDaemonFileState>,
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectDaemonFileState {
+    modified_s: u64,
+    content_hash: String,
+}
+
+fn write_project_daemon_snapshot(
+    root: &Utf8PathBuf,
+    snapshot: &BTreeMap<String, u64>,
+) -> lode_core::Result<()> {
+    let relative = safe_relative_path(".lode/daemon-state.json")?;
+    let path = root.join(relative);
+    let mut files = BTreeMap::new();
+    for (relative, modified_s) in snapshot {
+        let file_path = root.join(relative);
+        if let Ok(contents) = fs::read(&file_path) {
+            files.insert(
+                relative.clone(),
+                ProjectDaemonFileState {
+                    modified_s: *modified_s,
+                    content_hash: content_hash_bytes(&contents),
+                },
+            );
+        }
+    }
+    let state = ProjectDaemonState {
+        schema_version: 3,
+        project: root.file_name().map(str::to_string),
+        updated_at: now_timestamp(),
+        file_count: files.len(),
+        files,
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(&state)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn content_hash_bytes(contents: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    contents.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn log_command(command: LogCommand) -> lode_core::Result<()> {
