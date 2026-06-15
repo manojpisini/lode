@@ -2226,6 +2226,24 @@ fn workspace_init_add_list_and_graph_are_file_backed() {
 }
 
 #[test]
+fn workspace_add_rejects_unsafe_member_path() {
+    let temp = tempfile::tempdir().unwrap();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["workspace", "init"])
+        .assert()
+        .success();
+
+    lode()
+        .current_dir(temp.path())
+        .args(["workspace", "add", "../outside"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsafe relative path"));
+}
+
+#[test]
 fn profile_use_new_and_delete_update_profile_state() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

@@ -6588,6 +6588,7 @@ fn save_workspace_members(members: &[String]) -> lode_core::Result<()> {
 }
 
 fn workspace_add(name: &str) -> lode_core::Result<()> {
+    validate_workspace_member(name)?;
     let mut members = workspace_members()?;
     if !members.iter().any(|member| member == name) {
         members.push(name.to_string());
@@ -6603,6 +6604,7 @@ fn workspace_add(name: &str) -> lode_core::Result<()> {
 }
 
 fn workspace_remove(name: &str, confirm: bool) -> lode_core::Result<()> {
+    validate_workspace_member(name)?;
     if !confirm {
         return Err(LodeError::Message(
             "refusing to remove workspace member without --confirm".to_string(),
@@ -6618,6 +6620,16 @@ fn workspace_remove(name: &str, confirm: bool) -> lode_core::Result<()> {
     }
     save_workspace_members(&members)?;
     println!("workspace member removed: {name}");
+    Ok(())
+}
+
+fn validate_workspace_member(name: &str) -> lode_core::Result<()> {
+    let relative = safe_relative_path(name)?;
+    if relative.as_str().is_empty() || relative.as_str().starts_with(".lode") {
+        return Err(LodeError::Message(format!(
+            "unsafe workspace member path: {name}"
+        )));
+    }
     Ok(())
 }
 
