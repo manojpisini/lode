@@ -57,6 +57,9 @@ fn visit(path: &Utf8Path, report: &mut SecretScanReport) -> Result<()> {
     if !is_text_candidate(path) {
         return Ok(());
     }
+    if is_secret_allowlisted_path(path) {
+        return Ok(());
+    }
     let Ok(contents) = fs::read_to_string(path) else {
         return Ok(());
     };
@@ -71,6 +74,16 @@ fn visit(path: &Utf8Path, report: &mut SecretScanReport) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_secret_allowlisted_path(path: &Utf8Path) -> bool {
+    let Some(name) = path.file_name() else {
+        return false;
+    };
+    matches!(
+        name,
+        ".env" | ".env.local" | ".env.development" | ".env.production" | ".env.test"
+    )
 }
 
 fn classify_secret(line: &str) -> Option<&'static str> {
@@ -105,6 +118,12 @@ fn classify_secret(line: &str) -> Option<&'static str> {
 }
 
 fn is_text_candidate(path: &Utf8Path) -> bool {
+    if path
+        .file_name()
+        .is_some_and(|name| name.starts_with(".env"))
+    {
+        return true;
+    }
     path.extension().is_none_or(|extension| {
         matches!(
             extension,
@@ -139,10 +158,23 @@ mod tests {
     fn finds_suspicious_assignments() {
         let temp = tempfile::tempdir().unwrap();
         let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
-        fs::write(root.join(".env"), "API_KEY=real-value\n").unwrap();
+        fs::write(root.join("src.rs"), "API_KEY=real-value\n").unwrap();
 
         let report = scan_secrets(&root).unwrap();
 
         assert_eq!(report.findings.len(), 1);
+    }
+
+    #[test]
+    fn skips_real_env_files_but_scans_examples() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        fs::write(root.join(".env"), "API_KEY=real-value\n").unwrap();
+        fs::write(root.join(".env.example"), "API_KEY=real-value\n").unwrap();
+
+        let report = scan_secrets(&root).unwrap();
+
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].path.file_name(), Some(".env.example"));
     }
 }

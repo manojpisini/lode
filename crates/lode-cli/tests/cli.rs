@@ -698,7 +698,7 @@ fn sign_and_stamp_write_headers() {
 #[test]
 fn scan_secrets_returns_exit_code_7() {
     let temp = tempfile::tempdir().unwrap();
-    std::fs::write(temp.path().join(".env"), "API_KEY=real-value\n").unwrap();
+    std::fs::write(temp.path().join("config.rs"), "API_KEY=real-value\n").unwrap();
 
     lode()
         .current_dir(temp.path())
@@ -711,7 +711,7 @@ fn scan_secrets_returns_exit_code_7() {
 #[test]
 fn scan_secrets_quiet_supports_staged_flag() {
     let temp = tempfile::tempdir().unwrap();
-    std::fs::write(temp.path().join(".env"), "API_KEY=real-value\n").unwrap();
+    std::fs::write(temp.path().join("config.rs"), "API_KEY=real-value\n").unwrap();
 
     lode()
         .current_dir(temp.path())
