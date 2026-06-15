@@ -1367,11 +1367,23 @@ fn run_process_status(
     args: &[String],
     current_dir: Option<&Utf8PathBuf>,
 ) -> lode_core::Result<std::process::ExitStatus> {
+    run_process_status_with_env(program, args, current_dir, &[])
+}
+
+fn run_process_status_with_env(
+    program: &str,
+    args: &[String],
+    current_dir: Option<&Utf8PathBuf>,
+    envs: &[(&str, String)],
+) -> lode_core::Result<std::process::ExitStatus> {
     validate_process_program(program)?;
     let mut command = ProcessCommand::new(program);
     command.args(args);
     if let Some(current_dir) = current_dir {
         command.current_dir(current_dir.as_str());
+    }
+    for (key, value) in envs {
+        command.env(key, value);
     }
     command.status().map_err(|source| LodeError::Io {
         path: program.into(),
@@ -2269,7 +2281,7 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct PluginSecurity {
     network: bool,
     execute: bool,
@@ -4261,7 +4273,8 @@ fn run_hooks(event: &str, dry_run: bool) -> lode_core::Result<()> {
             "running hook {}\t{}\t{}",
             hook.source, hook.runtime, hook.path
         );
-        let status = run_process_status(program, &args, None)?;
+        let envs = hook_runtime_env(&hook);
+        let status = run_process_status_with_env(program, &args, None, &envs)?;
         if !status.success() {
             return Err(LodeError::Message(format!(
                 "hook {} {} failed with {status}",
@@ -4289,12 +4302,29 @@ fn hook_command(hook: &DiscoveredHook) -> lode_core::Result<(&'static str, Vec<S
     }
 }
 
+fn hook_runtime_env(hook: &DiscoveredHook) -> Vec<(&'static str, String)> {
+    let mut envs = vec![
+        ("LODE_HOOK_EVENT", hook.event.clone()),
+        ("LODE_HOOK_SOURCE", hook.source.clone()),
+        ("LODE_HOOK_RUNTIME", hook.runtime.clone()),
+    ];
+    if let Some(plugin) = hook.source.strip_prefix("plugin:") {
+        let security = hook.plugin_security.clone().unwrap_or_default();
+        envs.push(("LODE_PLUGIN_NAME", plugin.to_string()));
+        envs.push(("LODE_PLUGIN_ALLOW_NETWORK", security.network.to_string()));
+        envs.push(("LODE_PLUGIN_ALLOW_EXECUTE", security.execute.to_string()));
+        envs.push(("LODE_PLUGIN_FS_WRITE", security.fs_write.join(";")));
+    }
+    envs
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DiscoveredHook {
     event: String,
     source: String,
     runtime: String,
     path: Utf8PathBuf,
+    plugin_security: Option<PluginSecurity>,
 }
 
 fn discover_hooks() -> lode_core::Result<Vec<DiscoveredHook>> {
@@ -4335,27 +4365,54 @@ fn discover_plugin_hooks(hooks: &mut Vec<DiscoveredHook>) -> lode_core::Result<(
             let name = path.file_name().unwrap_or("plugin");
             let hooks_dir = path.join("hooks");
             if hooks_dir.exists() {
-                require_plugin_execute_permission(name, &path)?;
-                discover_hook_dir(&format!("plugin:{name}"), &hooks_dir, hooks)?;
+                let security = require_plugin_runtime_permissions(name, &path)?;
+                discover_hook_dir_with_security(
+                    &format!("plugin:{name}"),
+                    &hooks_dir,
+                    Some(security),
+                    hooks,
+                )?;
             }
         }
     }
     Ok(())
 }
 
-fn require_plugin_execute_permission(name: &str, path: &Utf8PathBuf) -> lode_core::Result<()> {
+fn require_plugin_runtime_permissions(
+    name: &str,
+    path: &Utf8PathBuf,
+) -> lode_core::Result<PluginSecurity> {
     let security = read_plugin_security(path)?;
-    if security.execute {
-        return Ok(());
+    if !security.execute {
+        return Err(LodeError::Message(format!(
+            "plugin {name} has hooks but does not declare permissions.execute = true"
+        )));
     }
-    Err(LodeError::Message(format!(
-        "plugin {name} has hooks but does not declare permissions.execute = true"
-    )))
+    let Some(receipt) = read_plugin_install_receipt(path)? else {
+        return Err(LodeError::Message(format!(
+            "plugin {name} has hooks but is missing install receipt; reinstall with `lode plugin add --allow-unsafe`"
+        )));
+    };
+    if !receipt.reviewed || !receipt.allow_unsafe {
+        return Err(LodeError::Message(format!(
+            "plugin {name} has executable hooks but was not installed with reviewed unsafe permissions"
+        )));
+    }
+    Ok(security)
 }
 
 fn discover_hook_dir(
     source: &str,
     dir: &Utf8PathBuf,
+    hooks: &mut Vec<DiscoveredHook>,
+) -> lode_core::Result<()> {
+    discover_hook_dir_with_security(source, dir, None, hooks)
+}
+
+fn discover_hook_dir_with_security(
+    source: &str,
+    dir: &Utf8PathBuf,
+    plugin_security: Option<PluginSecurity>,
     hooks: &mut Vec<DiscoveredHook>,
 ) -> lode_core::Result<()> {
     if !dir.exists() {
@@ -4379,6 +4436,7 @@ fn discover_hook_dir(
                     runtime,
                     source: source.to_string(),
                     path,
+                    plugin_security: plugin_security.clone(),
                 });
             }
         }

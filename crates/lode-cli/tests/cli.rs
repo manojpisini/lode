@@ -1800,7 +1800,8 @@ fn hooks_discover_plugin_global_and_project_sources() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);
     let lode_root = temp.path().join(".lode");
-    let plugin_hooks = lode_root.join("plugins").join("audit-pack").join("hooks");
+    let plugin_source = temp.path().join("audit-pack");
+    let plugin_hooks = plugin_source.join("hooks");
     let global_hooks = lode_root.join("hooks");
     let project = temp.path().join("project");
     let project_hooks = project.join(".lode").join("hooks");
@@ -1808,16 +1809,26 @@ fn hooks_discover_plugin_global_and_project_sources() {
     std::fs::create_dir_all(&global_hooks).unwrap();
     std::fs::create_dir_all(&project_hooks).unwrap();
     std::fs::write(
-        lode_root
-            .join("plugins")
-            .join("audit-pack")
-            .join("plugin.toml"),
+        plugin_source.join("plugin.toml"),
         "[plugin]\nname = \"audit-pack\"\nversion = \"0.1.0\"\n\n[permissions]\nexecute = true\n",
     )
     .unwrap();
     std::fs::write(plugin_hooks.join("post-init.sh"), "echo plugin\n").unwrap();
     std::fs::write(global_hooks.join("post-init.py"), "print('global')\n").unwrap();
     std::fs::write(project_hooks.join("post-init.ps1"), "Write-Host project\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add", "--allow-unsafe"])
+        .arg(&plugin_source)
+        .assert()
+        .success();
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -1838,6 +1849,53 @@ fn hooks_discover_plugin_global_and_project_sources() {
         .stdout(predicate::str::contains("plugin:audit-pack\tsh"))
         .stdout(predicate::str::contains("global\tpython"))
         .stdout(predicate::str::contains("project\tpowershell"));
+}
+
+#[test]
+fn hooks_run_passes_plugin_permission_environment() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let plugin_source = temp.path().join("env-pack");
+    let plugin_hooks = plugin_source.join("hooks");
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&plugin_hooks).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        plugin_source.join("plugin.toml"),
+        "[plugin]\nname = \"env-pack\"\nversion = \"0.1.0\"\n\n[permissions]\nexecute = true\nnetwork = true\nfs_write = [\"hook-output.txt\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plugin_hooks.join("post-init.ps1"),
+        "$items = @($env:LODE_HOOK_EVENT, $env:LODE_PLUGIN_NAME, $env:LODE_PLUGIN_ALLOW_NETWORK, $env:LODE_PLUGIN_ALLOW_EXECUTE, $env:LODE_PLUGIN_FS_WRITE); Set-Content -NoNewline -Path hook-output.txt -Value ($items -join '|')\n",
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add", "--allow-unsafe"])
+        .arg(&plugin_source)
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["hooks", "run", "post-init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("running hook plugin:env-pack"));
+
+    assert_eq!(
+        std::fs::read_to_string(project.join("hook-output.txt")).unwrap(),
+        "post-init|env-pack|true|true|hook-output.txt"
+    );
 }
 
 #[test]
