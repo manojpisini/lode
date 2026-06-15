@@ -1379,6 +1379,31 @@ fn run_process_status(
     })
 }
 
+fn run_process_output(program: &str, args: &[String]) -> lode_core::Result<std::process::Output> {
+    validate_process_program(program)?;
+    ProcessCommand::new(program)
+        .args(args)
+        .output()
+        .map_err(|source| LodeError::Io {
+            path: program.into(),
+            source,
+        })
+}
+
+fn run_current_lode_status(args: &[String]) -> lode_core::Result<std::process::ExitStatus> {
+    let current_exe = env::current_exe().map_err(|source| LodeError::Io {
+        path: "current_exe".into(),
+        source,
+    })?;
+    ProcessCommand::new(current_exe)
+        .args(args)
+        .status()
+        .map_err(|source| LodeError::Io {
+            path: "lode".into(),
+            source,
+        })
+}
+
 fn validate_process_program(program: &str) -> lode_core::Result<()> {
     if program.is_empty()
         || program.contains('/')
@@ -3252,18 +3277,11 @@ fn run_lode_step(run: &str) -> lode_core::Result<()> {
     let Some(command) = parts.next() else {
         return Ok(());
     };
-    let mut process = ProcessCommand::new(env::current_exe().map_err(|source| LodeError::Io {
-        path: "current_exe".into(),
-        source,
-    })?);
-    process.arg(command);
+    let mut args = vec![command.to_string()];
     for part in parts {
-        process.arg(part);
+        args.push(part.to_string());
     }
-    let status = process.status().map_err(|source| LodeError::Io {
-        path: "lode".into(),
-        source,
-    })?;
+    let status = run_current_lode_status(&args)?;
     if status.success() {
         Ok(())
     } else {
@@ -3274,15 +3292,12 @@ fn run_lode_step(run: &str) -> lode_core::Result<()> {
 }
 
 fn run_shell_step(run: &str) -> lode_core::Result<()> {
-    let status = if cfg!(windows) {
-        ProcessCommand::new("cmd").args(["/C", run]).status()
+    let (program, args) = if cfg!(windows) {
+        ("cmd", vec!["/C".to_string(), run.to_string()])
     } else {
-        ProcessCommand::new("sh").args(["-c", run]).status()
-    }
-    .map_err(|source| LodeError::Io {
-        path: "shell".into(),
-        source,
-    })?;
+        ("sh", vec!["-c".to_string(), run.to_string()])
+    };
+    let status = run_process_status(program, &args, None)?;
     if status.success() {
         Ok(())
     } else {
@@ -4007,19 +4022,16 @@ fn slugify(input: &str) -> String {
 }
 
 fn run_git(args: &[&str]) -> lode_core::Result<()> {
-    let status = ProcessCommand::new("git")
-        .args(args)
-        .status()
-        .map_err(|source| LodeError::Io {
-            path: "git".into(),
-            source,
-        })?;
+    let args = args
+        .iter()
+        .map(|arg| (*arg).to_string())
+        .collect::<Vec<_>>();
+    let status = run_process_status("git", &args, None)?;
     if status.success() {
         Ok(())
     } else {
         Err(LodeError::Message(format!(
-            "git {} failed with {status}",
-            args.join(" ")
+            "git command failed with {status}"
         )))
     }
 }
@@ -4037,13 +4049,7 @@ fn git_changelog(
     if let Some(since) = since {
         args.push(format!("{since}..HEAD"));
     }
-    let output = ProcessCommand::new("git")
-        .args(&args)
-        .output()
-        .map_err(|source| LodeError::Io {
-            path: "git".into(),
-            source,
-        })?;
+    let output = run_process_output("git", &args)?;
     if !output.status.success() {
         return Err(LodeError::Message("git log failed".to_string()));
     }
@@ -6232,10 +6238,7 @@ fn detect_package_manager_in(root: &Utf8PathBuf) -> Option<String> {
 }
 
 fn command_version(command: &str) -> Option<String> {
-    let output = ProcessCommand::new(command)
-        .arg("--version")
-        .output()
-        .ok()?;
+    let output = run_process_output(command, &["--version".to_string()]).ok()?;
     if !output.status.success() {
         return None;
     }
