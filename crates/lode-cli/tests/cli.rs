@@ -2146,6 +2146,12 @@ fn workspace_init_add_list_and_graph_are_file_backed() {
         .assert()
         .success()
         .stdout(predicate::str::contains("workspace member added"));
+    lode()
+        .current_dir(temp.path())
+        .args(["workspace", "add", "crates/lib"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("workspace member added"));
 
     lode()
         .current_dir(temp.path())
@@ -2193,6 +2199,23 @@ fn workspace_init_add_list_and_graph_are_file_backed() {
         .stdout(predicate::str::contains(
             "would run: make -C crates/app test",
         ));
+
+    lode()
+        .current_dir(temp.path())
+        .args([
+            "workspace",
+            "run",
+            "build",
+            "--changed",
+            "crates/lib/src/main.rs",
+            "--dry-run",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would run: make -C crates/lib build",
+        ))
+        .stdout(predicate::str::contains("crates/app").not());
 
     lode()
         .current_dir(temp.path())

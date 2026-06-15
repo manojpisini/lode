@@ -840,6 +840,8 @@ enum WorkspaceCommand {
         #[arg(long)]
         pkg: Option<String>,
         #[arg(long)]
+        changed: Vec<String>,
+        #[arg(long)]
         parallel: Option<usize>,
         #[arg(long)]
         dry_run: bool,
@@ -6511,9 +6513,10 @@ fn workspace(command: WorkspaceCommand) -> lode_core::Result<()> {
         WorkspaceCommand::Run {
             target,
             pkg,
+            changed,
             parallel,
             dry_run,
-        } => workspace_run(&target, pkg.as_deref(), parallel, dry_run)?,
+        } => workspace_run(&target, pkg.as_deref(), &changed, parallel, dry_run)?,
         WorkspaceCommand::Graph { format } => workspace_graph(&format)?,
     }
     Ok(())
@@ -6647,12 +6650,21 @@ fn workspace_list(format: &str) -> lode_core::Result<()> {
 fn workspace_run(
     target: &str,
     pkg: Option<&str>,
+    changed: &[String],
     parallel: Option<usize>,
     dry_run: bool,
 ) -> lode_core::Result<()> {
     let mut members = workspace_members()?;
     if let Some(pkg) = pkg {
         members.retain(|member| member == pkg || member.ends_with(&format!("/{pkg}")));
+    }
+    if !changed.is_empty() {
+        let affected = affected_workspace_members(&members, changed);
+        if affected.is_empty() {
+            println!("no workspace members affected by changed path(s)");
+            return Ok(());
+        }
+        members = affected;
     }
     if members.is_empty() {
         if dry_run {
@@ -6691,6 +6703,25 @@ fn workspace_run(
         }
     }
     Ok(())
+}
+
+fn affected_workspace_members(members: &[String], changed: &[String]) -> Vec<String> {
+    members
+        .iter()
+        .filter(|member| {
+            let normalized_member = normalize_workspace_path(member);
+            changed.iter().any(|path| {
+                let normalized_path = normalize_workspace_path(path);
+                normalized_path == normalized_member
+                    || normalized_path.starts_with(&format!("{normalized_member}/"))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+fn normalize_workspace_path(path: &str) -> String {
+    path.replace('\\', "/").trim_start_matches("./").to_string()
 }
 
 fn workspace_graph(format: &str) -> lode_core::Result<()> {
