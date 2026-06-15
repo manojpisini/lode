@@ -1300,42 +1300,34 @@ fn init_git_project(
         return Ok(());
     }
 
-    let init_status = ProcessCommand::new("git")
-        .arg("init")
-        .arg("-b")
-        .arg(&git.initial_branch)
-        .current_dir(project_dir.as_str())
-        .status()
-        .map_err(|source| LodeError::Io {
-            path: "git".into(),
-            source,
-        })?;
+    let init_status = run_process_status(
+        "git",
+        &[
+            "init".to_string(),
+            "-b".to_string(),
+            git.initial_branch.clone(),
+        ],
+        Some(project_dir),
+    )?;
     if !init_status.success() {
-        let fallback_status = ProcessCommand::new("git")
-            .arg("init")
-            .current_dir(project_dir.as_str())
-            .status()
-            .map_err(|source| LodeError::Io {
-                path: "git".into(),
-                source,
-            })?;
+        let fallback_status = run_process_status("git", &["init".to_string()], Some(project_dir))?;
         if !fallback_status.success() {
             return Err(LodeError::Message(format!(
                 "git init failed with {fallback_status}"
             )));
         }
-        let branch_status = ProcessCommand::new("git")
-            .args(["checkout", "-B", &git.initial_branch])
-            .current_dir(project_dir.as_str())
-            .status()
-            .map_err(|source| LodeError::Io {
-                path: "git".into(),
-                source,
-            })?;
+        let branch_status = run_process_status(
+            "git",
+            &[
+                "checkout".to_string(),
+                "-B".to_string(),
+                git.initial_branch.clone(),
+            ],
+            Some(project_dir),
+        )?;
         if !branch_status.success() {
             return Err(LodeError::Message(format!(
-                "git checkout -B {} failed with {branch_status}",
-                git.initial_branch
+                "git branch setup failed with {branch_status}"
             )));
         }
     }
@@ -1356,14 +1348,11 @@ fn init_git_project(
 }
 
 fn run_git_in<const N: usize>(project_dir: &Utf8PathBuf, args: [&str; N]) -> lode_core::Result<()> {
-    let status = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(project_dir.as_str())
-        .status()
-        .map_err(|source| LodeError::Io {
-            path: "git".into(),
-            source,
-        })?;
+    let args = args
+        .iter()
+        .map(|arg| (*arg).to_string())
+        .collect::<Vec<_>>();
+    let status = run_process_status("git", &args, Some(project_dir))?;
     if status.success() {
         Ok(())
     } else {
@@ -1371,6 +1360,37 @@ fn run_git_in<const N: usize>(project_dir: &Utf8PathBuf, args: [&str; N]) -> lod
             "git command failed with {status}"
         )))
     }
+}
+
+fn run_process_status(
+    program: &str,
+    args: &[String],
+    current_dir: Option<&Utf8PathBuf>,
+) -> lode_core::Result<std::process::ExitStatus> {
+    validate_process_program(program)?;
+    let mut command = ProcessCommand::new(program);
+    command.args(args);
+    if let Some(current_dir) = current_dir {
+        command.current_dir(current_dir.as_str());
+    }
+    command.status().map_err(|source| LodeError::Io {
+        path: program.into(),
+        source,
+    })
+}
+
+fn validate_process_program(program: &str) -> lode_core::Result<()> {
+    if program.is_empty()
+        || program.contains('/')
+        || program.contains('\\')
+        || program.contains(':')
+        || program.contains('\0')
+    {
+        return Err(LodeError::Message(format!(
+            "unsafe process program: {program}"
+        )));
+    }
+    Ok(())
 }
 
 fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
@@ -4235,13 +4255,7 @@ fn run_hooks(event: &str, dry_run: bool) -> lode_core::Result<()> {
             "running hook {}\t{}\t{}",
             hook.source, hook.runtime, hook.path
         );
-        let status = ProcessCommand::new(program)
-            .args(&args)
-            .status()
-            .map_err(|source| LodeError::Io {
-                path: program.into(),
-                source,
-            })?;
+        let status = run_process_status(program, &args, None)?;
         if !status.success() {
             return Err(LodeError::Message(format!(
                 "hook {} {} failed with {status}",
@@ -5571,19 +5585,12 @@ fn run_package_manager(manager: &str, args: Vec<String>) -> lode_core::Result<()
         ));
     }
     let command = package_command(manager);
-    let status = ProcessCommand::new(command)
-        .args(&args)
-        .status()
-        .map_err(|source| LodeError::Io {
-            path: command.into(),
-            source,
-        })?;
+    let status = run_process_status(command, &args, None)?;
     if status.success() {
         Ok(())
     } else {
         Err(LodeError::Message(format!(
-            "{command} {} failed with {status}",
-            args.join(" ")
+            "{command} failed with {status}"
         )))
     }
 }
@@ -6696,15 +6703,8 @@ fn workspace_run(
             continue;
         }
         if makefile.exists() {
-            let status = ProcessCommand::new("make")
-                .arg("-C")
-                .arg(&member)
-                .arg(target)
-                .status()
-                .map_err(|source| LodeError::Io {
-                    path: "make".into(),
-                    source,
-                })?;
+            let args = vec!["-C".to_string(), member.clone(), target.to_string()];
+            let status = run_process_status("make", &args, None)?;
             if !status.success() {
                 return Err(LodeError::Message(format!(
                     "workspace member {member} target {target} failed with {status}"
@@ -8478,13 +8478,7 @@ fn run_make(target: &str) -> lode_core::Result<()> {
         println!("make target `{target}` requested, but no Makefile exists here");
         return Ok(());
     }
-    let status = ProcessCommand::new("make")
-        .arg(target)
-        .status()
-        .map_err(|source| LodeError::Io {
-            path: "make".into(),
-            source,
-        })?;
+    let status = run_process_status("make", &[target.to_string()], None)?;
     if status.success() {
         Ok(())
     } else {
@@ -8543,4 +8537,19 @@ fn current_dir() -> lode_core::Result<Utf8PathBuf> {
     })?;
     Utf8PathBuf::from_path_buf(path)
         .map_err(|path| LodeError::Message(format!("path is not valid UTF-8: {}", path.display())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_program_validation_rejects_path_like_programs() {
+        assert!(validate_process_program("git").is_ok());
+        assert!(validate_process_program("").is_err());
+        assert!(validate_process_program("../sh").is_err());
+        assert!(validate_process_program("tools/run").is_err());
+        assert!(validate_process_program("C:\\Windows\\System32\\cmd.exe").is_err());
+        assert!(validate_process_program("cmd.exe\0ignored").is_err());
+    }
 }
