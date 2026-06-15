@@ -1498,34 +1498,55 @@ fn mcp_lists_tools_resources_and_prompts() {
         .stdout(predicate::str::contains("\"tools\""))
         .stdout(predicate::str::contains("lode_config_show"))
         .stdout(predicate::str::contains("lode_scan_foreign"))
+        .stdout(predicate::str::contains("lode_pkg_audit"))
         .stdout(predicate::str::contains("lode://config"))
+        .stdout(predicate::str::contains("lode://project/info"))
         .stdout(predicate::str::contains("lode-project-review"));
 }
 
 #[test]
 fn mcp_stdio_handles_tool_calls() {
     let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
     std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+    let commands = temp.path().join(".lode").join("commands");
+    std::fs::create_dir_all(&commands).unwrap();
+    std::fs::write(
+        commands.join("deploy.toml"),
+        "description = \"Deploy preview\"\n[[steps]]\nkind = \"lode\"\nrun = \"audit\"\n",
+    )
+    .unwrap();
 
     lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
         .write_stdin(format!(
-            "{}\n{}\n{}\n{}\n",
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lode_template_list","arguments":{}}}"#,
             format!(
                 r#"{{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"lode_scan_foreign","arguments":{{"path":"{}"}}}}}}"#,
                 temp.path().to_string_lossy().replace('\\', "\\\\")
-            )
+            ),
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"lode_pkg_audit","arguments":{"fail_on":"high"}}}"#,
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"lode_custom_deploy","arguments":{}}}"#,
+            r#"{"jsonrpc":"2.0","id":7,"method":"resources/read","params":{"uri":"lode://project/info"}}"#
         ))
         .arg("mcp")
         .assert()
         .success()
         .stdout(predicate::str::contains("\"serverInfo\""))
         .stdout(predicate::str::contains("\"tools\""))
+        .stdout(predicate::str::contains("lode_custom_deploy"))
         .stdout(predicate::str::contains("root/README.md"))
         .stdout(predicate::str::contains("\"package_manager\":\"npm\""))
-        .stdout(predicate::str::contains("\"migration_actions\""));
+        .stdout(predicate::str::contains("\"migration_actions\""))
+        .stdout(predicate::str::contains("\"operation\":\"audit\""))
+        .stdout(predicate::str::contains("--audit-level"))
+        .stdout(predicate::str::contains("\"slug\":\"deploy\""))
+        .stdout(predicate::str::contains("Deploy preview"))
+        .stdout(predicate::str::contains("lode://project/info"));
 }
 
 #[test]
