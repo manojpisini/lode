@@ -2817,6 +2817,16 @@ fn pkg_dry_run_translates_native_commands() {
 
     lode()
         .current_dir(node.path())
+        .args(["pkg", "outdated", "--dry-run", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"operation\": \"outdated\""))
+        .stdout(predicate::str::contains("\"manager\": \"pnpm\""))
+        .stdout(predicate::str::contains("\"command\": \"pnpm\""))
+        .stdout(predicate::str::contains("\"outdated\""));
+
+    lode()
+        .current_dir(node.path())
         .args(["pkg", "why", "react", "--dry-run"])
         .assert()
         .success()
@@ -2843,6 +2853,31 @@ fn pkg_dry_run_translates_native_commands() {
         .stdout(predicate::str::contains("would run: go vulncheck ./..."))
         .stdout(predicate::str::contains("would run: lode scan secrets"));
 
+    let cargo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        cargo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(cargo.path())
+        .args([
+            "pkg",
+            "audit",
+            "--dry-run",
+            "--format",
+            "json",
+            "--fail-on",
+            "high",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"operation\": \"audit\""))
+        .stdout(predicate::str::contains("\"manager\": \"cargo\""))
+        .stdout(predicate::str::contains("\"--deny\""))
+        .stdout(predicate::str::contains("\"high\""));
+
     let gradle = tempfile::tempdir().unwrap();
     std::fs::write(
         gradle.path().join("build.gradle"),
@@ -2857,6 +2892,24 @@ fn pkg_dry_run_translates_native_commands() {
         .success()
         .stdout(predicate::str::contains(
             "would run: gradle dependencyInsight --dependency junit",
+        ));
+
+    lode()
+        .current_dir(gradle.path())
+        .args(["pkg", "audit", "--dry-run", "--fail-on", "critical"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would run: gradle dependencyCheckAnalyze -DfailBuildOnCVSS=9",
+        ));
+
+    lode()
+        .current_dir(gradle.path())
+        .args(["pkg", "audit", "--dry-run", "--fail-on", "severe"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "unsupported package audit severity: severe",
         ));
 
     let maven = tempfile::tempdir().unwrap();

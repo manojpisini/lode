@@ -745,6 +745,8 @@ enum PkgCommand {
     Outdated {
         #[arg(long)]
         dry_run: bool,
+        #[arg(long, default_value = "table")]
+        format: String,
     },
     Update {
         name: Option<String>,
@@ -754,6 +756,10 @@ enum PkgCommand {
     Audit {
         #[arg(long)]
         dry_run: bool,
+        #[arg(long, default_value = "table")]
+        format: String,
+        #[arg(long)]
+        fail_on: Option<String>,
     },
     Why {
         name: String,
@@ -5568,9 +5574,11 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 }
             }
         }
-        PkgCommand::Outdated { dry_run } => {
-            run_or_print_package_manager(&manager, package_outdated_args(&manager)?, dry_run)?
-        }
+        PkgCommand::Outdated { dry_run, format } => run_or_print_package_operation(
+            &PackageOperationPlan::new("outdated", &manager, package_outdated_args(&manager)?),
+            dry_run,
+            &format,
+        )?,
         PkgCommand::Update { name, dry_run } => {
             let args = package_update_args(&manager, name.as_deref())?;
             if dry_run {
@@ -5583,8 +5591,17 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 run_package_manager(&manager, args)?;
             }
         }
-        PkgCommand::Audit { dry_run } => {
-            run_or_print_package_manager(&manager, package_audit_args(&manager)?, dry_run)?;
+        PkgCommand::Audit {
+            dry_run,
+            format,
+            fail_on,
+        } => {
+            let plan = PackageOperationPlan::new(
+                "audit",
+                &manager,
+                package_audit_args(&manager, fail_on.as_deref())?,
+            );
+            run_or_print_package_operation(&plan, dry_run, &format)?;
             if dry_run {
                 println!("would run: lode scan secrets {}", current_dir()?);
             } else {
@@ -5659,10 +5676,69 @@ fn run_package_manager(manager: &str, args: Vec<String>) -> lode_core::Result<()
     }
 }
 
+#[derive(Debug, Serialize)]
+struct PackageOperationPlan {
+    operation: String,
+    manager: String,
+    command: String,
+    args: Vec<String>,
+}
+
+impl PackageOperationPlan {
+    fn new(operation: &str, manager: &str, args: Vec<String>) -> Self {
+        Self {
+            operation: operation.to_string(),
+            manager: manager.to_string(),
+            command: package_command(manager).to_string(),
+            args,
+        }
+    }
+
+    fn command_line(&self) -> String {
+        if self.args.is_empty() {
+            self.command.clone()
+        } else {
+            format!("{} {}", self.command, self.args.join(" "))
+        }
+    }
+}
+
 fn package_command(manager: &str) -> &str {
     match manager {
         "maven" => "mvn",
         other => other,
+    }
+}
+
+fn run_or_print_package_operation(
+    plan: &PackageOperationPlan,
+    dry_run: bool,
+    format: &str,
+) -> lode_core::Result<()> {
+    if dry_run {
+        print_package_plan(plan, format)
+    } else {
+        run_package_manager(&plan.manager, plan.args.clone())
+    }
+}
+
+fn print_package_plan(plan: &PackageOperationPlan, format: &str) -> lode_core::Result<()> {
+    match format {
+        "table" => {
+            println!("would run: {}", plan.command_line());
+            Ok(())
+        }
+        "json" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(plan)
+                    .map_err(|error| LodeError::Message(error.to_string()))?
+            );
+            Ok(())
+        }
+        other => Err(LodeError::Message(format!(
+            "unsupported package output format: {other}"
+        ))),
     }
 }
 
@@ -5739,22 +5815,86 @@ fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<V
     Ok(args)
 }
 
-fn package_audit_args(manager: &str) -> lode_core::Result<Vec<String>> {
+fn package_audit_args(manager: &str, fail_on: Option<&str>) -> lode_core::Result<Vec<String>> {
+    let fail_on = fail_on.map(validate_package_severity).transpose()?;
     match manager {
-        "cargo" => Ok(vec!["audit".into()]),
-        "npm" => Ok(vec!["audit".into()]),
-        "pnpm" => Ok(vec!["audit".into()]),
-        "yarn" => Ok(vec!["audit".into()]),
-        "bun" => Ok(vec!["audit".into()]),
+        "cargo" => {
+            let mut args = vec!["audit".into()];
+            if let Some(severity) = fail_on {
+                args.push("--deny".into());
+                args.push(severity.into());
+            }
+            Ok(args)
+        }
+        "npm" => {
+            let mut args = vec!["audit".into()];
+            if let Some(severity) = fail_on {
+                args.push("--audit-level".into());
+                args.push(severity.into());
+            }
+            Ok(args)
+        }
+        "pnpm" | "yarn" | "bun" => {
+            let mut args = vec!["audit".into()];
+            if let Some(severity) = fail_on {
+                args.push("--audit-level".into());
+                args.push(severity.into());
+            }
+            Ok(args)
+        }
         "uv" => Ok(vec!["pip".into(), "check".into()]),
-        "pip" => Ok(vec!["audit".into()]),
+        "pip" => {
+            let mut args = vec!["audit".into()];
+            if let Some(severity) = fail_on {
+                args.push("--severity".into());
+                args.push(severity.into());
+            }
+            Ok(args)
+        }
         "go" => Ok(vec!["vulncheck".into(), "./...".into()]),
         "bundler" => Ok(vec!["audit".into(), "check".into()]),
-        "gradle" => Ok(vec!["dependencyCheckAnalyze".into()]),
-        "maven" => Ok(vec!["org.owasp:dependency-check-maven:check".into()]),
+        "gradle" => {
+            let mut args = vec!["dependencyCheckAnalyze".into()];
+            if let Some(severity) = fail_on {
+                args.push(format!(
+                    "-DfailBuildOnCVSS={}",
+                    severity_cvss_threshold(severity)
+                ));
+            }
+            Ok(args)
+        }
+        "maven" => {
+            let mut args = vec!["org.owasp:dependency-check-maven:check".into()];
+            if let Some(severity) = fail_on {
+                args.push(format!(
+                    "-DfailBuildOnCVSS={}",
+                    severity_cvss_threshold(severity)
+                ));
+            }
+            Ok(args)
+        }
         _ => Err(LodeError::Message(
             "no supported package manager files found".to_string(),
         )),
+    }
+}
+
+fn validate_package_severity(severity: &str) -> lode_core::Result<&str> {
+    match severity {
+        "low" | "medium" | "high" | "critical" => Ok(severity),
+        other => Err(LodeError::Message(format!(
+            "unsupported package audit severity: {other}"
+        ))),
+    }
+}
+
+fn severity_cvss_threshold(severity: &str) -> &'static str {
+    match severity {
+        "low" => "0",
+        "medium" => "4",
+        "high" => "7",
+        "critical" => "9",
+        _ => "7",
     }
 }
 
