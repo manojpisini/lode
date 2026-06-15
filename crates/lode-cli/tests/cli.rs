@@ -2655,6 +2655,17 @@ fn self_info_clean_upgrade_and_completions_work() {
         .stdout(predicate::str::contains("_lode_chdir_hook"))
         .stdout(predicate::str::contains("lp()"));
 
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["completions", "fish", "--install", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would write fish completions"))
+        .stdout(predicate::str::contains(
+            "would record completion install receipt",
+        ))
+        .stdout(predicate::str::contains("source"));
+
     let completion_file = temp.path().join("lode.ps1");
     lode()
         .env("LODE_CONFIG", &config)
@@ -2662,11 +2673,20 @@ fn self_info_clean_upgrade_and_completions_work() {
         .arg(&completion_file)
         .assert()
         .success()
-        .stdout(predicate::str::contains("wrote powershell completions"));
+        .stdout(predicate::str::contains("wrote powershell completions"))
+        .stdout(predicate::str::contains("add to $PROFILE"))
+        .stdout(predicate::str::contains(". \""));
 
     let completion = std::fs::read_to_string(completion_file).unwrap();
     assert!(completion.contains("Register-ArgumentCompleter"));
     assert!(completion.contains("Invoke-LodePromptHook"));
+
+    let receipt =
+        std::fs::read_to_string(root.join("completions").join("install-receipt.json")).unwrap();
+    assert!(receipt.contains("\"schema_version\": 3"));
+    assert!(receipt.contains("\"shell\": \"powershell\""));
+    assert!(receipt.contains("lode.ps1"));
+    assert!(receipt.contains("add to $PROFILE"));
 }
 
 #[test]

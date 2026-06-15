@@ -299,6 +299,8 @@ enum Command {
         #[arg(long)]
         install: bool,
         #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
         out: Option<Utf8PathBuf>,
     },
     Version,
@@ -947,6 +949,16 @@ struct TimeLog {
     sessions: Vec<TimeSession>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CompletionInstallReceipt {
+    schema_version: u32,
+    shell: String,
+    path: String,
+    installed_at: String,
+    source: String,
+    hint: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TimeSession {
     started_at: String,
@@ -1149,8 +1161,9 @@ fn run() -> lode_core::Result<()> {
         Command::Completions {
             shell,
             install,
+            dry_run,
             out,
-        } => completions(&shell, install, out)?,
+        } => completions(&shell, install, dry_run, out)?,
         Command::Version => println!("{}", env!("CARGO_PKG_VERSION")),
         Command::External(args) => external_command(args)?,
     }
@@ -7659,7 +7672,12 @@ fn upgrade(check: bool) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn completions(shell: &str, install: bool, out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
+fn completions(
+    shell: &str,
+    install: bool,
+    dry_run: bool,
+    out: Option<Utf8PathBuf>,
+) -> lode_core::Result<()> {
     let script = completion_script(shell)?;
     let output_path = if install {
         Some(out.unwrap_or(default_completion_path(shell)?))
@@ -7667,6 +7685,15 @@ fn completions(shell: &str, install: bool, out: Option<Utf8PathBuf>) -> lode_cor
         out
     };
     if let Some(path) = output_path {
+        let hint = completion_install_hint(shell, &path)?;
+        let source = completion_source_line(shell, &path)?;
+        if dry_run {
+            println!("would write {shell} completions to {path}");
+            println!("would record completion install receipt");
+            println!("{hint}");
+            println!("{source}");
+            return Ok(());
+        }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|source| LodeError::Io {
                 path: parent.as_str().into(),
@@ -7677,11 +7704,20 @@ fn completions(shell: &str, install: bool, out: Option<Utf8PathBuf>) -> lode_cor
             path: path.as_str().into(),
             source,
         })?;
+        if install {
+            write_completion_install_receipt(shell, &path, &source, &hint)?;
+        }
         println!("wrote {shell} completions to {path}");
         if install {
-            println!("{}", completion_install_hint(shell, &path)?);
+            println!("{hint}");
+            println!("{source}");
         }
     } else {
+        if dry_run {
+            return Err(LodeError::Message(
+                "--dry-run is only meaningful with --install or --out".to_string(),
+            ));
+        }
         print!("{script}");
     }
     Ok(())
@@ -7789,6 +7825,20 @@ fn default_completion_path(shell: &str) -> lode_core::Result<Utf8PathBuf> {
     Ok(global_dir()?.join("completions").join(file))
 }
 
+fn completion_source_line(shell: &str, path: &Utf8PathBuf) -> lode_core::Result<String> {
+    let source = match shell {
+        "bash" | "zsh" => format!("source \"{path}\""),
+        "fish" => format!("source \"{path}\""),
+        "powershell" | "pwsh" => format!(". \"{path}\""),
+        other => {
+            return Err(LodeError::Message(format!(
+                "unsupported completion shell: {other}"
+            )))
+        }
+    };
+    Ok(source)
+}
+
 fn completion_install_hint(shell: &str, path: &Utf8PathBuf) -> lode_core::Result<String> {
     let hint = match shell {
         "bash" => format!("add to ~/.bashrc: source \"{path}\""),
@@ -7804,6 +7854,41 @@ fn completion_install_hint(shell: &str, path: &Utf8PathBuf) -> lode_core::Result
         }
     };
     Ok(hint)
+}
+
+fn completion_receipt_path() -> lode_core::Result<Utf8PathBuf> {
+    Ok(global_dir()?
+        .join("completions")
+        .join("install-receipt.json"))
+}
+
+fn write_completion_install_receipt(
+    shell: &str,
+    path: &Utf8PathBuf,
+    source: &str,
+    hint: &str,
+) -> lode_core::Result<()> {
+    let receipt = CompletionInstallReceipt {
+        schema_version: 3,
+        shell: shell.to_string(),
+        path: path.to_string(),
+        installed_at: now_timestamp(),
+        source: source.to_string(),
+        hint: hint.to_string(),
+    };
+    let receipt_path = completion_receipt_path()?;
+    if let Some(parent) = receipt_path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(&receipt)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&receipt_path, raw).map_err(|source| LodeError::Io {
+        path: receipt_path.as_str().into(),
+        source,
+    })
 }
 
 fn serve_dashboard(
