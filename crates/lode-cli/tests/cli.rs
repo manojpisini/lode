@@ -2029,6 +2029,61 @@ fn export_filters_and_import_conflict_modes_work() {
 }
 
 #[test]
+fn import_rejects_unsafe_lodepack_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let pack = temp.path().join("unsafe.lodepack");
+    std::fs::write(
+        &pack,
+        r#"{
+  "version": 1,
+  "files": [
+    { "path": "../outside.txt", "contents": "bad" }
+  ]
+}"#,
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("import")
+        .arg(&pack)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unsafe lodepack path"));
+
+    assert!(!temp.path().join("outside.txt").exists());
+}
+
+#[test]
+fn import_rejects_duplicate_lodepack_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let pack = temp.path().join("duplicate.lodepack");
+    std::fs::write(
+        &pack,
+        r#"{
+  "version": 1,
+  "files": [
+    { "path": "config.toml", "contents": "schema_version = 3\n" },
+    { "path": "config.toml", "contents": "schema_version = 3\n[identity]\nauthor = \"shadow\"\n" }
+  ]
+}"#,
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("import")
+        .arg(&pack)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("duplicate lodepack path"));
+
+    assert!(!temp.path().join(".lode").join("config.toml").exists());
+}
+
+#[test]
 fn sync_refreshes_agent_context_and_supports_dry_run() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

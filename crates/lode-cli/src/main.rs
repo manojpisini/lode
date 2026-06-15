@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, BTreeMap},
+    collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet},
     env, fs,
     hash::{Hash, Hasher},
     io,
@@ -6406,21 +6406,26 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
         path: root.as_str().into(),
         source,
     })?;
+    let mut seen_paths = BTreeSet::new();
+    let mut validated_files = Vec::new();
     for file in &pack.files {
-        if file.path.contains("..") || file.path.starts_with('/') || file.path.contains(':') {
+        let normalized = validate_lodepack_path(&file.path)?;
+        if !seen_paths.insert(normalized.clone()) {
             return Err(LodeError::Message(format!(
-                "unsafe lodepack path: {}",
-                file.path
+                "duplicate lodepack path: {normalized}"
             )));
         }
-        let destination = lodepack_destination(&root, &file.path)?;
+        validated_files.push((file, normalized));
+    }
+    for (file, normalized) in validated_files {
+        let destination = lodepack_destination(&root, &normalized)?;
         if destination.exists() && no_merge && !force {
             return Err(LodeError::Message(format!(
                 "import conflict: {} exists",
-                file.path
+                normalized
             )));
         }
-        if destination.exists() && !force && file.path != "config.toml" {
+        if destination.exists() && !force && normalized != "config.toml" {
             continue;
         }
         if let Some(parent) = destination.parent() {
@@ -6439,16 +6444,46 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
 }
 
 fn lodepack_destination(root: &Utf8PathBuf, path: &str) -> lode_core::Result<Utf8PathBuf> {
-    let normalized = path.replace('\\', "/");
-    let Some((first, rest)) = normalized.split_once('/') else {
-        return Ok(root.join(normalized));
+    let Some((first, rest)) = path.split_once('/') else {
+        return Ok(root.join(path));
     };
     match first {
         "templates" | "profiles" | "snippets" | "licenses" | "plugins" | "recipes" | "commands" => {
             Ok(global_asset_dir(first)?.join(rest))
         }
-        _ => Ok(root.join(normalized)),
+        _ => Ok(root.join(path)),
     }
+}
+
+fn validate_lodepack_path(path: &str) -> lode_core::Result<String> {
+    let normalized = path.replace('\\', "/");
+    if normalized.is_empty()
+        || normalized.starts_with('/')
+        || normalized.contains(':')
+        || normalized.chars().any(char::is_control)
+    {
+        return Err(LodeError::Message(format!("unsafe lodepack path: {path}")));
+    }
+    let mut segments = normalized.split('/').collect::<Vec<_>>();
+    if segments
+        .iter()
+        .any(|segment| segment.is_empty() || *segment == "." || *segment == "..")
+    {
+        return Err(LodeError::Message(format!("unsafe lodepack path: {path}")));
+    }
+    let first = segments.remove(0);
+    let valid_root_file =
+        matches!(first, "config.toml" | "registry.json" | "metrics.json") && segments.is_empty();
+    let valid_asset_path = matches!(
+        first,
+        "templates" | "profiles" | "snippets" | "licenses" | "plugins" | "recipes" | "commands"
+    ) && !segments.is_empty();
+    if !valid_root_file && !valid_asset_path {
+        return Err(LodeError::Message(format!(
+            "unsupported lodepack path: {path}"
+        )));
+    }
+    Ok(normalized)
 }
 
 fn collect_pack_files(
