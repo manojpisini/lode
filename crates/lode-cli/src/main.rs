@@ -745,7 +745,10 @@ enum ToolchainCommand {
 
 #[derive(Debug, Subcommand)]
 enum PkgCommand {
-    List,
+    List {
+        #[arg(long, default_value = "table")]
+        format: String,
+    },
     Outdated {
         #[arg(long)]
         dry_run: bool,
@@ -769,11 +772,15 @@ enum PkgCommand {
         name: String,
         #[arg(long)]
         dry_run: bool,
+        #[arg(long, default_value = "table")]
+        format: String,
     },
     Info {
         name: String,
         #[arg(long)]
         dry_run: bool,
+        #[arg(long, default_value = "table")]
+        format: String,
     },
     Lock {
         #[arg(long)]
@@ -5851,22 +5858,7 @@ fn pin_runtime(runtime: &str, version: &str) -> lode_core::Result<()> {
 fn pkg(command: PkgCommand) -> lode_core::Result<()> {
     let manager = detect_package_manager().unwrap_or_else(|| "unknown".to_string());
     match command {
-        PkgCommand::List => {
-            println!("manager: {manager}");
-            for file in [
-                "Cargo.toml",
-                "package.json",
-                "pyproject.toml",
-                "go.mod",
-                "build.gradle",
-                "settings.gradle",
-                "pom.xml",
-            ] {
-                if Utf8PathBuf::from(file).exists() {
-                    println!("{file}");
-                }
-            }
-        }
+        PkgCommand::List { format } => print_package_inventory(&format)?,
         PkgCommand::Outdated { dry_run, format } => run_or_print_package_operation(
             &PackageOperationPlan::new("outdated", &manager, package_outdated_args(&manager)?),
             dry_run,
@@ -5906,12 +5898,16 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 })?;
             }
         }
-        PkgCommand::Why { name, dry_run } => {
-            run_or_print_package_manager(&manager, package_why_args(&manager, &name)?, dry_run)?
-        }
-        PkgCommand::Info { name, dry_run } => {
-            run_or_print_package_manager(&manager, package_info_args(&manager, &name)?, dry_run)?
-        }
+        PkgCommand::Why {
+            name,
+            dry_run,
+            format,
+        } => package_explain("why", &manager, &name, dry_run, &format)?,
+        PkgCommand::Info {
+            name,
+            dry_run,
+            format,
+        } => package_explain("info", &manager, &name, dry_run, &format)?,
         PkgCommand::Lock { dry_run } => {
             let args = package_lock_args(&manager)?;
             if dry_run {
@@ -5975,6 +5971,8 @@ struct PackageOperationPlan {
     manager: String,
     command: String,
     args: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    packages: Vec<PackageDependency>,
 }
 
 impl PackageOperationPlan {
@@ -5984,6 +5982,7 @@ impl PackageOperationPlan {
             manager: manager.to_string(),
             command: package_command(manager).to_string(),
             args,
+            packages: package_dependencies(),
         }
     }
 
@@ -5994,6 +5993,485 @@ impl PackageOperationPlan {
             format!("{} {}", self.command, self.args.join(" "))
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PackageManifest {
+    file: String,
+    kind: String,
+    manager: String,
+    dependencies: Vec<PackageDependency>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PackageDependency {
+    name: String,
+    version: Option<String>,
+    scope: String,
+    manifest: String,
+}
+
+fn print_package_inventory(format: &str) -> lode_core::Result<()> {
+    let manager = detect_package_manager().unwrap_or_else(|| "unknown".to_string());
+    let manifests = package_manifest_inventory();
+    match format {
+        "table" => {
+            println!("manager: {manager}");
+            for manifest in &manifests {
+                println!(
+                    "{}\t{}\t{} dependencies",
+                    manifest.file,
+                    manifest.kind,
+                    manifest.dependencies.len()
+                );
+                for dependency in &manifest.dependencies {
+                    let version = dependency.version.as_deref().unwrap_or("*");
+                    println!("  {} {} ({})", dependency.name, version, dependency.scope);
+                }
+            }
+            Ok(())
+        }
+        "json" => {
+            let inventory = json!({
+                "manager": manager,
+                "manifests": manifests,
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&inventory)
+                    .map_err(|error| LodeError::Message(error.to_string()))?
+            );
+            Ok(())
+        }
+        other => Err(LodeError::Message(format!(
+            "unsupported package output format: {other}"
+        ))),
+    }
+}
+
+fn package_explain(
+    operation: &str,
+    manager: &str,
+    name: &str,
+    dry_run: bool,
+    format: &str,
+) -> lode_core::Result<()> {
+    let matches = package_dependencies()
+        .into_iter()
+        .filter(|dependency| package_name_matches(&dependency.name, name))
+        .collect::<Vec<_>>();
+    if !matches.is_empty() {
+        print_package_matches(operation, manager, name, &matches, format)?;
+        if dry_run {
+            let args = match operation {
+                "why" => package_why_args(manager, name)?,
+                "info" => package_info_args(manager, name)?,
+                _ => Vec::new(),
+            };
+            println!("would run: {} {}", package_command(manager), args.join(" "));
+        }
+        return Ok(());
+    }
+    let args = match operation {
+        "why" => package_why_args(manager, name)?,
+        "info" => package_info_args(manager, name)?,
+        _ => Vec::new(),
+    };
+    run_or_print_package_manager(manager, args, dry_run)
+}
+
+fn print_package_matches(
+    operation: &str,
+    manager: &str,
+    name: &str,
+    matches: &[PackageDependency],
+    format: &str,
+) -> lode_core::Result<()> {
+    match format {
+        "table" => {
+            println!("{operation}: {name}");
+            println!("manager: {manager}");
+            for dependency in matches {
+                let version = dependency.version.as_deref().unwrap_or("*");
+                println!(
+                    "project -> {} -> {} {} ({})",
+                    dependency.manifest, dependency.name, version, dependency.scope
+                );
+            }
+            Ok(())
+        }
+        "json" => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "operation": operation,
+                    "manager": manager,
+                    "query": name,
+                    "matches": matches,
+                }))
+                .map_err(|error| LodeError::Message(error.to_string()))?
+            );
+            Ok(())
+        }
+        other => Err(LodeError::Message(format!(
+            "unsupported package output format: {other}"
+        ))),
+    }
+}
+
+fn package_manifest_inventory() -> Vec<PackageManifest> {
+    let root = Utf8PathBuf::from(".");
+    let mut manifests = Vec::new();
+    for (file, kind, manager) in [
+        ("Cargo.toml", "cargo", "cargo"),
+        ("package.json", "node", "npm"),
+        ("pyproject.toml", "python", "uv"),
+        ("requirements.txt", "python", "pip"),
+        ("go.mod", "go", "go"),
+        ("Gemfile", "ruby", "bundler"),
+        ("build.gradle", "gradle", "gradle"),
+        ("settings.gradle", "gradle", "gradle"),
+        ("pom.xml", "maven", "maven"),
+    ] {
+        let path = root.join(file);
+        if !path.exists() {
+            continue;
+        }
+        let raw = fs::read_to_string(&path).unwrap_or_default();
+        let dependencies = match file {
+            "Cargo.toml" => parse_cargo_dependencies(file, &raw),
+            "package.json" => parse_node_dependencies(file, &raw),
+            "pyproject.toml" => parse_pyproject_dependencies(file, &raw),
+            "requirements.txt" => parse_requirements_dependencies(file, &raw),
+            "go.mod" => parse_go_dependencies(file, &raw),
+            "Gemfile" => parse_gemfile_dependencies(file, &raw),
+            "build.gradle" => parse_gradle_dependencies(file, &raw),
+            "pom.xml" => parse_maven_dependencies(file, &raw),
+            _ => Vec::new(),
+        };
+        manifests.push(PackageManifest {
+            file: file.to_string(),
+            kind: kind.to_string(),
+            manager: manager.to_string(),
+            dependencies,
+        });
+    }
+    manifests
+}
+
+fn package_dependencies() -> Vec<PackageDependency> {
+    package_manifest_inventory()
+        .into_iter()
+        .flat_map(|manifest| manifest.dependencies)
+        .collect()
+}
+
+fn package_name_matches(candidate: &str, query: &str) -> bool {
+    candidate == query
+        || candidate.contains(query)
+        || candidate
+            .rsplit_once(':')
+            .map(|(_, artifact)| artifact == query)
+            .unwrap_or(false)
+        || candidate
+            .rsplit_once('/')
+            .map(|(_, tail)| tail == query)
+            .unwrap_or(false)
+}
+
+fn parse_cargo_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    let value = match raw.parse::<toml::Value>() {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let mut dependencies = Vec::new();
+    for scope in [
+        "dependencies",
+        "dev-dependencies",
+        "build-dependencies",
+        "workspace.dependencies",
+    ] {
+        if let Some(table) = toml_table_path(&value, scope) {
+            for (name, value) in table {
+                dependencies.push(PackageDependency {
+                    name: name.to_string(),
+                    version: toml_dependency_version(value),
+                    scope: scope.to_string(),
+                    manifest: manifest.to_string(),
+                });
+            }
+        }
+    }
+    dependencies
+}
+
+fn toml_table_path<'a>(
+    value: &'a toml::Value,
+    path: &str,
+) -> Option<&'a toml::map::Map<String, toml::Value>> {
+    let mut current = value;
+    for segment in path.split('.') {
+        current = current.get(segment)?;
+    }
+    current.as_table()
+}
+
+fn toml_dependency_version(value: &toml::Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("version")
+                .and_then(toml::Value::as_str)
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            value
+                .get("path")
+                .and_then(toml::Value::as_str)
+                .map(|path| format!("path:{path}"))
+        })
+        .or_else(|| {
+            value
+                .get("git")
+                .and_then(toml::Value::as_str)
+                .map(|git| format!("git:{git}"))
+        })
+}
+
+fn parse_node_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    let value: Value = match serde_json::from_str(raw) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let mut dependencies = Vec::new();
+    for scope in [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ] {
+        if let Some(object) = value.get(scope).and_then(Value::as_object) {
+            for (name, version) in object {
+                dependencies.push(PackageDependency {
+                    name: name.to_string(),
+                    version: version.as_str().map(str::to_string),
+                    scope: scope.to_string(),
+                    manifest: manifest.to_string(),
+                });
+            }
+        }
+    }
+    dependencies
+}
+
+fn parse_pyproject_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    let value = match raw.parse::<toml::Value>() {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let mut dependencies = Vec::new();
+    if let Some(items) = value
+        .get("project")
+        .and_then(|project| project.get("dependencies"))
+        .and_then(toml::Value::as_array)
+    {
+        for item in items.iter().filter_map(toml::Value::as_str) {
+            dependencies.push(python_dependency(manifest, "dependencies", item));
+        }
+    }
+    if let Some(groups) = value
+        .get("project")
+        .and_then(|project| project.get("optional-dependencies"))
+        .and_then(toml::Value::as_table)
+    {
+        for (group, items) in groups {
+            if let Some(items) = items.as_array() {
+                for item in items.iter().filter_map(toml::Value::as_str) {
+                    dependencies.push(python_dependency(
+                        manifest,
+                        &format!("optional-dependencies.{group}"),
+                        item,
+                    ));
+                }
+            }
+        }
+    }
+    dependencies
+}
+
+fn parse_requirements_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    raw.lines()
+        .filter_map(|line| {
+            let line = line.split('#').next()?.trim();
+            if line.is_empty() || line.starts_with('-') {
+                return None;
+            }
+            Some(python_dependency(manifest, "requirements", line))
+        })
+        .collect()
+}
+
+fn python_dependency(manifest: &str, scope: &str, spec: &str) -> PackageDependency {
+    let split_at = spec
+        .char_indices()
+        .find(|(_, character)| matches!(character, '<' | '>' | '=' | '!' | '~' | '[' | ';' | ' '))
+        .map(|(index, _)| index)
+        .unwrap_or(spec.len());
+    let name = spec[..split_at].trim().to_string();
+    let version = spec[split_at..].trim();
+    PackageDependency {
+        name,
+        version: (!version.is_empty()).then(|| version.to_string()),
+        scope: scope.to_string(),
+        manifest: manifest.to_string(),
+    }
+}
+
+fn parse_go_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    let mut dependencies = Vec::new();
+    let mut in_require_block = false;
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.starts_with("require (") {
+            in_require_block = true;
+            continue;
+        }
+        if in_require_block && line == ")" {
+            in_require_block = false;
+            continue;
+        }
+        let require = if in_require_block {
+            line
+        } else if let Some(require) = line.strip_prefix("require ") {
+            require
+        } else {
+            continue;
+        };
+        let mut parts = require.split_whitespace();
+        let Some(name) = parts.next() else {
+            continue;
+        };
+        let version = parts.next().map(str::to_string);
+        dependencies.push(PackageDependency {
+            name: name.to_string(),
+            version,
+            scope: "require".to_string(),
+            manifest: manifest.to_string(),
+        });
+    }
+    dependencies
+}
+
+fn parse_gemfile_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    raw.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("gem ") {
+                return None;
+            }
+            let quoted = extract_quoted_strings(trimmed);
+            let name = quoted.first()?.to_string();
+            let version = quoted.get(1).map(|value| (*value).to_string());
+            Some(PackageDependency {
+                name,
+                version,
+                scope: "gem".to_string(),
+                manifest: manifest.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn parse_gradle_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    let scopes = [
+        "implementation",
+        "api",
+        "compileOnly",
+        "runtimeOnly",
+        "testImplementation",
+        "testRuntimeOnly",
+    ];
+    let mut dependencies = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        let Some(scope) = scopes
+            .iter()
+            .find(|scope| trimmed.starts_with(**scope) || trimmed.contains(&format!(" {scope} ")))
+        else {
+            continue;
+        };
+        let quoted = extract_quoted_strings(trimmed);
+        let Some(spec) = quoted.first() else {
+            continue;
+        };
+        let mut parts = spec.split(':');
+        let group = parts.next().unwrap_or_default();
+        let artifact = parts.next().unwrap_or_default();
+        let version = parts.next().map(str::to_string);
+        if group.is_empty() || artifact.is_empty() {
+            continue;
+        }
+        dependencies.push(PackageDependency {
+            name: format!("{group}:{artifact}"),
+            version,
+            scope: (*scope).to_string(),
+            manifest: manifest.to_string(),
+        });
+    }
+    dependencies
+}
+
+fn parse_maven_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
+    let mut dependencies = Vec::new();
+    for block in raw.split("<dependency>").skip(1) {
+        let block = block.split("</dependency>").next().unwrap_or_default();
+        let Some(group) = xml_tag_text(block, "groupId") else {
+            continue;
+        };
+        let Some(artifact) = xml_tag_text(block, "artifactId") else {
+            continue;
+        };
+        dependencies.push(PackageDependency {
+            name: format!("{group}:{artifact}"),
+            version: xml_tag_text(block, "version"),
+            scope: xml_tag_text(block, "scope").unwrap_or_else(|| "compile".to_string()),
+            manifest: manifest.to_string(),
+        });
+    }
+    dependencies
+}
+
+fn extract_quoted_strings(line: &str) -> Vec<&str> {
+    let mut values = Vec::new();
+    let mut start = None;
+    let mut quote = '\0';
+    for (index, character) in line.char_indices() {
+        if let Some(start_index) = start {
+            if character == quote {
+                values.push(&line[start_index..index]);
+                start = None;
+            }
+        } else if character == '"' || character == '\'' {
+            quote = character;
+            start = Some(index + character.len_utf8());
+        }
+    }
+    values
+}
+
+fn xml_tag_text(raw: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    Some(
+        raw.split_once(&open)?
+            .1
+            .split_once(&close)?
+            .0
+            .trim()
+            .to_string(),
+    )
 }
 
 fn package_command(manager: &str) -> &str {

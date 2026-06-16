@@ -2877,7 +2877,11 @@ fn toolchain_add_use_pin_and_remove_are_file_backed() {
 #[test]
 fn pkg_list_detects_package_manager() {
     let temp = tempfile::tempdir().unwrap();
-    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+    std::fs::write(
+        temp.path().join("package.json"),
+        r#"{"dependencies":{"react":"^18.0.0"},"devDependencies":{"vite":"^5.0.0"}}"#,
+    )
+    .unwrap();
 
     lode()
         .current_dir(temp.path())
@@ -2885,7 +2889,17 @@ fn pkg_list_detects_package_manager() {
         .assert()
         .success()
         .stdout(predicate::str::contains("manager: npm"))
-        .stdout(predicate::str::contains("package.json"));
+        .stdout(predicate::str::contains("package.json"))
+        .stdout(predicate::str::contains("react ^18.0.0"));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["pkg", "list", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"manager\": \"npm\""))
+        .stdout(predicate::str::contains("\"name\": \"react\""))
+        .stdout(predicate::str::contains("\"scope\": \"devDependencies\""));
 }
 
 #[test]
@@ -2938,10 +2952,27 @@ fn pkg_dry_run_translates_native_commands() {
         .args(["pkg", "info", "requests", "--dry-run"])
         .assert()
         .success()
+        .stdout(predicate::str::contains(
+            "project -> requirements.txt -> requests ==2.0.0",
+        ))
         .stdout(predicate::str::contains("would run: pip show requests"));
 
+    lode()
+        .current_dir(python.path())
+        .args(["pkg", "info", "requests", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"query\": \"requests\""))
+        .stdout(predicate::str::contains(
+            "\"manifest\": \"requirements.txt\"",
+        ));
+
     let go = tempfile::tempdir().unwrap();
-    std::fs::write(go.path().join("go.sum"), "example.com/mod v1.0.0 h1:abc\n").unwrap();
+    std::fs::write(
+        go.path().join("go.mod"),
+        "module demo\n\nrequire (\n  example.com/mod v1.0.0\n)\n",
+    )
+    .unwrap();
 
     lode()
         .current_dir(go.path())
@@ -2954,9 +2985,18 @@ fn pkg_dry_run_translates_native_commands() {
     let cargo = tempfile::tempdir().unwrap();
     std::fs::write(
         cargo.path().join("Cargo.toml"),
-        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = \"1\"\n",
     )
     .unwrap();
+
+    lode()
+        .current_dir(cargo.path())
+        .args(["pkg", "why", "serde", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"operation\": \"why\""))
+        .stdout(predicate::str::contains("\"name\": \"serde\""))
+        .stdout(predicate::str::contains("\"version\": \"1\""));
 
     lode()
         .current_dir(cargo.path())
@@ -2979,7 +3019,7 @@ fn pkg_dry_run_translates_native_commands() {
     let gradle = tempfile::tempdir().unwrap();
     std::fs::write(
         gradle.path().join("build.gradle"),
-        "plugins { id 'java' }\n",
+        "plugins { id 'java' }\ndependencies { testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0' }\n",
     )
     .unwrap();
 
@@ -2988,6 +3028,9 @@ fn pkg_dry_run_translates_native_commands() {
         .args(["pkg", "why", "junit", "--dry-run"])
         .assert()
         .success()
+        .stdout(predicate::str::contains(
+            "project -> build.gradle -> org.junit.jupiter:junit-jupiter 5.10.0",
+        ))
         .stdout(predicate::str::contains(
             "would run: gradle dependencyInsight --dependency junit",
         ));
@@ -3011,7 +3054,21 @@ fn pkg_dry_run_translates_native_commands() {
         ));
 
     let maven = tempfile::tempdir().unwrap();
-    std::fs::write(maven.path().join("pom.xml"), "<project />\n").unwrap();
+    std::fs::write(
+        maven.path().join("pom.xml"),
+        "<project><dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency></dependencies></project>\n",
+    )
+    .unwrap();
+
+    lode()
+        .current_dir(maven.path())
+        .args(["pkg", "info", "junit-jupiter", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "\"name\": \"org.junit.jupiter:junit-jupiter\"",
+        ))
+        .stdout(predicate::str::contains("\"scope\": \"test\""));
 
     lode()
         .current_dir(maven.path())
