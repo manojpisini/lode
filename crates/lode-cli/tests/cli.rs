@@ -528,13 +528,17 @@ fn init_with_rust_profile_creates_language_files() {
     assert!(
         std::fs::read_to_string(project.join(".vscode").join("tasks.json"))
             .unwrap()
-            .contains("lode: open dashboard")
+            .contains("lode: release rollback preview")
     );
     assert!(
         std::fs::read_to_string(project.join(".vscode").join("launch.json"))
             .unwrap()
-            .contains("lode serve")
+            .contains("lode lsp --stdio")
     );
+    let vscode_tasks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(project.join(".vscode/tasks.json")).unwrap())
+            .unwrap();
+    assert_eq!(vscode_tasks["version"], "2.0.0");
 }
 
 #[test]
@@ -569,11 +573,23 @@ fn add_editor_integrations_scaffolds_files() {
         .assert()
         .success();
 
-    assert!(
-        std::fs::read_to_string(project.join(".zed").join("tasks.json"))
-            .unwrap()
-            .contains("lode: daemon start")
-    );
+    let zed_settings = std::fs::read_to_string(project.join(".zed").join("settings.json")).unwrap();
+    let zed_settings: serde_json::Value = serde_json::from_str(&zed_settings).unwrap();
+    assert_eq!(zed_settings["lode"]["binary"], "lode");
+    assert_eq!(zed_settings["lode"]["mcp_port"], 3847);
+
+    let zed_tasks = std::fs::read_to_string(project.join(".zed").join("tasks.json")).unwrap();
+    let zed_tasks: serde_json::Value = serde_json::from_str(&zed_tasks).unwrap();
+    assert!(zed_tasks
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|task| task["label"] == "lode: release rollback preview"));
+    assert!(zed_tasks
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|task| task["label"] == "lode: daemon status"));
     assert!(std::fs::read_to_string(
         project
             .join(".config")
@@ -582,7 +598,16 @@ fn add_editor_integrations_scaffolds_files() {
             .join("lode.lua")
     )
     .unwrap()
-    .contains("daemon_auto_start"));
+    .contains("configs.lode_lsp"));
+    assert!(std::fs::read_to_string(
+        project
+            .join(".config")
+            .join("nvim")
+            .join("lua")
+            .join("lode.lua")
+    )
+    .unwrap()
+    .contains("LodeRelease"));
     assert!(std::fs::read_to_string(
         project
             .join(".config")

@@ -399,15 +399,93 @@ fn vscode_tasks() -> String {
     r#"{
   "version": "2.0.0",
   "tasks": [
-    { "label": "lode: check conventions", "type": "shell", "command": "lode check", "problemMatcher": [] },
-    { "label": "lode: fix conventions", "type": "shell", "command": "lode fix", "problemMatcher": [] },
-    { "label": "lode: sign file", "type": "shell", "command": "lode sign ${file}", "problemMatcher": [] },
-    { "label": "lode: audit", "type": "shell", "command": "lode audit", "problemMatcher": [] },
-    { "label": "lode: scan secrets", "type": "shell", "command": "lode scan secrets", "problemMatcher": [] },
-    { "label": "lode: open dashboard", "type": "shell", "command": "lode serve", "problemMatcher": [] },
-    { "label": "lode: agent sync", "type": "shell", "command": "lode agent sync", "problemMatcher": [] },
-    { "label": "lode: daemon start", "type": "shell", "command": "lode daemon start", "problemMatcher": [] },
-    { "label": "lode: daemon stop", "type": "shell", "command": "lode daemon stop", "problemMatcher": [] }
+    {
+      "label": "lode: check conventions",
+      "type": "shell",
+      "command": "lode check",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: fix conventions",
+      "type": "shell",
+      "command": "lode fix",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: sign file",
+      "type": "shell",
+      "command": "lode sign \"${file}\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: stamp file",
+      "type": "shell",
+      "command": "lode stamp \"${file}\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: health",
+      "type": "shell",
+      "command": "lode health",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: audit",
+      "type": "shell",
+      "command": "lode audit",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: scan secrets",
+      "type": "shell",
+      "command": "lode scan secrets",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: time today",
+      "type": "shell",
+      "command": "lode time today",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: open dashboard",
+      "type": "shell",
+      "command": "lode serve",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: agent sync",
+      "type": "shell",
+      "command": "lode agent sync",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: config show",
+      "type": "shell",
+      "command": "lode config show --format json",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: daemon start",
+      "type": "shell",
+      "command": "lode daemon start",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: daemon stop",
+      "type": "shell",
+      "command": "lode daemon stop",
+      "problemMatcher": []
+    },
+    {
+      "label": "lode: release rollback preview",
+      "type": "shell",
+      "command": "lode release --rollback --dry-run",
+      "problemMatcher": []
+    }
   ]
 }
 "#
@@ -429,6 +507,18 @@ fn vscode_launch() -> String {
       "type": "node-terminal",
       "request": "launch",
       "command": "lode test"
+    },
+    {
+      "name": "Lode: language server",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "lode lsp --stdio"
+    },
+    {
+      "name": "Lode: MCP server",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "lode mcp --http --port 3847"
     }
   ]
 }
@@ -441,7 +531,15 @@ fn zed_settings() -> String {
   "tab_size": 2,
   "hard_tabs": false,
   "format_on_save": "on",
-  "formatter": "language_server"
+  "formatter": "language_server",
+  "lode": {
+    "binary": "lode",
+    "start_daemon_on_open": true,
+    "stamp_on_save": true,
+    "use_lsp": true,
+    "mcp_port": 3847,
+    "snippet_export": "lode snippet export --format zed --out ~/.config/zed/snippets.json"
+  }
 }
 "#
     .to_string()
@@ -453,14 +551,19 @@ fn zed_tasks() -> String {
   { "label": "lode: fix conventions", "command": "lode", "args": ["fix"] },
   { "label": "lode: sign file", "command": "lode", "args": ["sign", "$ZED_FILE"] },
   { "label": "lode: stamp file", "command": "lode", "args": ["stamp", "$ZED_FILE"] },
+  { "label": "lode: health", "command": "lode", "args": ["health"] },
   { "label": "lode: audit", "command": "lode", "args": ["audit"] },
   { "label": "lode: scan secrets", "command": "lode", "args": ["scan", "secrets"] },
   { "label": "lode: time today", "command": "lode", "args": ["time", "today"] },
+  { "label": "lode: config show", "command": "lode", "args": ["config", "show", "--format", "json"] },
+  { "label": "lode: snippet export", "command": "lode", "args": ["snippet", "export", "--format", "zed"] },
   { "label": "lode: open dashboard", "command": "lode", "args": ["serve"] },
   { "label": "lode: git commit", "command": "lode", "args": ["git", "commit"] },
   { "label": "lode: release", "command": "lode", "args": ["release"] },
+  { "label": "lode: release rollback preview", "command": "lode", "args": ["release", "--rollback", "--dry-run"] },
   { "label": "lode: agent sync", "command": "lode", "args": ["agent", "sync"] },
   { "label": "lode: daemon start", "command": "lode", "args": ["daemon", "start"] },
+  { "label": "lode: daemon status", "command": "lode", "args": ["daemon", "status"] },
   { "label": "lode: daemon stop", "command": "lode", "args": ["daemon", "stop"] }
 ]
 "#
@@ -477,7 +580,9 @@ M.opts = {
   enforce_rename = true,
   use_lsp = true,
   show_statusline = true,
+  sign_column = true,
   which_key_prefix = "<leader>l",
+  telescope = true,
 }
 
 local function in_lode_project()
@@ -485,11 +590,67 @@ local function in_lode_project()
 end
 
 local function run(args)
-  vim.fn.jobstart(vim.list_extend({ M.opts.binary }, args), { detach = true })
+  return vim.fn.jobstart(vim.list_extend({ M.opts.binary }, args), { detach = true })
+end
+
+local function run_current_file(command)
+  local file = vim.fn.expand("%:p")
+  if file ~= "" then
+    run({ command, file })
+  end
+end
+
+local function terminal(args)
+  vim.cmd("terminal " .. M.opts.binary .. " " .. table.concat(args, " "))
+end
+
+local function setup_lsp()
+  if not M.opts.use_lsp then
+    return
+  end
+  local ok_configs, configs = pcall(require, "lspconfig.configs")
+  local ok_lspconfig, lspconfig = pcall(require, "lspconfig")
+  if not (ok_configs and ok_lspconfig) then
+    return
+  end
+  if not configs.lode_lsp then
+    configs.lode_lsp = {
+      default_config = {
+        cmd = { M.opts.binary, "lsp", "--stdio" },
+        filetypes = { "*" },
+        root_dir = function(fname)
+          local marker = vim.fs.find(".lode/project.toml", { path = fname, upward = true })[1]
+          if marker then
+            return vim.fs.dirname(marker)
+          end
+          return nil
+        end,
+        settings = {},
+      },
+    }
+  end
+  lspconfig.lode_lsp.setup({})
+end
+
+local function setup_telescope()
+  if not M.opts.telescope then
+    return
+  end
+  local ok, telescope = pcall(require, "telescope")
+  if ok then
+    telescope.load_extension("lode")
+  end
+end
+
+function M.daemon_toggle()
+  run({ "daemon", "status", "--json" })
+  run({ "daemon", "start" })
 end
 
 function M.setup(opts)
   M.opts = vim.tbl_extend("force", M.opts, opts or {})
+  setup_lsp()
+  setup_telescope()
   vim.api.nvim_create_autocmd("VimEnter", {
     callback = function()
       if M.opts.daemon_auto_start and in_lode_project() then
@@ -500,19 +661,39 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("BufWritePost", {
     callback = function()
       if M.opts.stamp_on_save and in_lode_project() then
-        run({ "stamp", vim.fn.expand("%:p") })
+        run_current_file("stamp")
       end
     end,
   })
   vim.keymap.set("n", M.opts.which_key_prefix .. "c", function() run({ "check" }) end, { desc = "Lode check" })
   vim.keymap.set("n", M.opts.which_key_prefix .. "f", function() run({ "fix" }) end, { desc = "Lode fix" })
-  vim.keymap.set("n", M.opts.which_key_prefix .. "s", function() run({ "sign", vim.fn.expand("%:p") }) end, { desc = "Lode sign file" })
-  vim.keymap.set("n", M.opts.which_key_prefix .. "t", function() run({ "stamp", vim.fn.expand("%:p") }) end, { desc = "Lode stamp file" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "s", function() run_current_file("sign") end, { desc = "Lode sign file" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "t", function() run_current_file("stamp") end, { desc = "Lode stamp file" })
   vim.keymap.set("n", M.opts.which_key_prefix .. "a", function() run({ "audit" }) end, { desc = "Lode audit" })
-  vim.keymap.set("n", M.opts.which_key_prefix .. "v", function() vim.cmd("terminal lode serve") end, { desc = "Lode dashboard" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "i", function() terminal({ "info" }) end, { desc = "Lode info" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "m", function() terminal({ "time", "today" }) end, { desc = "Lode time today" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "v", function() terminal({ "serve" }) end, { desc = "Lode dashboard" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "g", function() terminal({ "git", "commit" }) end, { desc = "Lode git commit" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "r", function() terminal({ "release" }) end, { desc = "Lode release" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "d", M.daemon_toggle, { desc = "Lode daemon toggle" })
+  vim.keymap.set("n", M.opts.which_key_prefix .. "x", function() run({ "agent", "sync" }) end, { desc = "Lode agent sync" })
+
+  vim.api.nvim_create_user_command("LodeCheck", function() run({ "check" }) end, {})
+  vim.api.nvim_create_user_command("LodeFix", function() run({ "fix" }) end, {})
+  vim.api.nvim_create_user_command("LodeAudit", function() terminal({ "audit" }) end, {})
+  vim.api.nvim_create_user_command("LodeSign", function() run_current_file("sign") end, {})
+  vim.api.nvim_create_user_command("LodeStamp", function() run_current_file("stamp") end, {})
+  vim.api.nvim_create_user_command("LodeRelease", function() terminal({ "release" }) end, {})
+  vim.api.nvim_create_user_command("LodeSecrets", function() terminal({ "scan", "secrets" }) end, {})
+  vim.api.nvim_create_user_command("LodeTime", function() terminal({ "time", "today" }) end, {})
+  vim.api.nvim_create_user_command("LodeServe", function() terminal({ "serve" }) end, {})
+  vim.api.nvim_create_user_command("LodeSync", function() run({ "agent", "sync" }) end, {})
 end
 
 function M.statusline()
+  if not in_lode_project() then
+    return ""
+  end
   return "lode"
 end
 
