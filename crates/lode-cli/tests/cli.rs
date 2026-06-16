@@ -1,5 +1,9 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
 use tempfile::TempDir;
 
 fn lode() -> Command {
@@ -12,6 +16,34 @@ fn isolated_config(temp: &TempDir) -> String {
         .join("config.toml")
         .to_string_lossy()
         .into_owned()
+}
+
+fn test_content_hash(contents: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    contents.as_bytes().hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn write_release_rollback(temp: &TempDir, before: &str, after: &str) {
+    let rollback_dir = temp.path().join(".lode");
+    std::fs::create_dir_all(&rollback_dir).unwrap();
+    let state = serde_json::json!({
+        "schema_version": 3,
+        "created_at": "2026-01-01T00:00:00Z",
+        "from": "0.1.0",
+        "to": "0.1.1",
+        "files": [{
+            "path": "Cargo.toml",
+            "contents": before,
+            "before_hash": test_content_hash(before),
+            "after_hash": test_content_hash(after),
+        }]
+    });
+    std::fs::write(
+        rollback_dir.join("release.rollback.json"),
+        serde_json::to_string_pretty(&state).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -3062,6 +3094,71 @@ fn release_dry_run_does_not_write() {
     assert!(std::fs::read_to_string(temp.path().join("pyproject.toml"))
         .unwrap()
         .contains("version = \"0.1.0\""));
+}
+
+#[test]
+fn release_rollback_restores_pending_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n";
+    let after = "[package]\nname = \"demo\"\nversion = \"0.1.1\"\n";
+    std::fs::write(temp.path().join("Cargo.toml"), after).unwrap();
+    write_release_rollback(&temp, before, after);
+
+    lode()
+        .current_dir(temp.path())
+        .args(["release", "--rollback", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would rollback Cargo.toml"));
+
+    assert!(std::fs::read_to_string(temp.path().join("Cargo.toml"))
+        .unwrap()
+        .contains("version = \"0.1.1\""));
+
+    lode()
+        .current_dir(temp.path())
+        .args(["release", "--rollback"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("release rollback applied"));
+
+    assert!(std::fs::read_to_string(temp.path().join("Cargo.toml"))
+        .unwrap()
+        .contains("version = \"0.1.0\""));
+    assert!(!temp
+        .path()
+        .join(".lode")
+        .join("release.rollback.json")
+        .exists());
+}
+
+#[test]
+fn release_rollback_refuses_tampered_current_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let before = "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n";
+    let after = "[package]\nname = \"demo\"\nversion = \"0.1.1\"\n";
+    let tampered = "[package]\nname = \"demo\"\nversion = \"0.1.2\"\n";
+    std::fs::write(temp.path().join("Cargo.toml"), tampered).unwrap();
+    write_release_rollback(&temp, before, after);
+
+    lode()
+        .current_dir(temp.path())
+        .args(["release", "--rollback"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "release rollback refused because Cargo.toml changed",
+        ));
+
+    assert!(std::fs::read_to_string(temp.path().join("Cargo.toml"))
+        .unwrap()
+        .contains("version = \"0.1.2\""));
+    assert!(temp
+        .path()
+        .join(".lode")
+        .join("release.rollback.json")
+        .exists());
 }
 
 #[test]

@@ -174,6 +174,8 @@ enum Command {
         bump: Option<String>,
         #[arg(long)]
         dry_run: bool,
+        #[arg(long)]
+        rollback: bool,
     },
     Health,
     Explain,
@@ -1100,7 +1102,8 @@ fn run() -> lode_core::Result<()> {
             version,
             bump,
             dry_run,
-        } => release(version, bump, dry_run)?,
+            rollback,
+        } => release(version, bump, dry_run, rollback)?,
         Command::Health | Command::Audit => health()?,
         Command::Explain => explain(),
         Command::Doctor { fix: _, json } => doctor(json)?,
@@ -3560,7 +3563,15 @@ fn health() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn release(version: Option<String>, bump: Option<String>, dry_run: bool) -> lode_core::Result<()> {
+fn release(
+    version: Option<String>,
+    bump: Option<String>,
+    dry_run: bool,
+    rollback: bool,
+) -> lode_core::Result<()> {
+    if rollback {
+        return rollback_release(dry_run);
+    }
     let current = detect_project_version().unwrap_or_else(|| "0.1.0".to_string());
     let next = if let Some(version) = version {
         version.trim_start_matches('v').to_string()
@@ -3596,6 +3607,8 @@ fn release(version: Option<String>, bump: Option<String>, dry_run: bool) -> lode
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ReleaseRollback {
+    schema_version: u32,
+    created_at: String,
     from: String,
     to: String,
     files: Vec<ReleaseRollbackFile>,
@@ -3605,6 +3618,8 @@ struct ReleaseRollback {
 struct ReleaseRollbackFile {
     path: Utf8PathBuf,
     contents: String,
+    before_hash: String,
+    after_hash: String,
 }
 
 fn build_release_rollback(
@@ -3613,17 +3628,23 @@ fn build_release_rollback(
     to: &str,
 ) -> lode_core::Result<ReleaseRollback> {
     let mut rollback = ReleaseRollback {
+        schema_version: 3,
+        created_at: now_timestamp(),
         from: from.to_string(),
         to: to.to_string(),
         files: Vec::new(),
     };
     for file in files {
+        let safe_path = safe_relative_path(file)?;
         let contents = fs::read_to_string(file).map_err(|source| LodeError::Io {
             path: file.into(),
             source,
         })?;
+        let updated = updated_version_contents(file, &contents, to)?;
         rollback.files.push(ReleaseRollbackFile {
-            path: Utf8PathBuf::from(file),
+            path: safe_path,
+            before_hash: content_hash_bytes(contents.as_bytes()),
+            after_hash: content_hash_bytes(updated.as_bytes()),
             contents,
         });
     }
@@ -3635,7 +3656,7 @@ fn release_rollback_path() -> Utf8PathBuf {
 }
 
 fn write_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
-    let path = release_rollback_path();
+    let path = safe_relative_path(release_rollback_path().as_str())?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| LodeError::Io {
             path: parent.as_str().into(),
@@ -3650,8 +3671,60 @@ fn write_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
     })
 }
 
+fn read_release_rollback() -> lode_core::Result<ReleaseRollback> {
+    let path = safe_relative_path(release_rollback_path().as_str())?;
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let rollback: ReleaseRollback =
+        serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+    validate_release_rollback(&rollback)?;
+    Ok(rollback)
+}
+
+fn validate_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
+    if rollback.schema_version != 3 {
+        return Err(LodeError::Message(format!(
+            "unsupported release rollback schema: {}",
+            rollback.schema_version
+        )));
+    }
+    if rollback.files.is_empty() {
+        return Err(LodeError::Message(
+            "release rollback has no files".to_string(),
+        ));
+    }
+    for file in &rollback.files {
+        safe_relative_path(file.path.as_str())?;
+        let before_hash = content_hash_bytes(file.contents.as_bytes());
+        if before_hash != file.before_hash {
+            return Err(LodeError::Message(format!(
+                "release rollback backup hash mismatch: {}",
+                file.path
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn apply_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
     for file in &rollback.files {
+        let safe_path = safe_relative_path(file.path.as_str())?;
+        let current = fs::read(&safe_path).map_err(|source| LodeError::Io {
+            path: safe_path.as_str().into(),
+            source,
+        })?;
+        let current_hash = content_hash_bytes(&current);
+        if current_hash == file.before_hash {
+            continue;
+        }
+        if current_hash != file.after_hash {
+            return Err(LodeError::Message(format!(
+                "release rollback refused because {} changed after rollback state was written",
+                file.path
+            )));
+        }
         fs::write(&file.path, &file.contents).map_err(|source| LodeError::Io {
             path: file.path.as_str().into(),
             source,
@@ -3665,8 +3738,22 @@ fn apply_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
     Ok(())
 }
 
+fn rollback_release(dry_run: bool) -> lode_core::Result<()> {
+    let rollback = read_release_rollback()?;
+    if dry_run {
+        for file in &rollback.files {
+            println!(
+                "would rollback {} {} -> {}",
+                file.path, rollback.to, rollback.from
+            );
+        }
+        return Ok(());
+    }
+    apply_release_rollback(&rollback)
+}
+
 fn clear_release_rollback() -> lode_core::Result<()> {
-    let path = release_rollback_path();
+    let path = safe_relative_path(release_rollback_path().as_str())?;
     if path.exists() {
         fs::remove_file(&path).map_err(|source| LodeError::Io {
             path: path.as_str().into(),
@@ -3754,6 +3841,14 @@ fn update_version_file(file: &str, next: &str) -> lode_core::Result<()> {
         path: file.into(),
         source,
     })?;
+    let updated = updated_version_contents(file, &raw, next)?;
+    fs::write(file, updated).map_err(|source| LodeError::Io {
+        path: file.into(),
+        source,
+    })
+}
+
+fn updated_version_contents(file: &str, raw: &str, next: &str) -> lode_core::Result<String> {
     let updated = if file == "package.json" {
         let mut value: serde_json::Value =
             serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
@@ -3766,12 +3861,9 @@ fn update_version_file(file: &str, next: &str) -> lode_core::Result<()> {
     } else if file == "pyproject.toml" {
         update_toml_version(&raw, next, &["project"])
     } else {
-        raw
+        raw.to_string()
     };
-    fs::write(file, updated).map_err(|source| LodeError::Io {
-        path: file.into(),
-        source,
-    })
+    Ok(updated)
 }
 
 fn update_toml_version(raw: &str, next: &str, sections: &[&str]) -> String {
