@@ -886,6 +886,12 @@ enum DaemonCommand {
         project: Option<String>,
     },
     Restart,
+    Pause,
+    Resume,
+    ListWatchers {
+        #[arg(long)]
+        json: bool,
+    },
     Status {
         #[arg(long)]
         quiet: bool,
@@ -7939,6 +7945,59 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             append_daemon_log("daemon restarted")?;
             println!("daemon restarted");
         }
+        DaemonCommand::Pause => {
+            let mut runtime = load_daemon_runtime_state()?;
+            if !runtime.active {
+                return Err(LodeError::Message(
+                    "daemon is not active; cannot pause".to_string(),
+                ));
+            }
+            runtime.paused = true;
+            runtime.updated_at = now_timestamp();
+            runtime.uptime_s = daemon_uptime_seconds(&runtime);
+            write_daemon_runtime_state(&runtime)?;
+            write_daemon_state_text("active\npaused=true\n")?;
+            append_daemon_log("daemon paused")?;
+            println!("daemon paused");
+        }
+        DaemonCommand::Resume => {
+            let mut runtime = load_daemon_runtime_state()?;
+            if !runtime.active {
+                return Err(LodeError::Message(
+                    "daemon is not active; cannot resume".to_string(),
+                ));
+            }
+            runtime.paused = false;
+            runtime.updated_at = now_timestamp();
+            runtime.uptime_s = daemon_uptime_seconds(&runtime);
+            write_daemon_runtime_state(&runtime)?;
+            write_daemon_state_text("active\npaused=false\n")?;
+            append_daemon_log("daemon resumed")?;
+            println!("daemon resumed");
+        }
+        DaemonCommand::ListWatchers { json } => {
+            let runtime = load_daemon_runtime_state()?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json!({
+                        "active": runtime.active,
+                        "paused": runtime.paused,
+                        "watchers": runtime.watchers,
+                    }))
+                    .map_err(|error| LodeError::Message(error.to_string()))?
+                );
+            } else if runtime.watchers.is_empty() {
+                println!("no watchers active");
+            } else {
+                for watcher in runtime.watchers {
+                    println!(
+                        "{watcher}\t{}",
+                        if runtime.paused { "paused" } else { "active" }
+                    );
+                }
+            }
+        }
         DaemonCommand::Status { quiet, json } => {
             let state =
                 fs::read_to_string(daemon_state_path()?).unwrap_or_else(|_| "inactive".to_string());
@@ -7951,11 +8010,21 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
                         .map_err(|error| LodeError::Message(error.to_string()))?
                 );
             } else if quiet {
-                println!("{}", if active { "active" } else { "inactive" });
+                println!(
+                    "{}",
+                    if runtime.paused {
+                        "paused"
+                    } else if active {
+                        "active"
+                    } else {
+                        "inactive"
+                    }
+                );
             } else {
                 println!("daemon status: {}", state.trim());
                 println!("uptime_s: {}", runtime.uptime_s);
                 println!("events: {}", runtime.events);
+                println!("paused: {}", status_bool(runtime.paused));
                 println!("watchers: {}", runtime.watchers.join(","));
             }
         }
@@ -9265,6 +9334,8 @@ fn daemon_log_path() -> lode_core::Result<Utf8PathBuf> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DaemonRuntimeState {
     active: bool,
+    #[serde(default)]
+    paused: bool,
     foreground: bool,
     project: Option<String>,
     started_at: String,
@@ -9279,6 +9350,7 @@ impl Default for DaemonRuntimeState {
         let now = now_timestamp();
         Self {
             active: false,
+            paused: false,
             foreground: false,
             project: None,
             started_at: now.clone(),
@@ -9291,6 +9363,11 @@ impl Default for DaemonRuntimeState {
 }
 
 fn write_daemon_state(state: &str) -> lode_core::Result<()> {
+    write_daemon_state_text(state)?;
+    write_daemon_runtime_state(&runtime_state_from_text(state)?)
+}
+
+fn write_daemon_state_text(state: &str) -> lode_core::Result<()> {
     let path = daemon_state_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| LodeError::Io {
@@ -9301,8 +9378,7 @@ fn write_daemon_state(state: &str) -> lode_core::Result<()> {
     fs::write(&path, state).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
-    })?;
-    write_daemon_runtime_state(&runtime_state_from_text(state)?)
+    })
 }
 
 fn append_daemon_log(line: &str) -> lode_core::Result<()> {
@@ -9336,6 +9412,11 @@ fn runtime_state_from_text(state: &str) -> lode_core::Result<DaemonRuntimeState>
         runtime.events = 0;
     }
     runtime.active = active;
+    runtime.paused = state
+        .lines()
+        .find_map(|line| line.strip_prefix("paused="))
+        .map(|value| value == "true")
+        .unwrap_or(false);
     runtime.updated_at = now;
     runtime.uptime_s = daemon_uptime_seconds(&runtime);
     runtime.foreground = state

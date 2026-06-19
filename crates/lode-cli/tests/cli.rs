@@ -2582,6 +2582,43 @@ fn daemon_start_status_log_and_stop_are_stateful() {
 
     lode()
         .env("LODE_CONFIG", &config)
+        .args(["daemon", "list-watchers"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("rename\tactive"))
+        .stdout(predicate::str::contains("env_drift\tactive"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "pause"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("daemon paused"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "status", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("paused"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "list-watchers", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"paused\": true"))
+        .stdout(predicate::str::contains("\"watchers\""));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "resume"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("daemon resumed"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
         .args(["daemon", "log"])
         .assert()
         .success()
