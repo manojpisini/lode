@@ -130,6 +130,27 @@ fn setup_and_export_respect_template_dir_override() {
 }
 
 #[test]
+fn doctor_fix_reports_structured_checks() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    std::fs::write(temp.path().join("package.json"), "{}\n").unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["doctor", "--fix", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"fixed\": true"))
+        .stdout(predicate::str::contains("\"name\": \"config\""))
+        .stdout(predicate::str::contains("\"name\": \"package_manager\""))
+        .stdout(predicate::str::contains("\"detail\": \"npm\""))
+        .stdout(predicate::str::contains("\"name\": \"upgrade\""));
+
+    assert!(temp.path().join(".lode").join("config.toml").exists());
+    assert!(temp.path().join(".lode").join("templates").exists());
+}
+#[test]
 fn config_show_defaults_prints_valid_toml() {
     lode()
         .arg("config")

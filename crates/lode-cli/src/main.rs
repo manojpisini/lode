@@ -1125,7 +1125,7 @@ fn run() -> lode_core::Result<()> {
         } => release(version, bump, dry_run, rollback)?,
         Command::Health | Command::Audit => health()?,
         Command::Explain => explain(),
-        Command::Doctor { fix: _, json } => doctor(json)?,
+        Command::Doctor { fix, json } => doctor(fix, json)?,
         Command::Scan { command } => scan(command)?,
         Command::Git { command } => git(command)?,
         Command::Hooks { command } => hooks(command)?,
@@ -3909,13 +3909,174 @@ fn update_toml_version(raw: &str, next: &str, sections: &[&str]) -> String {
     lines.join("\n") + "\n"
 }
 
-fn doctor(json: bool) -> lode_core::Result<()> {
+#[derive(Debug, Serialize)]
+struct DoctorReport {
+    status: String,
+    fixed: bool,
+    checks: Vec<DoctorCheck>,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorCheck {
+    name: String,
+    status: String,
+    detail: String,
+}
+
+fn doctor(fix: bool, json: bool) -> lode_core::Result<()> {
+    let mut fixed = false;
+    if fix {
+        setup_defaults(false)?;
+        fixed = true;
+    }
+    let report = build_doctor_report(fixed);
     if json {
-        println!("{{\"status\":\"ok\",\"checks\":[\"config\",\"defaults\"]}}");
+        println!("{}", json_pretty(&json!(report))?);
     } else {
-        println!("doctor ok: config and defaults are available");
+        println!("doctor {}", report.status);
+        if report.fixed {
+            println!("fixed\tsafe defaults refreshed");
+        }
+        for check in &report.checks {
+            println!("{}\t{}\t{}", check.name, check.status, check.detail);
+        }
     }
     Ok(())
+}
+
+fn build_doctor_report(fixed: bool) -> DoctorReport {
+    let mut checks = Vec::new();
+    match load_global_config() {
+        Ok(config) => checks.push(doctor_check(
+            "config",
+            "ok",
+            &format!("schema v{}", config.schema_version),
+        )),
+        Err(error) => checks.push(doctor_check("config", "fail", &error.to_string())),
+    }
+
+    match global_dir() {
+        Ok(root) => {
+            checks.push(doctor_check("global_dir", "ok", root.as_str()));
+            for name in [
+                "templates",
+                "profiles",
+                "snippets",
+                "licenses",
+                "recipes",
+                "plugins",
+                "commands",
+            ] {
+                let path = root.join(name);
+                let status = if path.exists() { "ok" } else { "warn" };
+                checks.push(doctor_check(name, status, path.as_str()));
+            }
+        }
+        Err(error) => checks.push(doctor_check("global_dir", "fail", &error.to_string())),
+    }
+
+    let project_config = Utf8PathBuf::from(".lode").join("project.toml");
+    checks.push(doctor_check(
+        "project",
+        if project_config.exists() {
+            "ok"
+        } else {
+            "warn"
+        },
+        if project_config.exists() {
+            ".lode/project.toml"
+        } else {
+            "no project config in current directory"
+        },
+    ));
+
+    let package_manager = detect_package_manager().unwrap_or_else(|| "unknown".to_string());
+    checks.push(doctor_check(
+        "package_manager",
+        if package_manager == "unknown" {
+            "warn"
+        } else {
+            "ok"
+        },
+        &package_manager,
+    ));
+
+    let required = required_tools_for_project();
+    if required.is_empty() {
+        checks.push(doctor_check("toolchain", "ok", "no project tools required"));
+    } else {
+        for tool in required {
+            let installed = command_version(tool).is_some();
+            checks.push(doctor_check(
+                &format!("tool:{tool}"),
+                if installed { "ok" } else { "warn" },
+                if installed {
+                    "available"
+                } else {
+                    "not found on PATH"
+                },
+            ));
+        }
+    }
+
+    match load_daemon_runtime_state() {
+        Ok(state) => checks.push(doctor_check(
+            "daemon",
+            if state.active { "ok" } else { "warn" },
+            &format!(
+                "active={} paused={} watchers={}",
+                state.active,
+                state.paused,
+                state.watchers.join(",")
+            ),
+        )),
+        Err(error) => checks.push(doctor_check("daemon", "warn", &error.to_string())),
+    }
+
+    let upgrade_state = upgrade_state_path()
+        .ok()
+        .filter(|path| path.exists())
+        .map(|path| path.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    checks.push(doctor_check(
+        "upgrade",
+        if upgrade_state == "none" {
+            "ok"
+        } else {
+            "warn"
+        },
+        &upgrade_state,
+    ));
+
+    match discover_hooks() {
+        Ok(hooks) => checks.push(doctor_check(
+            "hooks",
+            "ok",
+            &format!("{} discovered", hooks.len()),
+        )),
+        Err(error) => checks.push(doctor_check("hooks", "warn", &error.to_string())),
+    }
+
+    let status = if checks.iter().any(|check| check.status == "fail") {
+        "fail"
+    } else if checks.iter().any(|check| check.status == "warn") {
+        "warn"
+    } else {
+        "ok"
+    };
+    DoctorReport {
+        status: status.to_string(),
+        fixed,
+        checks,
+    }
+}
+
+fn doctor_check(name: &str, status: &str, detail: &str) -> DoctorCheck {
+    DoctorCheck {
+        name: name.to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
+    }
 }
 
 fn explain() {
