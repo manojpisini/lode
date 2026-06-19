@@ -2782,7 +2782,75 @@ fn self_info_clean_upgrade_and_completions_work() {
         .args(["upgrade", "--check"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("is installed"));
+        .stdout(predicate::str::contains("is installed"))
+        .stdout(predicate::str::contains("staged_upgrade\tnone"));
+
+    let upgrade_dir = root.join("cache").join("upgrade");
+    std::fs::create_dir_all(&upgrade_dir).unwrap();
+    let candidate = upgrade_dir.join("lode-new");
+    std::fs::write(&candidate, "binary\n").unwrap();
+    let manifest = upgrade_dir.join("latest.json");
+    std::fs::write(
+        &manifest,
+        serde_json::json!({
+            "schema_version": 3,
+            "version": "0.2.0",
+            "binary": "lode-new",
+            "checksum": test_content_hash("binary\n"),
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["upgrade", "--check", "--manifest"])
+        .arg(&manifest)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("staged_upgrade\t0.2.0"))
+        .stdout(predicate::str::contains("verified"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["upgrade", "--manifest"])
+        .arg(&manifest)
+        .arg("--dry-run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would verify staged upgrade 0.2.0",
+        ));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["upgrade", "--manifest"])
+        .arg(&manifest)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("upgrade staged\t0.2.0"));
+
+    let upgrade_state = std::fs::read_to_string(upgrade_dir.join("upgrade-state.json")).unwrap();
+    assert!(upgrade_state.contains("\"schema_version\": 3"));
+    assert!(upgrade_state.contains("\"version\": \"0.2.0\""));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["upgrade", "--rollback", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "would rollback staged upgrade 0.2.0",
+        ));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["upgrade", "--rollback"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("upgrade rollback cleared\t0.2.0"));
+
+    assert!(!upgrade_dir.join("upgrade-state.json").exists());
 
     lode()
         .args(["completions", "bash"])

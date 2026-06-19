@@ -295,6 +295,12 @@ enum Command {
     Upgrade {
         #[arg(long)]
         check: bool,
+        #[arg(long)]
+        manifest: Option<Utf8PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        rollback: bool,
     },
     Completions {
         shell: String,
@@ -1173,7 +1179,12 @@ fn run() -> lode_core::Result<()> {
             lang,
         } => cp_command(&command, problem.as_deref(), lang.as_deref())?,
         Command::SelfCmd { command } => self_command(command)?,
-        Command::Upgrade { check } => upgrade(check)?,
+        Command::Upgrade {
+            check,
+            manifest,
+            dry_run,
+            rollback,
+        } => upgrade(check, manifest, dry_run, rollback)?,
         Command::Completions {
             shell,
             install,
@@ -8418,14 +8429,204 @@ fn self_clean_targets() -> lode_core::Result<Vec<Utf8PathBuf>> {
     ])
 }
 
-fn upgrade(check: bool) -> lode_core::Result<()> {
+#[derive(Debug, Serialize, Deserialize)]
+struct UpgradeManifest {
+    schema_version: u32,
+    version: String,
+    binary: String,
+    checksum: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UpgradeState {
+    schema_version: u32,
+    version: String,
+    candidate: Utf8PathBuf,
+    checksum: String,
+    current_executable: String,
+    current_checksum: String,
+    staged_at: String,
+    activated: bool,
+}
+
+fn upgrade(
+    check: bool,
+    manifest: Option<Utf8PathBuf>,
+    dry_run: bool,
+    rollback: bool,
+) -> lode_core::Result<()> {
+    if rollback {
+        return rollback_staged_upgrade(dry_run);
+    }
+
+    let manifest_path = manifest.unwrap_or_else(default_upgrade_manifest_path);
     if check {
         println!("lode {} is installed", env!("CARGO_PKG_VERSION"));
-        println!("network upgrade checks are not configured for this build");
-    } else {
-        println!("self-upgrade is not configured for this local build");
-        println!("current version: {}", env!("CARGO_PKG_VERSION"));
+        if manifest_path.exists() {
+            let manifest = read_upgrade_manifest(&manifest_path)?;
+            let candidate = upgrade_candidate_path(&manifest_path, &manifest)?;
+            let checksum = file_checksum(&candidate)?;
+            let status = if checksum == manifest.checksum {
+                "verified"
+            } else {
+                "checksum-mismatch"
+            };
+            println!(
+                "staged_upgrade\t{}\t{}\t{}",
+                manifest.version, candidate, status
+            );
+        } else {
+            println!("staged_upgrade\tnone");
+        }
+        println!(
+            "network upgrade checks are disabled; provide --manifest for local staged upgrades"
+        );
+        return Ok(());
     }
+
+    if !manifest_path.exists() {
+        return Err(LodeError::Message(format!(
+            "upgrade manifest not found: {manifest_path}; place latest.json in cache/upgrade or pass --manifest"
+        )));
+    }
+
+    let manifest = read_upgrade_manifest(&manifest_path)?;
+    let candidate = upgrade_candidate_path(&manifest_path, &manifest)?;
+    let candidate_checksum = file_checksum(&candidate)?;
+    if candidate_checksum != manifest.checksum {
+        return Err(LodeError::Message(format!(
+            "upgrade checksum mismatch for {candidate}: expected {}, found {}",
+            manifest.checksum, candidate_checksum
+        )));
+    }
+    let current_executable = env::current_exe().map_err(|source| LodeError::Io {
+        path: "current_exe".into(),
+        source,
+    })?;
+    let current_executable = Utf8PathBuf::from_path_buf(current_executable).map_err(|path| {
+        LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+    })?;
+    let current_checksum =
+        file_checksum(&current_executable).unwrap_or_else(|_| "unavailable".to_string());
+    let state = UpgradeState {
+        schema_version: 3,
+        version: manifest.version.clone(),
+        candidate: candidate.clone(),
+        checksum: candidate_checksum,
+        current_executable: current_executable.to_string(),
+        current_checksum,
+        staged_at: now_timestamp(),
+        activated: false,
+    };
+
+    if dry_run {
+        println!("would verify staged upgrade {}", state.version);
+        println!("would record upgrade state at {}", upgrade_state_path()?);
+        println!("candidate\t{}", state.candidate);
+        println!("current_executable\t{}", state.current_executable);
+        return Ok(());
+    }
+
+    write_upgrade_state(&state)?;
+    println!("upgrade staged\t{}", state.version);
+    println!("candidate\t{}", state.candidate);
+    println!("state\t{}", upgrade_state_path()?);
+    println!("activate manually after review; rollback with `lode upgrade --rollback`");
+    Ok(())
+}
+
+fn default_upgrade_manifest_path() -> Utf8PathBuf {
+    global_dir()
+        .map(|root| root.join("cache").join("upgrade").join("latest.json"))
+        .unwrap_or_else(|_| Utf8PathBuf::from(".lode/cache/upgrade/latest.json"))
+}
+
+fn upgrade_state_path() -> lode_core::Result<Utf8PathBuf> {
+    Ok(global_dir()?
+        .join("cache")
+        .join("upgrade")
+        .join("upgrade-state.json"))
+}
+
+fn read_upgrade_manifest(path: &Utf8PathBuf) -> lode_core::Result<UpgradeManifest> {
+    let raw = fs::read_to_string(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let manifest: UpgradeManifest = serde_json::from_str(&raw)
+        .map_err(|error| LodeError::Message(format!("invalid upgrade manifest: {error}")))?;
+    if manifest.schema_version != 3 {
+        return Err(LodeError::Message(format!(
+            "unsupported upgrade manifest schema: {}",
+            manifest.schema_version
+        )));
+    }
+    safe_relative_path(&manifest.binary)?;
+    if manifest.checksum.trim().is_empty() {
+        return Err(LodeError::Message(
+            "upgrade manifest checksum is empty".to_string(),
+        ));
+    }
+    Ok(manifest)
+}
+
+fn upgrade_candidate_path(
+    manifest_path: &Utf8PathBuf,
+    manifest: &UpgradeManifest,
+) -> lode_core::Result<Utf8PathBuf> {
+    let relative = safe_relative_path(&manifest.binary)?;
+    Ok(manifest_path
+        .parent()
+        .map(|parent| parent.join(relative.clone()))
+        .unwrap_or(relative))
+}
+
+fn file_checksum(path: &Utf8PathBuf) -> lode_core::Result<String> {
+    let bytes = fs::read(path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    Ok(content_hash_bytes(&bytes))
+}
+
+fn write_upgrade_state(state: &UpgradeState) -> lode_core::Result<()> {
+    let path = upgrade_state_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
+            path: parent.as_str().into(),
+            source,
+        })?;
+    }
+    let raw = serde_json::to_string_pretty(state)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
+    fs::write(&path, raw).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })
+}
+
+fn read_upgrade_state() -> lode_core::Result<UpgradeState> {
+    let path = upgrade_state_path()?;
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))
+}
+
+fn rollback_staged_upgrade(dry_run: bool) -> lode_core::Result<()> {
+    let state = read_upgrade_state()?;
+    let path = upgrade_state_path()?;
+    if dry_run {
+        println!("would rollback staged upgrade {}", state.version);
+        println!("would remove {path}");
+        return Ok(());
+    }
+    fs::remove_file(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    println!("upgrade rollback cleared\t{}", state.version);
     Ok(())
 }
 
