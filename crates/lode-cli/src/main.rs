@@ -944,13 +944,49 @@ enum OutputFormat {
 #[derive(Debug, Serialize, Deserialize)]
 struct LodePack {
     version: u32,
+    #[serde(default = "default_lodepack_manifest")]
+    manifest: LodePackManifest,
     files: Vec<LodePackFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LodePackManifest {
+    #[serde(default = "default_schema_version")]
+    schema_version: u32,
+    #[serde(default)]
+    lode_version: String,
+    #[serde(default)]
+    created_at: String,
+    #[serde(default)]
+    file_count: usize,
+    #[serde(default = "default_lodepack_checksum_algorithm")]
+    checksum_algorithm: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LodePackFile {
     path: String,
     contents: String,
+    #[serde(default)]
+    checksum: String,
+}
+
+fn default_schema_version() -> u32 {
+    3
+}
+
+fn default_lodepack_checksum_algorithm() -> String {
+    "lode-default-hash-v1".to_string()
+}
+
+fn default_lodepack_manifest() -> LodePackManifest {
+    LodePackManifest {
+        schema_version: default_schema_version(),
+        lode_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at: String::new(),
+        file_count: 0,
+        checksum_algorithm: default_lodepack_checksum_algorithm(),
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2145,12 +2181,20 @@ fn remove_command_macro(slug: &str, global: bool) -> lode_core::Result<()> {
 fn export_command_macros(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
     let mut pack = LodePack {
         version: 1,
+        manifest: LodePackManifest {
+            schema_version: 3,
+            lode_version: env!("CARGO_PKG_VERSION").to_string(),
+            created_at: now_timestamp(),
+            file_count: 0,
+            checksum_algorithm: default_lodepack_checksum_algorithm(),
+        },
         files: Vec::new(),
     };
     let global = global_asset_dir("commands")?;
     collect_command_macro_files(&global, "global", &mut pack)?;
     let local = Utf8PathBuf::from(".lode").join("commands");
     collect_command_macro_files(&local, "project", &mut pack)?;
+    pack.manifest.file_count = pack.files.len();
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
     if let Some(path) = out {
@@ -2198,9 +2242,11 @@ fn collect_command_macro_files(
             source,
         })?;
         let name = path.file_name().unwrap_or("command.toml");
+        let checksum = content_hash_bytes(contents.as_bytes());
         pack.files.push(LodePackFile {
             path: format!("{prefix}/commands/{name}"),
             contents,
+            checksum,
         });
     }
     Ok(())
@@ -3285,12 +3331,20 @@ fn agent_export(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
     let output = out.unwrap_or_else(|| Utf8PathBuf::from("agent-context.lodepack"));
     let mut pack = LodePack {
         version: 1,
+        manifest: LodePackManifest {
+            schema_version: 3,
+            lode_version: env!("CARGO_PKG_VERSION").to_string(),
+            created_at: now_timestamp(),
+            file_count: 0,
+            checksum_algorithm: default_lodepack_checksum_algorithm(),
+        },
         files: Vec::new(),
     };
     let root = current_dir()?;
     for path in ["AGENTS.md", "CODEX.md", "CLAUDE.md", ".lode/context"] {
         collect_pack_files(&root, &root.join(path), &mut pack)?;
     }
+    pack.manifest.file_count = pack.files.len();
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
     fs::write(&output, raw).map_err(|source| LodeError::Io {
@@ -7516,6 +7570,13 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
     let output = out.unwrap_or_else(|| Utf8PathBuf::from("lode-export.lodepack"));
     let mut pack = LodePack {
         version: 1,
+        manifest: LodePackManifest {
+            schema_version: 3,
+            lode_version: env!("CARGO_PKG_VERSION").to_string(),
+            created_at: now_timestamp(),
+            file_count: 0,
+            checksum_algorithm: default_lodepack_checksum_algorithm(),
+        },
         files: Vec::new(),
     };
     collect_pack_files_as(&root.join("config.toml"), "config.toml", &mut pack)?;
@@ -7545,6 +7606,7 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
     for (prefix, path) in paths {
         collect_pack_files_as(&path, prefix, &mut pack)?;
     }
+    pack.manifest.file_count = pack.files.len();
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
     fs::write(&output, raw).map_err(|source| LodeError::Io {
@@ -7588,9 +7650,11 @@ fn collect_pack_files_as(
         path: path.as_str().into(),
         source,
     })?;
+    let checksum = content_hash_bytes(contents.as_bytes());
     pack.files.push(LodePackFile {
         path: prefix.replace('\\', "/"),
         contents,
+        checksum,
     });
     Ok(())
 }
@@ -7602,12 +7666,7 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
     })?;
     let pack: LodePack =
         serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
-    if pack.version != 1 {
-        return Err(LodeError::Message(format!(
-            "unsupported lodepack version: {}",
-            pack.version
-        )));
-    }
+    validate_lodepack_manifest(&pack)?;
     let root = global_dir()?;
     fs::create_dir_all(&root).map_err(|source| LodeError::Io {
         path: root.as_str().into(),
@@ -7622,8 +7681,10 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
                 "duplicate lodepack path: {normalized}"
             )));
         }
+        validate_lodepack_file_checksum(file, &normalized)?;
         validated_files.push((file, normalized));
     }
+    validate_lodepack_file_count(&pack)?;
     for (file, normalized) in validated_files {
         let destination = lodepack_destination(&root, &normalized)?;
         if destination.exists() && no_merge && !force {
@@ -7647,6 +7708,53 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
         })?;
     }
     println!("imported {} files from {path}", pack.files.len());
+    Ok(())
+}
+
+fn validate_lodepack_manifest(pack: &LodePack) -> lode_core::Result<()> {
+    if pack.version != 1 {
+        return Err(LodeError::Message(format!(
+            "unsupported lodepack version: {}",
+            pack.version
+        )));
+    }
+    if pack.manifest.schema_version != 3 {
+        return Err(LodeError::Message(format!(
+            "unsupported lodepack schema: {}",
+            pack.manifest.schema_version
+        )));
+    }
+    let expected_algorithm = default_lodepack_checksum_algorithm();
+    if pack.manifest.checksum_algorithm != expected_algorithm {
+        return Err(LodeError::Message(format!(
+            "unsupported lodepack checksum algorithm: {}",
+            pack.manifest.checksum_algorithm
+        )));
+    }
+    Ok(())
+}
+
+fn validate_lodepack_file_count(pack: &LodePack) -> lode_core::Result<()> {
+    if pack.manifest.file_count != 0 && pack.manifest.file_count != pack.files.len() {
+        return Err(LodeError::Message(format!(
+            "lodepack file count mismatch: manifest has {}, pack has {}",
+            pack.manifest.file_count,
+            pack.files.len()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_lodepack_file_checksum(file: &LodePackFile, normalized: &str) -> lode_core::Result<()> {
+    if file.checksum.is_empty() {
+        return Ok(());
+    }
+    let actual = content_hash_bytes(file.contents.as_bytes());
+    if actual != file.checksum {
+        return Err(LodeError::Message(format!(
+            "lodepack checksum mismatch for {normalized}"
+        )));
+    }
     Ok(())
 }
 
@@ -7724,9 +7832,11 @@ fn collect_pack_files(
         path: path.as_str().into(),
         source,
     })?;
+    let checksum = content_hash_bytes(contents.as_bytes());
     pack.files.push(LodePackFile {
         path: relative.as_str().replace('\\', "/"),
         contents,
+        checksum,
     });
     Ok(())
 }

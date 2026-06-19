@@ -2089,6 +2089,20 @@ fn export_import_round_trips_lodepack() {
         .success()
         .stdout(predicate::str::contains("exported"));
 
+    let raw_pack: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pack).unwrap()).unwrap();
+    assert_eq!(raw_pack["manifest"]["schema_version"], 3);
+    assert_eq!(
+        raw_pack["manifest"]["checksum_algorithm"],
+        "lode-default-hash-v1"
+    );
+    assert!(raw_pack["manifest"]["file_count"].as_u64().unwrap() > 0);
+    assert!(raw_pack["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|file| file["checksum"].as_str().unwrap_or_default().len() == 16));
+
     let dest = tempfile::tempdir().unwrap();
     let dest_config = isolated_config(&dest);
     lode()
@@ -2171,6 +2185,51 @@ fn export_filters_and_import_conflict_modes_work() {
         .success();
 }
 
+#[test]
+fn import_rejects_tampered_lodepack_contents() {
+    let source = tempfile::tempdir().unwrap();
+    let source_config = isolated_config(&source);
+    let pack = source.path().join("tampered.lodepack");
+
+    lode()
+        .env("LODE_CONFIG", &source_config)
+        .arg("setup")
+        .assert()
+        .success();
+    lode()
+        .env("LODE_CONFIG", &source_config)
+        .arg("export")
+        .arg("--out")
+        .arg(&pack)
+        .assert()
+        .success();
+
+    let mut raw_pack: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pack).unwrap()).unwrap();
+    let config_file = raw_pack["files"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|file| file["path"] == "config.toml")
+        .unwrap();
+    config_file["contents"] =
+        serde_json::Value::String("schema_version = 3\n# tampered\n".to_string());
+    std::fs::write(&pack, serde_json::to_string_pretty(&raw_pack).unwrap()).unwrap();
+
+    let dest = tempfile::tempdir().unwrap();
+    let dest_config = isolated_config(&dest);
+    lode()
+        .env("LODE_CONFIG", &dest_config)
+        .arg("import")
+        .arg(&pack)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "lodepack checksum mismatch for config.toml",
+        ));
+
+    assert!(!dest.path().join(".lode").join("config.toml").exists());
+}
 #[test]
 fn import_rejects_unsafe_lodepack_paths() {
     let temp = tempfile::tempdir().unwrap();
