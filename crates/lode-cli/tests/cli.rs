@@ -1977,6 +1977,50 @@ fn hooks_run_passes_plugin_permission_environment() {
 }
 
 #[test]
+fn hooks_reject_plugin_writes_outside_declared_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+    let plugin_source = temp.path().join("write-pack");
+    let plugin_hooks = plugin_source.join("hooks");
+    let project = temp.path().join("project");
+    std::fs::create_dir_all(&plugin_hooks).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        plugin_source.join("plugin.toml"),
+        "[plugin]\nname = \"write-pack\"\nversion = \"0.1.0\"\n\n[permissions]\nexecute = true\nfs_write = [\"allowed.txt\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        plugin_hooks.join("post-init.ps1"),
+        "Set-Content -NoNewline -Path blocked.txt -Value nope\n",
+    )
+    .unwrap();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["plugin", "add", "--allow-unsafe"])
+        .arg(&plugin_source)
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project)
+        .args(["hooks", "run", "post-init"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "wrote outside declared fs_write paths: blocked.txt",
+        ));
+}
+
+#[test]
 fn hooks_reject_plugin_hooks_without_execute_permission() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

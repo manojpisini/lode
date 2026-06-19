@@ -4579,6 +4579,7 @@ fn run_hooks(event: &str, dry_run: bool) -> lode_core::Result<()> {
             "running hook {}\t{}\t{}",
             hook.source, hook.runtime, hook.path
         );
+        let before = plugin_hook_file_snapshot(&hook)?;
         let envs = hook_runtime_env(&hook);
         let status = run_process_status_with_env(program, &args, None, &envs)?;
         if !status.success() {
@@ -4587,6 +4588,7 @@ fn run_hooks(event: &str, dry_run: bool) -> lode_core::Result<()> {
                 hook.source, hook.path
             )));
         }
+        enforce_plugin_hook_writes(&hook, before)?;
     }
     Ok(())
 }
@@ -4622,6 +4624,119 @@ fn hook_runtime_env(hook: &DiscoveredHook) -> Vec<(&'static str, String)> {
         envs.push(("LODE_PLUGIN_FS_WRITE", security.fs_write.join(";")));
     }
     envs
+}
+
+type HookFileSnapshot = BTreeMap<String, String>;
+
+fn plugin_hook_file_snapshot(hook: &DiscoveredHook) -> lode_core::Result<Option<HookFileSnapshot>> {
+    if hook.plugin_security.is_none() {
+        return Ok(None);
+    }
+    snapshot_project_contents(&current_dir()?).map(Some)
+}
+
+fn enforce_plugin_hook_writes(
+    hook: &DiscoveredHook,
+    before: Option<HookFileSnapshot>,
+) -> lode_core::Result<()> {
+    let Some(before) = before else {
+        return Ok(());
+    };
+    let security = hook.plugin_security.clone().unwrap_or_default();
+    let after = snapshot_project_contents(&current_dir()?)?;
+    let changed = changed_snapshot_paths(&before, &after);
+    let denied = changed
+        .into_iter()
+        .filter(|path| !plugin_write_allowed(path, &security.fs_write))
+        .collect::<Vec<_>>();
+    if !denied.is_empty() {
+        return Err(LodeError::Message(format!(
+            "plugin hook {} wrote outside declared fs_write paths: {}",
+            hook.source,
+            denied.join(",")
+        )));
+    }
+    Ok(())
+}
+
+fn snapshot_project_contents(root: &Utf8PathBuf) -> lode_core::Result<HookFileSnapshot> {
+    let mut snapshot = BTreeMap::new();
+    snapshot_contents_dir(root, root, &mut snapshot)?;
+    Ok(snapshot)
+}
+
+fn snapshot_contents_dir(
+    root: &Utf8PathBuf,
+    dir: &Utf8PathBuf,
+    snapshot: &mut HookFileSnapshot,
+) -> lode_core::Result<()> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(LodeError::Io {
+                path: dir.as_str().into(),
+                source,
+            })
+        }
+    };
+
+    for entry in entries {
+        let entry = entry.map_err(|source| LodeError::Io {
+            path: dir.as_str().into(),
+            source,
+        })?;
+        let path = Utf8PathBuf::from_path_buf(entry.path())
+            .map_err(|path| LodeError::Message(format!("non-utf8 path: {}", path.display())))?;
+        let name = path.file_name().unwrap_or_default();
+        if should_skip_watch_path(name) {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|source| LodeError::Io {
+            path: path.as_str().into(),
+            source,
+        })?;
+        if metadata.is_dir() {
+            snapshot_contents_dir(root, &path, snapshot)?;
+        } else if metadata.is_file() {
+            let contents = fs::read(&path).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let relative = path
+                .strip_prefix(root)
+                .map(|path| path.as_str().replace('\\', "/"))
+                .unwrap_or_else(|_| path.as_str().replace('\\', "/"));
+            snapshot.insert(relative, content_hash_bytes(&contents));
+        }
+    }
+    Ok(())
+}
+
+fn changed_snapshot_paths(before: &HookFileSnapshot, after: &HookFileSnapshot) -> Vec<String> {
+    before
+        .keys()
+        .chain(after.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|path| {
+            if before.get(path) == after.get(path) {
+                None
+            } else {
+                Some(path.clone())
+            }
+        })
+        .collect()
+}
+
+fn plugin_write_allowed(path: &str, allowed: &[String]) -> bool {
+    allowed.iter().any(|allowed| {
+        let allowed = allowed
+            .trim_end_matches("/**")
+            .trim_end_matches("/*")
+            .trim_end_matches('/');
+        path == allowed || path.starts_with(&format!("{allowed}/"))
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4689,6 +4804,9 @@ fn require_plugin_runtime_permissions(
     path: &Utf8PathBuf,
 ) -> lode_core::Result<PluginSecurity> {
     let security = read_plugin_security(path)?;
+    for path in &security.fs_write {
+        safe_relative_path(path)?;
+    }
     if !security.execute {
         return Err(LodeError::Message(format!(
             "plugin {name} has hooks but does not declare permissions.execute = true"
