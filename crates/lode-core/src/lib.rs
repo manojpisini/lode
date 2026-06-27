@@ -3,6 +3,7 @@ pub mod audit;
 pub mod config;
 pub mod convention;
 pub mod error;
+pub mod fs_safety;
 pub mod install;
 pub mod registry;
 pub mod scaffold;
@@ -16,6 +17,7 @@ pub use config::{
 };
 pub use convention::{check_path, fix_path, normalize_name, ConventionReport, ConventionViolation};
 pub use error::{ExitCode, LodeError, Result};
+pub use fs_safety::ValidatedRoot;
 pub use install::{
     ensure_global_workspace, global_asset_dir, global_config_path, global_dir, load_global_config,
     save_global_config, setup_defaults, SetupReport,
