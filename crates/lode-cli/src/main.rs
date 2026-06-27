@@ -8311,19 +8311,54 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             }
         }
         DaemonCommand::Log { tail, follow } => {
-            let log = fs::read_to_string(daemon_log_path()?)
-                .unwrap_or_else(|_| "no entries\n".to_string());
-            let mut lines = log.lines().collect::<Vec<_>>();
-            if let Some(tail) = tail {
-                let start = lines.len().saturating_sub(tail);
-                lines = lines[start..].to_vec();
+            let path = daemon_log_path()?;
+            let log = fs::read_to_string(&path).unwrap_or_else(|_| "no entries\n".to_string());
+            print_log_lines(&log, tail);
+            if follow {
+                follow_daemon_log(&path, log.len())?;
             }
-            for line in lines {
+        }
+    }
+    Ok(())
+}
+
+fn print_log_lines(log: &str, tail: Option<usize>) {
+    let mut lines = log.lines().collect::<Vec<_>>();
+    if let Some(tail) = tail {
+        let start = lines.len().saturating_sub(tail);
+        lines = lines[start..].to_vec();
+    }
+    for line in lines {
+        println!("{line}");
+    }
+}
+
+fn follow_daemon_log(path: &Utf8PathBuf, mut offset: usize) -> lode_core::Result<()> {
+    let interactive = io::stdin().is_terminal();
+    let max_ticks = env::var("LODE_DAEMON_FOLLOW_TICKS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(if interactive { usize::MAX } else { 3 });
+    let mut ticks = 0usize;
+    while ticks < max_ticks {
+        thread::sleep(Duration::from_millis(250));
+        let current = fs::read_to_string(path).unwrap_or_default();
+        if current.len() > offset {
+            let appended = &current[offset..];
+            for line in appended.lines() {
                 println!("{line}");
             }
-            if follow {
-                println!("follow mode requested; streaming is not active in this build");
-            }
+            offset = current.len();
+        }
+        ticks = ticks.saturating_add(1);
+        if interactive
+            && event::poll(Duration::from_millis(1)).map_err(terminal_error)?
+            && matches!(
+                event::read().map_err(terminal_error)?,
+                Event::Key(key) if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+            )
+        {
+            break;
         }
     }
     Ok(())
@@ -8366,11 +8401,15 @@ fn run_foreground_daemon(rename: bool, sign: bool, stamp: bool) -> lode_core::Re
 
         thread::sleep(Duration::from_millis(950));
         let next = snapshot_project(&root)?;
-        let changed = changed_files(&snapshot, &next);
-        if !changed.is_empty() {
-            record_daemon_activity(&root, &changed)?;
+        let changes = daemon_changes(&snapshot, &next);
+        if !changes.is_empty() {
+            record_daemon_activity(&root, &changes)?;
             write_project_daemon_snapshot(&root, &next)?;
-            println!("daemon observed {} changed file(s)", changed.len());
+            println!(
+                "daemon observed {} changed file(s): {}",
+                changes.paths().len(),
+                changes.summary()
+            );
         }
         snapshot = next;
 
@@ -8456,29 +8495,45 @@ fn should_skip_watch_path(name: &str) -> bool {
     )
 }
 
-fn changed_files(before: &BTreeMap<String, u64>, after: &BTreeMap<String, u64>) -> Vec<String> {
-    after
-        .iter()
-        .filter_map(|(path, modified)| {
-            if before.get(path) == Some(modified) {
-                None
-            } else {
-                Some(path.clone())
-            }
-        })
-        .collect()
+fn daemon_changes(
+    before: &BTreeMap<String, u64>,
+    after: &BTreeMap<String, u64>,
+) -> DaemonChangeSet {
+    let mut changes = DaemonChangeSet::default();
+    for (path, modified) in after {
+        match before.get(path) {
+            None => changes.created.push(path.clone()),
+            Some(previous) if previous != modified => changes.modified.push(path.clone()),
+            _ => {}
+        }
+    }
+    for path in before.keys() {
+        if !after.contains_key(path) {
+            changes.deleted.push(path.clone());
+        }
+    }
+    changes
 }
 
-fn record_daemon_activity(root: &Utf8PathBuf, changed: &[String]) -> lode_core::Result<()> {
-    append_daemon_log(&format!("changed files: {}", changed.join(", ")))?;
+fn record_daemon_activity(root: &Utf8PathBuf, changes: &DaemonChangeSet) -> lode_core::Result<()> {
+    let paths = changes.paths();
+    append_daemon_event(
+        "fs.batch",
+        &format!(
+            "changed files: {} ({})",
+            paths.join(", "),
+            changes.summary()
+        ),
+        paths.clone(),
+    )?;
     let mut log = load_time_log()?;
     log.sessions.push(TimeSession {
         started_at: now_timestamp(),
         ended_at: None,
         seconds: 60,
         project: root.file_name().map(str::to_string),
-        file: changed.first().cloned(),
-        task: Some("daemon activity".to_string()),
+        file: paths.first().cloned(),
+        task: Some(format!("daemon activity: {}", changes.summary())),
     });
     save_time_log(&log)
 }
@@ -9815,6 +9870,49 @@ struct DaemonRuntimeState {
     uptime_s: u64,
     events: u64,
     watchers: Vec<String>,
+    #[serde(default)]
+    recent_events: Vec<DaemonEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DaemonEvent {
+    id: u64,
+    kind: String,
+    message: String,
+    #[serde(default)]
+    files: Vec<String>,
+    created_at: String,
+}
+
+#[derive(Debug, Default)]
+struct DaemonChangeSet {
+    created: Vec<String>,
+    modified: Vec<String>,
+    deleted: Vec<String>,
+}
+
+impl DaemonChangeSet {
+    fn is_empty(&self) -> bool {
+        self.created.is_empty() && self.modified.is_empty() && self.deleted.is_empty()
+    }
+
+    fn paths(&self) -> Vec<String> {
+        self.created
+            .iter()
+            .chain(self.modified.iter())
+            .chain(self.deleted.iter())
+            .cloned()
+            .collect()
+    }
+
+    fn summary(&self) -> String {
+        format!(
+            "created={} modified={} deleted={}",
+            self.created.len(),
+            self.modified.len(),
+            self.deleted.len()
+        )
+    }
 }
 
 impl Default for DaemonRuntimeState {
@@ -9830,6 +9928,7 @@ impl Default for DaemonRuntimeState {
             uptime_s: 0,
             events: 0,
             watchers: Vec::new(),
+            recent_events: Vec::new(),
         }
     }
 }
@@ -9854,6 +9953,10 @@ fn write_daemon_state_text(state: &str) -> lode_core::Result<()> {
 }
 
 fn append_daemon_log(line: &str) -> lode_core::Result<()> {
+    append_daemon_event("lifecycle", line, Vec::new())
+}
+
+fn append_daemon_event(kind: &str, message: &str, files: Vec<String>) -> lode_core::Result<()> {
     let path = daemon_log_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|source| LodeError::Io {
@@ -9862,16 +9965,28 @@ fn append_daemon_log(line: &str) -> lode_core::Result<()> {
         })?;
     }
     let mut current = fs::read_to_string(&path).unwrap_or_default();
-    current.push_str(line);
+    current.push_str(message);
     current.push('\n');
     fs::write(&path, current).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
     })?;
+
     let mut state = load_daemon_runtime_state()?;
     state.events += 1;
     state.updated_at = now_timestamp();
     state.uptime_s = daemon_uptime_seconds(&state);
+    state.recent_events.push(DaemonEvent {
+        id: state.events,
+        kind: kind.to_string(),
+        message: message.to_string(),
+        files,
+        created_at: state.updated_at.clone(),
+    });
+    let overflow = state.recent_events.len().saturating_sub(50);
+    if overflow > 0 {
+        state.recent_events.drain(0..overflow);
+    }
     write_daemon_runtime_state(&state)
 }
 
@@ -9882,6 +9997,7 @@ fn runtime_state_from_text(state: &str) -> lode_core::Result<DaemonRuntimeState>
     if active && !runtime.active {
         runtime.started_at = now.clone();
         runtime.events = 0;
+        runtime.recent_events.clear();
     }
     runtime.active = active;
     runtime.paused = state
