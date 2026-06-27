@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf};
 
 use camino::Utf8PathBuf;
 
-use crate::{assets, config, template::RenderContext, LodeError, Result};
+use crate::{assets, config, fs_safety::ValidatedRoot, template::RenderContext, LodeError, Result};
 
 const GLOBAL_DIRS: &[&str] = &[
     "profiles",
@@ -71,10 +71,15 @@ pub fn global_asset_dir(child: &str) -> Result<Utf8PathBuf> {
 
 pub fn ensure_global_workspace() -> Result<()> {
     let dir = global_dir()?;
-    create_dir_all(&dir)?;
+    let root = trusted_root(&dir)?;
 
     for child in GLOBAL_DIRS {
-        create_dir_all(&global_asset_dir(child)?)?;
+        let path = global_asset_dir(child)?;
+        if path.starts_with(&dir) {
+            root.create_dir_all(path.strip_prefix(&dir).expect("checked prefix"))?;
+        } else {
+            trusted_root(&path)?;
+        }
     }
 
     Ok(())
@@ -88,23 +93,29 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
     if !dir.exists() {
         created_dirs.push(dir.clone());
     }
-    create_dir_all(&dir)?;
+    let root = trusted_root(&dir)?;
 
     for child in GLOBAL_DIRS {
         let path = global_asset_dir(child)?;
         if !path.exists() {
             created_dirs.push(path.clone());
         }
-        create_dir_all(&path)?;
+        if path.starts_with(&dir) {
+            root.create_dir_all(path.strip_prefix(&dir).expect("checked prefix"))?;
+        } else {
+            trusted_root(&path)?;
+        }
     }
 
     let wrote_config = overwrite || !config_path.exists();
     if wrote_config {
         let encoded = toml::to_string_pretty(&config::default_config())?;
-        fs::write(&config_path, encoded).map_err(|source| LodeError::Io {
-            path: PathBuf::from(config_path.as_str()),
-            source,
-        })?;
+        root.write_atomic(
+            config_path
+                .strip_prefix(&dir)
+                .expect("config is under global dir"),
+            encoded,
+        )?;
     }
 
     let context = RenderContext::new()
@@ -120,15 +131,14 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
             assets::AssetKind::Recipe => "recipes",
             assets::AssetKind::License => "licenses",
         };
-        let destination = global_asset_dir(root)?.join(asset.path);
+        let asset_dir = global_asset_dir(root)?;
+        let destination = asset_dir.join(&asset.path);
         if overwrite || !destination.exists() {
-            if let Some(parent) = destination.parent() {
-                create_dir_all(&parent.to_path_buf())?;
+            let root = trusted_root(&asset_dir)?;
+            if let Some(parent) = asset.path.parent() {
+                root.create_dir_all(parent)?;
             }
-            fs::write(&destination, asset.contents).map_err(|source| LodeError::Io {
-                path: PathBuf::from(destination.as_str()),
-                source,
-            })?;
+            root.write_atomic(&asset.path, asset.contents)?;
         }
     }
 
@@ -163,10 +173,15 @@ pub fn save_global_config(config: &config::LodeConfig) -> Result<()> {
     ensure_global_workspace()?;
     let path = global_config_path()?;
     let encoded = toml::to_string_pretty(config)?;
-    fs::write(&path, encoded).map_err(|source| LodeError::Io {
-        path: PathBuf::from(path.as_str()),
-        source,
-    })
+    let parent = path
+        .parent()
+        .ok_or_else(|| LodeError::Message("global config path must have a parent".into()))?;
+    trusted_root(parent)?.write_atomic(
+        path.file_name()
+            .ok_or_else(|| LodeError::Message("global config path must name a file".into()))?,
+        encoded,
+    )?;
+    Ok(())
 }
 
 fn migrate_config_source_if_needed(path: &Utf8PathBuf, raw: &str) -> Result<String> {
@@ -202,10 +217,14 @@ fn migrate_config_source_if_needed(path: &Utf8PathBuf, raw: &str) -> Result<Stri
         );
     }
     let migrated = toml::to_string_pretty(&value)?;
-    fs::write(path, &migrated).map_err(|source| LodeError::Io {
-        path: PathBuf::from(path.as_str()),
-        source,
-    })?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| LodeError::Message("global config path must have a parent".into()))?;
+    trusted_root(parent)?.write_atomic(
+        path.file_name()
+            .ok_or_else(|| LodeError::Message("global config path must name a file".into()))?,
+        &migrated,
+    )?;
     prune_config_backups(path)?;
     eprintln!(
         "config migrated: schema v{} -> v{}; backup: {}",
@@ -237,10 +256,15 @@ fn merge_toml_defaults(defaults: &mut toml::Value, existing: toml::Value) {
 
 fn backup_config(path: &Utf8PathBuf, schema_version: u32, raw: &str) -> Result<Utf8PathBuf> {
     let backup_path = Utf8PathBuf::from(format!("{}.bak-schema-{}", path, schema_version));
-    fs::write(&backup_path, raw).map_err(|source| LodeError::Io {
-        path: PathBuf::from(backup_path.as_str()),
-        source,
-    })?;
+    let parent = backup_path
+        .parent()
+        .ok_or_else(|| LodeError::Message("backup path must have a parent".into()))?;
+    trusted_root(parent)?.write_atomic(
+        backup_path
+            .file_name()
+            .ok_or_else(|| LodeError::Message("backup path must name a file".into()))?,
+        raw,
+    )?;
     Ok(backup_path)
 }
 
@@ -277,20 +301,24 @@ fn prune_config_backups(path: &Utf8PathBuf) -> Result<()> {
         }
     }
     backups.sort_by(|left, right| right.0.cmp(&left.0));
+    let root = ValidatedRoot::new(parent)?;
     for (_, backup) in backups.into_iter().skip(5) {
-        fs::remove_file(&backup).map_err(|source| LodeError::Io {
-            path: PathBuf::from(backup.as_str()),
-            source,
-        })?;
+        root.remove_file(
+            backup
+                .file_name()
+                .ok_or_else(|| LodeError::Message("backup path must name a file".into()))?,
+        )?;
     }
     Ok(())
 }
 
-fn create_dir_all(path: &Utf8PathBuf) -> Result<()> {
+fn trusted_root(path: impl AsRef<std::path::Path>) -> Result<ValidatedRoot> {
+    let path = path.as_ref();
     fs::create_dir_all(path).map_err(|source| LodeError::Io {
-        path: PathBuf::from(path.as_str()),
+        path: path.to_path_buf(),
         source,
-    })
+    })?;
+    ValidatedRoot::new(path)
 }
 
 #[cfg(test)]

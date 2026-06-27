@@ -5,6 +5,7 @@ pub mod convention;
 pub mod error;
 pub mod fs_safety;
 pub mod install;
+pub mod process;
 pub mod registry;
 pub mod scaffold;
 pub mod secrets;
@@ -22,6 +23,7 @@ pub use install::{
     ensure_global_workspace, global_asset_dir, global_config_path, global_dir, load_global_config,
     save_global_config, setup_defaults, SetupReport,
 };
+pub use process::Process;
 pub use registry::{
     load_registry, prune_registry, register_project, registry_path, save_registry, ProjectRecord,
     Registry,

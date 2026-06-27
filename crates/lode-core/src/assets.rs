@@ -141,10 +141,21 @@ const TEMPLATE_PATHS: &[&str] = &[
     "github/CODEOWNERS",
     "gitlab/gitlab-ci.yml",
     "ci/generic.yml",
+    "ci/c.yml",
+    "ci/cpp.yml",
     "ci/rust.yml",
+    "ci/go.yml",
+    "ci/zig.yml",
+    "ci/java-gradle.yml",
+    "ci/java-maven.yml",
     "ci/node.yml",
     "ci/python.yml",
-    "ci/go.yml",
+    "ci/django.yml",
+    "ci/tauri.yml",
+    "ci/minecraft-gradle.yml",
+    "ci/docs.yml",
+    "ci/release.yml",
+    "ci/security.yml",
     "docker/Dockerfile",
     "docker/compose.yml",
     "devcontainer/devcontainer.json",
@@ -784,10 +795,19 @@ pub fn template_contents(path: &str, context: &RenderContext) -> String {
         "github/renovate.json" => "{\n  \"extends\": [\"config:recommended\"]\n}\n".to_string(),
         "github/CODEOWNERS" => "* @maintainers\n".to_string(),
         "gitlab/gitlab-ci.yml" => "verify:\n  script:\n    - make verify\n".to_string(),
+        "ci/c.yml" => "name: C CI\non: [push, pull_request]\njobs:\n  c:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release\n      - run: cmake --build build --parallel\n      - run: ctest --test-dir build --output-on-failure\n".to_string(),
+        "ci/cpp.yml" => "name: C++ CI\non: [push, pull_request]\njobs:\n  cpp:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release\n      - run: cmake --build build --parallel\n      - run: ctest --test-dir build --output-on-failure\n".to_string(),
         "ci/rust.yml" => "name: Rust CI\non: [push, pull_request]\njobs:\n  rust:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: cargo test --workspace\n".to_string(),
+        "ci/go.yml" => "name: Go CI\non: [push, pull_request]\njobs:\n  go:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: go test ./...\n".to_string(),
+        "ci/zig.yml" => "name: Zig CI\non: [push, pull_request]\njobs:\n  zig:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: mlugg/setup-zig@v2\n      - run: zig fmt --check .\n      - run: zig build test\n".to_string(),
+        "ci/java-gradle.yml" => "name: Java Gradle CI\non: [push, pull_request]\njobs:\n  gradle:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: temurin\n          java-version: '21'\n          cache: gradle\n      - run: ./gradlew build\n".to_string(),
+        "ci/java-maven.yml" => "name: Java Maven CI\non: [push, pull_request]\njobs:\n  maven:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: temurin\n          java-version: '21'\n          cache: maven\n      - run: ./mvnw --batch-mode verify\n".to_string(),
         "ci/node.yml" => "name: Node CI\non: [push, pull_request]\njobs:\n  node:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: npm ci && npm test\n".to_string(),
         "ci/python.yml" => "name: Python CI\non: [push, pull_request]\njobs:\n  python:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: uv sync && uv run pytest\n".to_string(),
-        "ci/go.yml" => "name: Go CI\non: [push, pull_request]\njobs:\n  go:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: go test ./...\n".to_string(),
+        "ci/django.yml" => "name: Django CI\non: [push, pull_request]\njobs:\n  django:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: astral-sh/setup-uv@v5\n      - run: uv sync --frozen\n      - run: uv run python manage.py check\n      - run: uv run pytest\n".to_string(),
+        "ci/tauri.yml" => "name: Tauri CI\non: [push, pull_request]\njobs:\n  tauri:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 22\n          cache: npm\n      - uses: dtolnay/rust-toolchain@stable\n      - run: npm ci\n      - run: npm run build\n      - run: cargo test --manifest-path src-tauri/Cargo.toml\n".to_string(),
+        "ci/minecraft-gradle.yml" => "name: Minecraft Gradle CI\non: [push, pull_request]\njobs:\n  mod:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-java@v4\n        with:\n          distribution: temurin\n          java-version: '21'\n          cache: gradle\n      - run: ./gradlew build\n      - uses: actions/upload-artifact@v4\n        with:\n          name: mod-jars\n          path: build/libs/*.jar\n".to_string(),
+        "ci/docs.yml" => "name: Docs CI\non: [push, pull_request]\njobs:\n  docs:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: make docs\n".to_string(),
         "docker/Dockerfile" => "FROM alpine:3.20\nWORKDIR /app\nCOPY . .\nCMD [\"sh\"]\n".to_string(),
         "docker/compose.yml" => "services:\n  app:\n    build: .\n    env_file: .env.example\n".to_string(),
         "devcontainer/devcontainer.json" => "{\n  \"name\": \"{{ project }}\",\n  \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\"\n}\n".replace("{{ project }}", project),
@@ -906,4 +926,54 @@ fn license_contents(license: &str) -> String {
 
 fn makefile_contents() -> String {
     "help:\n\t@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort\n\ndev: ## Run development server\n\t@echo \"No dev command configured\"\n\nbuild: ## Build project\n\t@echo \"No build command configured\"\n\ntest: ## Run tests\n\t@echo \"No test command configured\"\n\ntest-watch: ## Run tests in watch mode\n\t@echo \"No watch command configured\"\n\nfmt: ## Format project\n\t@echo \"No format command configured\"\n\nlint: ## Lint project\n\t@echo \"No lint command configured\"\n\ncheck: ## Run checks\n\t$(MAKE) fmt lint test\n\nverify: ## Format, lint, test, audit\n\t$(MAKE) check\n\naudit: ## Run audit\n\t@echo \"No audit command configured\"\n\nclean: ## Clean generated files\n\t@echo \"No clean command configured\"\n\ndocs: ## Serve docs\n\t@echo \"No docs command configured\"\n\ninstall: ## Install dependencies\n\t@echo \"No install command configured\"\n\nupdate: ## Update dependencies\n\t@echo \"No update command configured\"\n\nrelease: ## Prepare release\n\t@echo \"No release command configured\"\n".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::{template_contents, template_paths};
+    use crate::template::RenderContext;
+
+    #[test]
+    fn canonical_ci_assets_are_unique_and_useful() {
+        let required = [
+            "ci/generic.yml",
+            "ci/c.yml",
+            "ci/cpp.yml",
+            "ci/rust.yml",
+            "ci/go.yml",
+            "ci/zig.yml",
+            "ci/java-gradle.yml",
+            "ci/java-maven.yml",
+            "ci/node.yml",
+            "ci/python.yml",
+            "ci/django.yml",
+            "ci/tauri.yml",
+            "ci/minecraft-gradle.yml",
+            "ci/docs.yml",
+            "ci/release.yml",
+            "ci/security.yml",
+        ];
+        let unique = required.into_iter().collect::<HashSet<_>>();
+        let context = RenderContext::new().with("project", "demo");
+
+        assert_eq!(unique.len(), required.len());
+        for path in required {
+            assert_eq!(
+                template_paths()
+                    .iter()
+                    .filter(|candidate| **candidate == path)
+                    .count(),
+                1,
+                "missing or duplicate {path}"
+            );
+            let contents = template_contents(path, &context);
+            assert!(
+                !contents.contains("Generated default asset"),
+                "placeholder {path}"
+            );
+            assert!(contents.contains("jobs:"), "not a useful workflow: {path}");
+        }
+    }
 }
