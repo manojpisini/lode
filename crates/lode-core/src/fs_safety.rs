@@ -159,6 +159,71 @@ impl ValidatedRoot {
         fs::remove_dir(&target).map_err(|e| io_error(&target, e))
     }
 
+    pub fn rename_file(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<PathBuf> {
+        let from = self.resolve_without_symlinks(from)?;
+        let to = self.resolve_without_symlinks(to)?;
+        let meta = fs::symlink_metadata(&from).map_err(|e| io_error(&from, e))?;
+        if meta.file_type().is_symlink() || !meta.is_file() {
+            return Err(unsafe_path(&from, "not a regular file"));
+        }
+        match fs::symlink_metadata(&to) {
+            Ok(_) => return Err(unsafe_path(&to, "destination already exists")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io_error(&to, e)),
+        }
+        fs::rename(&from, &to).map_err(|e| io_error(&to, e))?;
+        Ok(to)
+    }
+
+    pub fn copy_file(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<PathBuf> {
+        let from = self.resolve_without_symlinks(from)?;
+        let to = self.resolve_without_symlinks(to)?;
+        let meta = fs::symlink_metadata(&from).map_err(|e| io_error(&from, e))?;
+        if meta.file_type().is_symlink() || !meta.is_file() {
+            return Err(unsafe_path(&from, "not a regular file"));
+        }
+        if let Ok(meta) = fs::symlink_metadata(&to) {
+            if meta.file_type().is_symlink() || !meta.is_file() {
+                return Err(unsafe_path(&to, "destination is not a regular file"));
+            }
+        }
+        fs::copy(&from, &to).map_err(|e| io_error(&to, e))?;
+        Ok(to)
+    }
+
+    pub fn remove_dir_all(&self, relative: impl AsRef<Path>) -> Result<()> {
+        let target = self.resolve_without_symlinks(relative)?;
+        if target == self.root {
+            return Err(unsafe_path(&target, "cannot remove the root"));
+        }
+        let meta = fs::symlink_metadata(&target).map_err(|e| io_error(&target, e))?;
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return Err(unsafe_path(&target, "not a directory"));
+        }
+        fs::remove_dir_all(&target).map_err(|e| io_error(&target, e))
+    }
+
+    fn resolve_without_symlinks(&self, relative: impl AsRef<Path>) -> Result<PathBuf> {
+        let target = self.resolve(relative)?;
+        let mut current = self.root.clone();
+        for component in target
+            .strip_prefix(&self.root)
+            .expect("validated descendant")
+            .components()
+        {
+            current.push(component.as_os_str());
+            match fs::symlink_metadata(&current) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(unsafe_path(&current, "symlink traversal is not allowed"))
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+                Err(e) => return Err(io_error(&current, e)),
+            }
+        }
+        Ok(target)
+    }
+
     fn ensure_within(&self, path: &Path) -> Result<()> {
         let canonical = fs::canonicalize(path).map_err(|e| io_error(path, e))?;
         if canonical == self.root || canonical.starts_with(&self.root) {
@@ -319,6 +384,50 @@ mod tests {
         root.remove_empty_dir("dir").unwrap();
         assert!(root.remove_file("").is_err());
         assert!(root.remove_empty_dir("").is_err());
+    }
+
+    #[test]
+    fn file_move_copy_and_recursive_removal_are_validated() {
+        let (_temp, root) = setup();
+        root.create_dir_all("from/nested").unwrap();
+        root.create_dir_all("to").unwrap();
+        root.write_atomic("from/file", b"move").unwrap();
+        root.write_atomic("from/nested/file", b"copy").unwrap();
+        root.rename_file("from/file", "to/file").unwrap();
+        root.copy_file("from/nested/file", "to/copy").unwrap();
+        assert_eq!(fs::read(root.path().join("to/file")).unwrap(), b"move");
+        assert_eq!(fs::read(root.path().join("to/copy")).unwrap(), b"copy");
+        root.remove_dir_all("from").unwrap();
+        assert!(!root.path().join("from").exists());
+        assert!(root.remove_dir_all("").is_err());
+    }
+
+    #[test]
+    fn file_destinations_reject_traversal_and_rename_does_not_overwrite() {
+        let (_temp, root) = setup();
+        root.write_atomic("from", b"from").unwrap();
+        root.write_atomic("to", b"to").unwrap();
+        assert!(root.rename_file("from", "../to").is_err());
+        assert!(root.copy_file("from", "../to").is_err());
+        assert!(root.rename_file("from", "to").is_err());
+        assert_eq!(fs::read(root.path().join("from")).unwrap(), b"from");
+        assert_eq!(fs::read(root.path().join("to")).unwrap(), b"to");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn file_destinations_reject_symlinks() {
+        let (_temp, root) = setup();
+        root.create_dir_all("real").unwrap();
+        root.write_atomic("from", b"x").unwrap();
+        if !directory_link(&root.path().join("real"), &root.path().join("link")) {
+            return;
+        }
+        assert!(root.rename_file("from", "link/renamed").is_err());
+        assert!(root.copy_file("from", "link/copied").is_err());
+        assert!(root.path().join("from").exists());
+        assert!(!root.path().join("real/renamed").exists());
+        assert!(!root.path().join("real/copied").exists());
     }
 
     #[cfg(any(unix, windows))]

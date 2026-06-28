@@ -21,7 +21,7 @@ use lode_core::{
     global_asset_dir, global_dir, init_project, load_global_config, load_metrics, load_registry,
     profile_names, prune_registry, recipe_names, register_project, save_global_config,
     save_metrics, save_registry, scan_secrets, setup_defaults, sync_project, template_paths,
-    AddRequest, InitRequest, LodeError, Process,
+    AddRequest, InitRequest, LodeError, Process, ValidatedRoot,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -1758,18 +1758,13 @@ fn library_command(
         LibraryCommand::Reset { name } => {
             require_template_library(root)?;
             let relative = safe_relative_path(&name)?;
-            let path = global_asset_dir(root)?.join(relative);
+            let asset_dir = global_asset_dir(root)?;
+            let validated_root = ValidatedRoot::new(&asset_dir)?;
             let contents = embedded_template(&name)?;
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                    path: parent.as_str().into(),
-                    source,
-                })?;
+            if let Some(parent) = relative.parent() {
+                validated_root.create_dir_all(parent)?;
             }
-            fs::write(&path, contents).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            validated_root.write_atomic(&relative, contents)?;
             println!("reset template {name}");
         }
         LibraryCommand::Validate { all } => {
@@ -1907,32 +1902,21 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
             println!("active profile: {name}");
         }
         ProfileCommand::New { name } => {
-            let path = global_asset_dir("profiles")?.join(format!("{name}.toml"));
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                    path: parent.as_str().into(),
-                    source,
-                })?;
-            }
+            let root = ValidatedRoot::new(global_asset_dir("profiles")?)?;
+            let relative = format!("{name}.toml");
             let config = load_global_config()?;
             let raw = toml::to_string_pretty(&config)?;
-            fs::write(&path, raw).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            root.write_atomic(relative, raw)?;
             println!("created profile {name}");
         }
         ProfileCommand::Delete { name } => {
-            let path = global_asset_dir("profiles")?.join(format!("{name}.toml"));
             if profile_names().iter().any(|profile| *profile == name) {
                 return Err(LodeError::Message(format!(
                     "refusing to delete embedded profile: {name}"
                 )));
             }
-            fs::remove_file(&path).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            let root = ValidatedRoot::new(global_asset_dir("profiles")?)?;
+            root.remove_file(format!("{name}.toml"))?;
             println!("deleted profile {name}");
         }
     }
@@ -2041,23 +2025,17 @@ fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
 }
 
 fn new_recipe(name: &str) -> lode_core::Result<()> {
-    let path = global_asset_dir("recipes")?.join(format!("{name}.toml"));
+    let asset_dir = global_asset_dir("recipes")?;
+    let root = ValidatedRoot::new(&asset_dir)?;
+    let relative = format!("{name}.toml");
+    let path = asset_dir.join(&relative);
     if path.exists() {
         return Err(LodeError::Message(format!("recipe already exists: {name}")));
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
     }
     let contents = format!(
         "name = \"{name}\"\ndescription = \"Custom {name} recipe\"\n\n[[files]]\ntemplate = \"docs/index.md\"\ndest = \"docs/{name}.md\"\n"
     );
-    fs::write(&path, contents).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    root.write_atomic(relative, contents)?;
     println!("created recipe {name}");
     Ok(())
 }
@@ -2101,11 +2079,21 @@ fn add_command_macro(slug: &str, global: bool, from: Option<&str>) -> lode_core:
             "command macro already exists: {slug}"
         )));
     }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+    let root_path = if global {
+        global_asset_dir("commands")?
+    } else {
+        current_dir()?
+    };
+    let root = ValidatedRoot::new(&root_path)?;
+    let relative = if global {
+        safe_relative_path(&format!("{slug}.toml"))?
+    } else {
+        Utf8PathBuf::from(".lode")
+            .join("commands")
+            .join(safe_relative_path(&format!("{slug}.toml"))?)
+    };
+    if let Some(parent) = relative.parent() {
+        root.create_dir_all(parent)?;
     }
     let contents = if let Some(source_slug) = from {
         let source = resolve_command_path(source_slug)?;
@@ -2118,10 +2106,7 @@ fn add_command_macro(slug: &str, global: bool, from: Option<&str>) -> lode_core:
             "slug = \"{slug}\"\ndescription = \"Custom {slug} command macro\"\n\n[[steps]]\nkind = \"make\"\nrun = \"{slug}\"\n"
         )
     };
-    fs::write(&path, contents).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    root.write_atomic(relative, contents)?;
     println!("created command macro {slug} at {path}");
     Ok(())
 }
@@ -2133,10 +2118,20 @@ fn remove_command_macro(slug: &str, global: bool) -> lode_core::Result<()> {
             "command macro not found: {slug}"
         )));
     }
-    fs::remove_file(&path).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    let root_path = if global {
+        global_asset_dir("commands")?
+    } else {
+        current_dir()?
+    };
+    let root = ValidatedRoot::new(&root_path)?;
+    let relative = if global {
+        safe_relative_path(&format!("{slug}.toml"))?
+    } else {
+        Utf8PathBuf::from(".lode")
+            .join("commands")
+            .join(safe_relative_path(&format!("{slug}.toml"))?)
+    };
+    root.remove_file(relative)?;
     println!("removed command macro {slug}");
     Ok(())
 }
@@ -2161,16 +2156,19 @@ fn export_command_macros(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
     if let Some(path) = out {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                path: parent.as_str().into(),
-                source,
-            })?;
+        let project_dir = current_dir()?;
+        let root = ValidatedRoot::new(&project_dir)?;
+        let relative = if path.is_absolute() {
+            path.strip_prefix(&project_dir).map_err(|_| {
+                LodeError::Message(format!("export path is outside the project root: {path}"))
+            })?
+        } else {
+            path.as_path()
+        };
+        if let Some(parent) = relative.parent() {
+            root.create_dir_all(parent)?;
         }
-        fs::write(&path, raw).map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        root.write_atomic(relative, &raw)?;
         println!("exported {} command macros to {path}", pack.files.len());
     } else {
         println!("{raw}");
@@ -8520,8 +8518,7 @@ fn write_project_daemon_snapshot(
     root: &Utf8PathBuf,
     snapshot: &BTreeMap<String, u64>,
 ) -> lode_core::Result<()> {
-    let relative = safe_relative_path(".lode/daemon-state.json")?;
-    let path = root.join(relative);
+    let project_root = lode_core::ValidatedRoot::new(root)?;
     let mut files = BTreeMap::new();
     for (relative, modified_s) in snapshot {
         let file_path = root.join(relative);
@@ -8542,18 +8539,12 @@ fn write_project_daemon_snapshot(
         file_count: files.len(),
         files,
     };
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
+    project_root.create_dir_all(".lode")?;
     let raw = serde_json::to_string_pretty(&state)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    project_root
+        .write_atomic(".lode/daemon-state.json", raw)
+        .map(|_| ())
 }
 
 fn content_hash_bytes(contents: &[u8]) -> String {
@@ -8565,20 +8556,12 @@ fn content_hash_bytes(contents: &[u8]) -> String {
 fn log_command(command: LogCommand) -> lode_core::Result<()> {
     match command {
         LogCommand::Init => {
-            let path = daemon_log_path()?;
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                    path: parent.as_str().into(),
-                    source,
-                })?;
-            }
+            let root = daemon_global_root()?;
+            let path = root.resolve("logs/daemon.log")?;
             if !path.exists() {
-                fs::write(&path, "").map_err(|source| LodeError::Io {
-                    path: path.as_str().into(),
-                    source,
-                })?;
+                root.write_atomic("logs/daemon.log", "")?;
             }
-            println!("log initialised at {path}");
+            println!("log initialised at {}", path.display());
         }
         LogCommand::Daemon { tail } => {
             let log = fs::read_to_string(daemon_log_path()?).unwrap_or_default();
@@ -8592,12 +8575,10 @@ fn log_command(command: LogCommand) -> lode_core::Result<()> {
             }
         }
         LogCommand::Clear => {
-            let path = daemon_log_path()?;
+            let root = daemon_global_root()?;
+            let path = root.resolve("logs/daemon.log")?;
             if path.exists() {
-                fs::write(&path, "").map_err(|source| LodeError::Io {
-                    path: path.as_str().into(),
-                    source,
-                })?;
+                root.write_atomic("logs/daemon.log", "")?;
             }
             println!("logs cleared");
         }
@@ -9831,6 +9812,11 @@ fn daemon_log_path() -> lode_core::Result<Utf8PathBuf> {
     Ok(global_dir()?.join("logs").join("daemon.log"))
 }
 
+fn daemon_global_root() -> lode_core::Result<lode_core::ValidatedRoot> {
+    lode_core::ensure_global_workspace()?;
+    lode_core::ValidatedRoot::new(global_dir()?)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DaemonRuntimeState {
     active: bool,
@@ -9912,17 +9898,9 @@ fn write_daemon_state(state: &str) -> lode_core::Result<()> {
 }
 
 fn write_daemon_state_text(state: &str) -> lode_core::Result<()> {
-    let path = daemon_state_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
-    fs::write(&path, state).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    daemon_global_root()?
+        .write_atomic("cache/daemon-state.txt", state)
+        .map(|_| ())
 }
 
 fn append_daemon_log(line: &str) -> lode_core::Result<()> {
@@ -9930,19 +9908,21 @@ fn append_daemon_log(line: &str) -> lode_core::Result<()> {
 }
 
 fn append_daemon_event(kind: &str, message: &str, files: Vec<String>) -> lode_core::Result<()> {
-    let path = daemon_log_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
+    let root = daemon_global_root()?;
+    let path = root.resolve("logs/daemon.log")?;
+    let mut log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|source| LodeError::Io {
+            path: path.clone(),
             source,
         })?;
-    }
-    let mut current = fs::read_to_string(&path).unwrap_or_default();
-    current.push_str(message);
-    current.push('\n');
-    fs::write(&path, current).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
+    std::io::Write::write_all(&mut log, format!("{message}\n").as_bytes()).map_err(|source| {
+        LodeError::Io {
+            path: path.clone(),
+            source,
+        }
     })?;
 
     let mut state = load_daemon_runtime_state()?;
@@ -10031,19 +10011,11 @@ fn load_daemon_runtime_state() -> lode_core::Result<DaemonRuntimeState> {
 }
 
 fn write_daemon_runtime_state(state: &DaemonRuntimeState) -> lode_core::Result<()> {
-    let path = daemon_runtime_state_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
     let raw = serde_json::to_string_pretty(state)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    daemon_global_root()?
+        .write_atomic("cache/daemon-state.json", raw)
+        .map(|_| ())
 }
 
 fn daemon_uptime_seconds(state: &DaemonRuntimeState) -> u64 {

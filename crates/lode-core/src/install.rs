@@ -314,10 +314,15 @@ fn prune_config_backups(path: &Utf8PathBuf) -> Result<()> {
 
 fn trusted_root(path: impl AsRef<std::path::Path>) -> Result<ValidatedRoot> {
     let path = path.as_ref();
-    fs::create_dir_all(path).map_err(|source| LodeError::Io {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    if !path.exists() {
+        let parent = path
+            .parent()
+            .ok_or_else(|| LodeError::Message("install root must have a parent".into()))?;
+        let name = path
+            .file_name()
+            .ok_or_else(|| LodeError::Message("install root must name a directory".into()))?;
+        ValidatedRoot::new(parent)?.create_dir_all(name)?;
+    }
     ValidatedRoot::new(path)
 }
 

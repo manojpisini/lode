@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 
-use crate::{check_path, scan_secrets, LodeConfig, LodeError, Result};
+use crate::{check_path, scan_secrets, LodeConfig, LodeError, Result, ValidatedRoot};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditReport {
@@ -44,19 +44,12 @@ pub fn audit_project(path: &Utf8Path, config: &LodeConfig) -> Result<AuditReport
 }
 
 pub fn save_metrics(path: &Utf8Path, report: &AuditReport) -> Result<Utf8PathBuf> {
-    let metrics_dir = path.join(".lode");
-    fs::create_dir_all(&metrics_dir).map_err(|source| LodeError::Io {
-        path: PathBuf::from(metrics_dir.as_str()),
-        source,
-    })?;
-    let metrics_path = metrics_dir.join("metrics.json");
+    let root = ValidatedRoot::new(path)?;
+    root.create_dir_all(".lode")?;
     let raw = serde_json::to_string_pretty(report)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&metrics_path, raw).map_err(|source| LodeError::Io {
-        path: PathBuf::from(metrics_path.as_str()),
-        source,
-    })?;
-    Ok(metrics_path)
+    root.write_atomic(".lode/metrics.json", raw)?;
+    Ok(path.join(".lode").join("metrics.json"))
 }
 
 pub fn load_metrics(path: &Utf8Path) -> Result<AuditReport> {
