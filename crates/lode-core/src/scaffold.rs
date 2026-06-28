@@ -10,7 +10,9 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    assets, config, global_dir,
+    assets, config,
+    fs_safety::ValidatedRoot,
+    global_dir,
     template::{
         render_template, render_template_with_resolver, slug_to_class, slug_to_ident, RenderContext,
     },
@@ -83,7 +85,11 @@ struct ManifestItem {
 }
 
 pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
-    let project_dir = request.base_path.join(&request.name);
+    let base_root = ValidatedRoot::new(&request.base_path)?;
+    let project_dir =
+        Utf8PathBuf::from_path_buf(base_root.resolve(&request.name)?).map_err(|path| {
+            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+        })?;
     let project_config_path = project_dir.join(".lode").join("project.toml");
 
     if project_config_path.exists() && !request.overwrite {
@@ -110,8 +116,9 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
         planned_paths.push(project_dir.join(dir));
     }
     for item in &manifest {
-        let rendered_destination = render_template(item.destination.as_str(), &context);
-        planned_paths.push(project_dir.join(rendered_destination));
+        let rendered_destination =
+            Utf8PathBuf::from(render_template(item.destination.as_str(), &context));
+        planned_paths.push(project_dir.join(&rendered_destination));
     }
 
     if request.dry_run {
@@ -124,31 +131,33 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
     }
 
     let mut wrote_paths = Vec::new();
-    create_dir_all(&project_dir)?;
+    base_root.create_dir_all(&request.name)?;
+    let root = ValidatedRoot::new(&project_dir)?;
     wrote_paths.push(project_dir.clone());
 
     for dir in &request.config.scaffold.always_dirs {
         let path = project_dir.join(dir);
-        create_dir_all(&path)?;
+        root.create_dir_all(dir)?;
         wrote_paths.push(path);
     }
 
     let mut lock_entries = Vec::new();
     for item in manifest {
-        let rendered_destination = render_template(item.destination.as_str(), &context);
-        let destination = project_dir.join(rendered_destination);
+        let rendered_destination =
+            Utf8PathBuf::from(render_template(item.destination.as_str(), &context));
+        let destination = project_dir.join(&rendered_destination);
         if destination.exists() && !request.overwrite {
             continue;
         }
-        if let Some(parent) = destination.parent() {
-            create_dir_all(&parent.to_path_buf())?;
+        if let Some(parent) = rendered_destination.parent() {
+            root.create_dir_all(parent)?;
         }
         let contents = if item.template == "lode/project.toml" {
             project_config_toml(&request.name, profile, &request.components)?
         } else {
             render_project_template(&project_dir, item.template, &context)
         };
-        write_file(&destination, &contents)?;
+        root.write_atomic(&rendered_destination, &contents)?;
         lock_entries.push(ScaffoldLockEntry {
             template: item.template.to_string(),
             destination: destination
@@ -160,7 +169,7 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
         wrote_paths.push(destination);
     }
     write_scaffold_lock(
-        &project_dir,
+        &root,
         ScaffoldLock {
             schema_version: config::SCHEMA_VERSION,
             generated_by: "lode".to_string(),
@@ -192,8 +201,9 @@ pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
 
     let mut planned_paths = Vec::new();
     for item in &manifest {
-        let rendered_destination = render_template(item.destination.as_str(), &context);
-        planned_paths.push(request.project_dir.join(rendered_destination));
+        let rendered_destination =
+            Utf8PathBuf::from(render_template(item.destination.as_str(), &context));
+        planned_paths.push(request.project_dir.join(&rendered_destination));
     }
 
     if request.dry_run {
@@ -205,6 +215,7 @@ pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
         });
     }
 
+    let root = ValidatedRoot::new(&request.project_dir)?;
     let mut wrote_paths = Vec::new();
     let mut lock = load_scaffold_lock(&request.project_dir).unwrap_or_else(|_| ScaffoldLock {
         schema_version: config::SCHEMA_VERSION,
@@ -213,16 +224,17 @@ pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
         entries: Vec::new(),
     });
     for item in manifest {
-        let rendered_destination = render_template(item.destination.as_str(), &context);
-        let destination = request.project_dir.join(rendered_destination);
+        let rendered_destination =
+            Utf8PathBuf::from(render_template(item.destination.as_str(), &context));
+        let destination = request.project_dir.join(&rendered_destination);
         if destination.exists() && !request.overwrite {
             continue;
         }
-        if let Some(parent) = destination.parent() {
-            create_dir_all(&parent.to_path_buf())?;
+        if let Some(parent) = rendered_destination.parent() {
+            root.create_dir_all(parent)?;
         }
         let contents = render_project_template(&request.project_dir, item.template, &context);
-        write_file(&destination, &contents)?;
+        root.write_atomic(&rendered_destination, &contents)?;
         let relative = destination
             .strip_prefix(&request.project_dir)
             .unwrap_or(destination.as_ref())
@@ -235,7 +247,7 @@ pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
         });
         wrote_paths.push(destination);
     }
-    write_scaffold_lock(&request.project_dir, lock)?;
+    write_scaffold_lock(&root, lock)?;
 
     Ok(ScaffoldReport {
         project_dir: request.project_dir,
@@ -252,6 +264,7 @@ pub fn sync_project(
     dry_run: bool,
 ) -> Result<ScaffoldReport> {
     let project_config = load_project_config(&project_dir)?;
+    let root = ValidatedRoot::new(&project_dir)?;
     let profile = project_config.project.profile;
     let components = project_config.project.components;
     let context = RenderContext::new()
@@ -272,8 +285,9 @@ pub fn sync_project(
         if item.template == "lode/project.toml" {
             continue;
         }
-        let rendered_destination = render_template(item.destination.as_str(), &context);
-        let destination = project_dir.join(rendered_destination);
+        let rendered_destination =
+            Utf8PathBuf::from(render_template(item.destination.as_str(), &context));
+        let destination = project_dir.join(&rendered_destination);
         planned_paths.push(destination.clone());
 
         let mut contents = render_project_template(&project_dir, item.template, &context);
@@ -299,10 +313,10 @@ pub fn sync_project(
         if dry_run {
             continue;
         }
-        if let Some(parent) = destination.parent() {
-            create_dir_all(&parent.to_path_buf())?;
+        if let Some(parent) = rendered_destination.parent() {
+            root.create_dir_all(parent)?;
         }
-        write_file(&destination, &contents)?;
+        root.write_atomic(&rendered_destination, &contents)?;
         lock_entries.push(ScaffoldLockEntry {
             template: item.template.to_string(),
             destination: destination
@@ -316,7 +330,7 @@ pub fn sync_project(
 
     if !dry_run {
         write_scaffold_lock(
-            &project_dir,
+            &root,
             ScaffoldLock {
                 schema_version: config::SCHEMA_VERSION,
                 generated_by: "lode".to_string(),
@@ -350,15 +364,13 @@ pub fn load_scaffold_lock(project_dir: &Utf8PathBuf) -> Result<ScaffoldLock> {
     })
 }
 
-fn write_scaffold_lock(project_dir: &Utf8PathBuf, mut lock: ScaffoldLock) -> Result<()> {
+fn write_scaffold_lock(root: &ValidatedRoot, mut lock: ScaffoldLock) -> Result<()> {
     lock.entries
         .sort_by(|left, right| left.destination.cmp(&right.destination));
-    let path = scaffold_lock_path(project_dir);
-    if let Some(parent) = path.parent() {
-        create_dir_all(&parent.to_path_buf())?;
-    }
+    root.create_dir_all(".lode")?;
     let raw = toml::to_string_pretty(&lock)?;
-    write_file(&path, &raw)
+    root.write_atomic(".lode/scaffold.lock", &raw)?;
+    Ok(())
 }
 
 fn load_project_config(project_dir: &Utf8PathBuf) -> Result<ProjectConfig> {
@@ -646,20 +658,6 @@ fn created_at() -> String {
     format!("unix:{seconds}")
 }
 
-fn create_dir_all(path: &Utf8PathBuf) -> Result<()> {
-    fs::create_dir_all(path).map_err(|source| LodeError::Io {
-        path: PathBuf::from(path.as_str()),
-        source,
-    })
-}
-
-fn write_file(path: &Utf8PathBuf, contents: &str) -> Result<()> {
-    fs::write(path, contents).map_err(|source| LodeError::Io {
-        path: PathBuf::from(path.as_str()),
-        source,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,6 +681,29 @@ mod tests {
         assert!(report.dry_run);
         assert!(report.wrote_paths.is_empty());
         assert!(!base_path.join("my-app").exists());
+    }
+
+    #[test]
+    fn init_rejects_project_name_traversal() {
+        let temp = tempfile::tempdir().unwrap();
+        let base_path = Utf8PathBuf::from_path_buf(temp.path().join("base")).unwrap();
+        fs::create_dir(&base_path).unwrap();
+
+        let error = init_project(InitRequest {
+            name: "../escape".to_string(),
+            base_path,
+            config: config::default_config(),
+            profile: None,
+            components: Vec::new(),
+            dry_run: false,
+            overwrite: false,
+        })
+        .unwrap_err();
+
+        assert!(
+            matches!(error, LodeError::Message(message) if message.contains("parent traversal"))
+        );
+        assert!(!temp.path().join("escape").exists());
     }
 
     #[test]

@@ -2772,6 +2772,48 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
 }
 
 #[test]
+fn daemon_status_json_includes_recent_events() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "start"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "status", "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"recent_events\":[{"))
+        .stdout(predicate::str::contains(
+            "\"message\":\"daemon started foreground=false rename=true sign=true stamp=true\"",
+        ));
+}
+
+#[test]
+fn daemon_log_follow_can_exit_without_polling() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .args(["daemon", "start"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .env("LODE_DAEMON_FOLLOW_TICKS", "0")
+        .args(["daemon", "log", "--follow"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("daemon started"));
+}
+
+#[test]
 fn log_commands_read_and_clear_daemon_log() {
     let temp = tempfile::tempdir().unwrap();
     let config = isolated_config(&temp);

@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 
-use crate::{global_dir, LodeError, Result};
+use crate::{global_dir, LodeError, Result, ValidatedRoot};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Registry {
@@ -43,19 +43,19 @@ pub fn load_registry() -> Result<Registry> {
 }
 
 pub fn save_registry(registry: &Registry) -> Result<()> {
-    let path = registry_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: PathBuf::from(parent.as_str()),
-            source,
-        })?;
-    }
+    let global = global_dir()?;
+    let parent = global
+        .parent()
+        .ok_or_else(|| LodeError::Message("global directory has no parent".to_string()))?;
+    let relative = global
+        .file_name()
+        .ok_or_else(|| LodeError::Message("global directory has no file name".to_string()))?;
+    ValidatedRoot::new(parent)?.create_dir_all(relative)?;
+    let root = ValidatedRoot::new(&global)?;
     let raw = serde_json::to_string_pretty(registry)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: PathBuf::from(path.as_str()),
-        source,
-    })
+    root.write_atomic("registry.json", raw)?;
+    Ok(())
 }
 
 pub fn register_project(name: &str, path: &Utf8Path, profile: &str) -> Result<ProjectRecord> {

@@ -4,7 +4,7 @@ use std::{
     hash::{Hash, Hasher},
     io,
     io::{IsTerminal, Read},
-    process::{Command as ProcessCommand, ExitCode},
+    process::ExitCode,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -21,7 +21,7 @@ use lode_core::{
     global_asset_dir, global_dir, init_project, load_global_config, load_metrics, load_registry,
     profile_names, prune_registry, recipe_names, register_project, save_global_config,
     save_metrics, save_registry, scan_secrets, setup_defaults, sync_project, template_paths,
-    AddRequest, InitRequest, LodeError,
+    AddRequest, InitRequest, LodeError, Process,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -1458,58 +1458,21 @@ fn run_process_status_with_env(
     current_dir: Option<&Utf8PathBuf>,
     envs: &[(&str, String)],
 ) -> lode_core::Result<std::process::ExitStatus> {
-    validate_process_program(program)?;
-    let mut command = ProcessCommand::new(program);
+    let mut command = Process::new(program)?;
     command.args(args);
     if let Some(current_dir) = current_dir {
         command.current_dir(current_dir.as_str());
     }
-    for (key, value) in envs {
-        command.env(key, value);
-    }
-    command.status().map_err(|source| LodeError::Io {
-        path: program.into(),
-        source,
-    })
+    command.envs(envs.iter().map(|(key, value)| (*key, value)));
+    command.status()
 }
 
 fn run_process_output(program: &str, args: &[String]) -> lode_core::Result<std::process::Output> {
-    validate_process_program(program)?;
-    ProcessCommand::new(program)
-        .args(args)
-        .output()
-        .map_err(|source| LodeError::Io {
-            path: program.into(),
-            source,
-        })
+    Process::new(program)?.args(args).output()
 }
 
 fn run_current_lode_status(args: &[String]) -> lode_core::Result<std::process::ExitStatus> {
-    let current_exe = env::current_exe().map_err(|source| LodeError::Io {
-        path: "current_exe".into(),
-        source,
-    })?;
-    ProcessCommand::new(current_exe)
-        .args(args)
-        .status()
-        .map_err(|source| LodeError::Io {
-            path: "lode".into(),
-            source,
-        })
-}
-
-fn validate_process_program(program: &str) -> lode_core::Result<()> {
-    if program.is_empty()
-        || program.contains('/')
-        || program.contains('\\')
-        || program.contains(':')
-        || program.contains('\0')
-    {
-        return Err(LodeError::Message(format!(
-            "unsafe process program: {program}"
-        )));
-    }
-    Ok(())
+    Process::current_executable()?.args(args).status()
 }
 
 fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
@@ -9273,6 +9236,7 @@ fn dashboard_data(no_color: bool) -> lode_core::Result<DashboardData> {
         .unwrap_or_else(|_| "inactive".to_string())
         .trim()
         .to_string();
+    let daemon_runtime = load_daemon_runtime_state().unwrap_or_default();
     let daemon_log = fs::read_to_string(daemon_log_path()?).unwrap_or_default();
     let time_log = load_time_log().unwrap_or_default();
     let color = Palette::new(no_color);
@@ -9308,7 +9272,7 @@ fn dashboard_data(no_color: bool) -> lode_core::Result<DashboardData> {
         env_example_present: audit.env_example_present,
         readme_present: audit.readme_present,
         daemon_state,
-        events: recent_log_lines(&daemon_log),
+        events: recent_log_lines(&daemon_runtime.recent_events, &daemon_log),
         registry,
         package_manager: detect_package_manager().unwrap_or_else(|| "unknown".to_string()),
         toolchains: detect_toolchains().join(", "),
@@ -9831,7 +9795,16 @@ fn bool_label(value: bool, color: &Palette) -> String {
     }
 }
 
-fn recent_log_lines(log: &str) -> Vec<String> {
+fn recent_log_lines(recent_events: &[DaemonEvent], log: &str) -> Vec<String> {
+    if !recent_events.is_empty() {
+        return recent_events
+            .iter()
+            .rev()
+            .take(6)
+            .map(|event| event.message.clone())
+            .rev()
+            .collect();
+    }
     let mut lines = log
         .lines()
         .rev()
@@ -10403,19 +10376,4 @@ fn current_dir() -> lode_core::Result<Utf8PathBuf> {
     })?;
     Utf8PathBuf::from_path_buf(path)
         .map_err(|path| LodeError::Message(format!("path is not valid UTF-8: {}", path.display())))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn process_program_validation_rejects_path_like_programs() {
-        assert!(validate_process_program("git").is_ok());
-        assert!(validate_process_program("").is_err());
-        assert!(validate_process_program("../sh").is_err());
-        assert!(validate_process_program("tools/run").is_err());
-        assert!(validate_process_program("C:\\Windows\\System32\\cmd.exe").is_err());
-        assert!(validate_process_program("cmd.exe\0ignored").is_err());
-    }
 }
