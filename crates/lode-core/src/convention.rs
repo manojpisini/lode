@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::Serialize;
 
-use crate::{config::LodeConfig, LodeError, Result};
+use crate::{config::LodeConfig, LodeError, Result, ValidatedRoot};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ConventionViolation {
@@ -36,6 +36,12 @@ pub fn check_path(path: &Utf8Path, config: &LodeConfig) -> Result<ConventionRepo
 
 pub fn fix_path(path: &Utf8Path, config: &LodeConfig) -> Result<ConventionReport> {
     let mut report = check_path(path, config)?;
+    let root_path = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
+    let root = ValidatedRoot::new(root_path)?;
     let mut targets = report.violations.clone();
     targets.sort_by_key(|violation| std::cmp::Reverse(violation.path.components().count()));
 
@@ -47,10 +53,16 @@ pub fn fix_path(path: &Utf8Path, config: &LodeConfig) -> Result<ConventionReport
         if destination == violation.path || destination.exists() {
             continue;
         }
-        fs::rename(&violation.path, &destination).map_err(|source| LodeError::Io {
-            path: PathBuf::from(violation.path.as_str()),
-            source,
+        let source = violation.path.strip_prefix(root_path).map_err(|_| {
+            LodeError::Message(format!(
+                "path is outside convention root: {}",
+                violation.path
+            ))
         })?;
+        let target = destination.strip_prefix(root_path).map_err(|_| {
+            LodeError::Message(format!("path is outside convention root: {destination}"))
+        })?;
+        root.rename_entry(source, target)?;
         report.renamed.push((violation.path, destination));
     }
 
@@ -236,5 +248,21 @@ mod tests {
         let report = check_path(&root, &config::default_config()).unwrap();
 
         assert_eq!(report.violations.len(), 1);
+    }
+
+    #[test]
+    fn fixes_directory_names_through_validated_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        fs::create_dir(root.join("Bad Directory")).unwrap();
+        fs::write(root.join("Bad Directory/child.txt"), "content").unwrap();
+
+        let report = fix_path(&root, &config::default_config()).unwrap();
+
+        assert_eq!(report.renamed.len(), 1);
+        assert_eq!(
+            fs::read_to_string(root.join("bad_directory/child.txt")).unwrap(),
+            "content"
+        );
     }
 }

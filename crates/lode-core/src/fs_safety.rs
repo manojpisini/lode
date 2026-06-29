@@ -160,11 +160,34 @@ impl ValidatedRoot {
     }
 
     pub fn rename_file(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<PathBuf> {
+        let from = from.as_ref();
+        let source = self.resolve_without_symlinks(from)?;
+        let meta = fs::symlink_metadata(&source).map_err(|e| io_error(&source, e))?;
+        if !meta.is_file() {
+            return Err(unsafe_path(&source, "not a regular file"));
+        }
+        self.rename_entry(from, to)
+    }
+
+    pub fn rename_entry(&self, from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<PathBuf> {
         let from = self.resolve_without_symlinks(from)?;
         let to = self.resolve_without_symlinks(to)?;
+        if from == self.root || to == self.root {
+            return Err(unsafe_path(&from, "cannot rename the root"));
+        }
         let meta = fs::symlink_metadata(&from).map_err(|e| io_error(&from, e))?;
-        if meta.file_type().is_symlink() || !meta.is_file() {
-            return Err(unsafe_path(&from, "not a regular file"));
+        if meta.file_type().is_symlink() || (!meta.is_file() && !meta.is_dir()) {
+            return Err(unsafe_path(&from, "not a regular file or directory"));
+        }
+        let parent = to
+            .parent()
+            .ok_or_else(|| unsafe_path(&to, "missing parent"))?;
+        self.ensure_within(parent)?;
+        if !fs::metadata(parent)
+            .map_err(|e| io_error(parent, e))?
+            .is_dir()
+        {
+            return Err(unsafe_path(parent, "parent is not a directory"));
         }
         match fs::symlink_metadata(&to) {
             Ok(_) => return Err(unsafe_path(&to, "destination already exists")),

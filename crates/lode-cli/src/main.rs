@@ -2272,23 +2272,27 @@ fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
             safe_relative_path(&entry.name)?;
             enforce_plugin_permissions(&source, allow_unsafe)?;
             let name = entry.name;
-            let destination = global_asset_dir("plugins")?.join(&name);
+            let plugins_dir = global_asset_dir("plugins")?;
+            let plugins_root = ValidatedRoot::new(&plugins_dir)?;
+            let destination = plugins_dir.join(&name);
             if destination.exists() {
                 return Err(LodeError::Message(format!("plugin already exists: {name}")));
             }
-            copy_dir_recursive(&source, &destination)?;
+            plugins_root.create_dir_all(&name)?;
+            let source_root = ValidatedRoot::new(&source)?;
+            copy_dir_recursive(&source_root, &plugins_root, "", &name)?;
             write_plugin_install_receipt(&destination, &source, allow_unsafe)?;
             println!("added plugin {name}");
         }
         PluginCommand::Remove { name } => {
-            let path = global_asset_dir("plugins")?.join(safe_relative_path(&name)?);
+            let plugins_dir = global_asset_dir("plugins")?;
+            let plugins_root = ValidatedRoot::new(&plugins_dir)?;
+            let relative = safe_relative_path(&name)?;
+            let path = plugins_dir.join(&relative);
             if !path.exists() {
                 return Err(LodeError::Message(format!("plugin not found: {name}")));
             }
-            fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            plugins_root.remove_dir_all(relative)?;
             println!("removed plugin {name}");
         }
         PluginCommand::Update { name } => {
@@ -2443,13 +2447,10 @@ fn write_plugin_install_receipt(
         allow_unsafe,
         permissions: read_plugin_security(destination)?,
     };
-    let path = destination.join(".lode-install.json");
     let raw = serde_json::to_string_pretty(&receipt)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    ValidatedRoot::new(destination)?.write_atomic(".lode-install.json", raw)?;
+    Ok(())
 }
 
 fn read_plugin_install_receipt(
@@ -2602,30 +2603,41 @@ fn default_plugin_registry() -> Vec<PluginIndexEntry> {
     .collect()
 }
 
-fn copy_dir_recursive(source: &Utf8PathBuf, destination: &Utf8PathBuf) -> lode_core::Result<()> {
-    fs::create_dir_all(destination).map_err(|source_error| LodeError::Io {
-        path: destination.as_str().into(),
-        source: source_error,
-    })?;
-    for entry in fs::read_dir(source).map_err(|source_error| LodeError::Io {
-        path: source.as_str().into(),
+fn copy_dir_recursive(
+    source_root: &ValidatedRoot,
+    destination_root: &ValidatedRoot,
+    source_relative: &str,
+    destination_relative: &str,
+) -> lode_core::Result<()> {
+    destination_root.create_dir_all(destination_relative)?;
+    let source = source_root.resolve(source_relative)?;
+    for entry in fs::read_dir(&source).map_err(|source_error| LodeError::Io {
+        path: source.to_string_lossy().into_owned().into(),
         source: source_error,
     })? {
         let entry = entry.map_err(|source_error| LodeError::Io {
-            path: source.as_str().into(),
+            path: source.to_string_lossy().into_owned().into(),
             source: source_error,
         })?;
-        let child_source = Utf8PathBuf::from_path_buf(entry.path()).map_err(|path| {
-            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
-        })?;
-        let child_destination = destination.join(entry.file_name().to_string_lossy().as_ref());
-        if child_source.is_dir() {
-            copy_dir_recursive(&child_source, &child_destination)?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let child_source =
+            safe_relative_path(Utf8PathBuf::from(source_relative).join(&name).as_str())?;
+        let child_destination =
+            safe_relative_path(Utf8PathBuf::from(destination_relative).join(&name).as_str())?;
+        let source_path = source_root.resolve(&child_source)?;
+        if source_path.is_dir() {
+            copy_dir_recursive(
+                source_root,
+                destination_root,
+                child_source.as_str(),
+                child_destination.as_str(),
+            )?;
         } else {
-            fs::copy(&child_source, &child_destination).map_err(|source_error| LodeError::Io {
-                path: child_destination.as_str().into(),
+            let contents = fs::read(&source_path).map_err(|source_error| LodeError::Io {
+                path: source_path.to_string_lossy().into_owned().into(),
                 source: source_error,
             })?;
+            destination_root.write_atomic(child_destination, contents)?;
         }
     }
     Ok(())
@@ -5143,18 +5155,13 @@ fn license(command: LicenseCommand) -> lode_core::Result<()> {
             if !path.exists() {
                 return Err(LodeError::Message(format!("license not found: {id}")));
             }
-            fs::remove_file(&path).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            let root = ValidatedRoot::new(global_asset_dir("licenses")?)?;
+            root.remove_file(safe_relative_path(&format!("{id}.txt"))?)?;
             println!("removed license {id}");
         }
         LicenseCommand::Set { id } => {
             let contents = read_license(&id)?;
-            fs::write("LICENSE", contents).map_err(|source| LodeError::Io {
-                path: "LICENSE".into(),
-                source,
-            })?;
+            ValidatedRoot::new(current_dir()?)?.write_atomic("LICENSE", contents)?;
             println!("license set: {id}");
         }
         LicenseCommand::Check { json } => {
@@ -5183,10 +5190,7 @@ fn license(command: LicenseCommand) -> lode_core::Result<()> {
                 println!("would apply license {id}");
             } else {
                 let contents = read_license(&id)?;
-                fs::write("LICENSE", contents).map_err(|source| LodeError::Io {
-                    path: "LICENSE".into(),
-                    source,
-                })?;
+                ValidatedRoot::new(current_dir()?)?.write_atomic("LICENSE", contents)?;
                 println!("license applied: {id}");
             }
         }
@@ -5195,7 +5199,10 @@ fn license(command: LicenseCommand) -> lode_core::Result<()> {
 }
 
 fn add_license(id: &str, file: Option<Utf8PathBuf>, text: Option<&str>) -> lode_core::Result<()> {
-    let path = license_path(id)?;
+    let asset_dir = global_asset_dir("licenses")?;
+    let root = ValidatedRoot::new(&asset_dir)?;
+    let relative = safe_relative_path(&format!("{id}.txt"))?;
+    let path = asset_dir.join(&relative);
     if path.exists() {
         return Err(LodeError::Message(format!("license already exists: {id}")));
     }
@@ -5207,16 +5214,10 @@ fn add_license(id: &str, file: Option<Utf8PathBuf>, text: Option<&str>) -> lode_
     } else {
         text.unwrap_or(id).to_string()
     };
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+    if let Some(parent) = relative.parent() {
+        root.create_dir_all(parent)?;
     }
-    fs::write(&path, contents).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    root.write_atomic(relative, contents)?;
     println!("added license {id}");
     Ok(())
 }
@@ -5272,7 +5273,9 @@ fn env_add(
     comment: Option<&str>,
     secret: bool,
 ) -> lode_core::Result<()> {
-    let path = Utf8PathBuf::from(".env.example");
+    let project_dir = current_dir()?;
+    let root = ValidatedRoot::new(&project_dir)?;
+    let path = project_dir.join(".env.example");
     let mut contents = if path.exists() {
         fs::read_to_string(&path).map_err(|source| LodeError::Io {
             path: path.as_str().into(),
@@ -5296,13 +5299,10 @@ fn env_add(
             contents.push_str(default.unwrap_or_default());
         }
         contents.push('\n');
-        fs::write(&path, contents).map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        root.write_atomic(".env.example", contents)?;
     }
     if secret {
-        let env_path = Utf8PathBuf::from(".env");
+        let env_path = project_dir.join(".env");
         let mut env_contents = fs::read_to_string(&env_path).unwrap_or_default();
         if !read_env_entries(&env_contents).contains_key(key) {
             if !env_contents.ends_with('\n') && !env_contents.is_empty() {
@@ -5312,10 +5312,7 @@ fn env_add(
             env_contents.push('=');
             env_contents.push_str(default.unwrap_or_default());
             env_contents.push('\n');
-            fs::write(&env_path, env_contents).map_err(|source| LodeError::Io {
-                path: env_path.as_str().into(),
-                source,
-            })?;
+            root.write_atomic(".env", env_contents)?;
         }
     }
     println!("added env key {key}");
@@ -5324,7 +5321,9 @@ fn env_add(
 
 fn env_sync() -> lode_core::Result<()> {
     let example = read_env_file(".env.example")?;
-    let env_path = Utf8PathBuf::from(".env");
+    let project_dir = current_dir()?;
+    let root = ValidatedRoot::new(&project_dir)?;
+    let env_path = project_dir.join(".env");
     let mut env = if env_path.exists() {
         fs::read_to_string(&env_path).map_err(|source| LodeError::Io {
             path: env_path.as_str().into(),
@@ -5347,23 +5346,20 @@ fn env_sync() -> lode_core::Result<()> {
             added += 1;
         }
     }
-    fs::write(&env_path, env).map_err(|source| LodeError::Io {
-        path: env_path.as_str().into(),
-        source,
-    })?;
+    root.write_atomic(".env", env)?;
     println!("env synced: added {added}");
     Ok(())
 }
 
 fn env_use(profile: &str) -> lode_core::Result<()> {
-    let source = Utf8PathBuf::from(format!(".env.{profile}"));
-    if !source.exists() {
+    let project_dir = current_dir()?;
+    let root = ValidatedRoot::new(&project_dir)?;
+    let source = safe_relative_path(&format!(".env.{profile}"))?;
+    let source_path = project_dir.join(&source);
+    if !source_path.exists() {
         return Err(LodeError::Message(format!("{source} does not exist")));
     }
-    fs::copy(&source, ".env").map_err(|source_error| LodeError::Io {
-        path: source.as_str().into(),
-        source: source_error,
-    })?;
+    root.copy_file(source, ".env")?;
     println!("env profile active: {profile}");
     Ok(())
 }
@@ -5414,37 +5410,35 @@ fn add_snippet(
     desc: Option<&str>,
 ) -> lode_core::Result<()> {
     let relative = safe_relative_path(&format!("{lang}/{name}.snippet"))?;
-    let path = global_asset_dir("snippets")?.join(relative);
+    let asset_dir = global_asset_dir("snippets")?;
+    let root = ValidatedRoot::new(&asset_dir)?;
+    let path = asset_dir.join(&relative);
     if path.exists() {
         return Err(LodeError::Message(format!(
             "snippet already exists: {name}"
         )));
     }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+    if let Some(parent) = relative.parent() {
+        root.create_dir_all(parent)?;
     }
     let trigger = trigger.unwrap_or(name);
     let desc = desc.unwrap_or("User snippet");
     let contents = format!(
         "name: {name}\nlang: {lang}\ntrigger: {trigger}\ndescription: {desc}\n---\n{trigger} $1\n"
     );
-    fs::write(&path, contents).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    root.write_atomic(relative, contents)?;
     println!("created snippet {lang}/{name}");
     Ok(())
 }
 
 fn remove_snippet(name: &str, lang: Option<&str>) -> lode_core::Result<()> {
     let path = resolve_snippet_path(name, lang)?;
-    fs::remove_file(&path).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
+    let asset_dir = global_asset_dir("snippets")?;
+    let root = ValidatedRoot::new(&asset_dir)?;
+    let relative = path.strip_prefix(&asset_dir).map_err(|_| {
+        LodeError::Message(format!("snippet path is outside the global root: {path}"))
     })?;
+    root.remove_file(relative)?;
     println!("removed snippet {name}");
     Ok(())
 }
@@ -5464,16 +5458,7 @@ fn insert_snippet(
     if let Some(file) = file {
         let existing = fs::read_to_string(&file).unwrap_or_default();
         let updated = insert_text_at_line(&existing, &snippet.body, line.unwrap_or(usize::MAX));
-        if let Some(parent) = file.parent() {
-            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                path: parent.as_str().into(),
-                source,
-            })?;
-        }
-        fs::write(&file, updated).map_err(|source| LodeError::Io {
-            path: file.as_str().into(),
-            source,
-        })?;
+        write_validated_output(&file, updated)?;
         println!("inserted snippet {name} into {file}");
     } else {
         print!("{}", snippet.body);
@@ -5627,16 +5612,7 @@ fn export_snippets(
     };
 
     if let Some(path) = out {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                path: parent.as_str().into(),
-                source,
-            })?;
-        }
-        fs::write(&path, rendered).map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        write_validated_output(&path, rendered)?;
         println!("exported {} snippets to {path}", snippets.len());
     } else {
         print!("{rendered}");
@@ -5813,6 +5789,8 @@ fn apply_recipe(name: &str, dry_run: bool) -> lode_core::Result<()> {
         println!("recipe {name} has no files");
         return Ok(());
     };
+    let project_dir = current_dir()?;
+    let root = ValidatedRoot::new(&project_dir)?;
 
     for file in files {
         let template = file
@@ -5827,19 +5805,14 @@ fn apply_recipe(name: &str, dry_run: bool) -> lode_core::Result<()> {
             println!("would write {dest} from {template}");
             continue;
         }
-        let destination = Utf8PathBuf::from(dest);
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                path: parent.as_str().into(),
-                source,
-            })?;
+        let relative = safe_relative_path(dest)?;
+        let destination = project_dir.join(&relative);
+        if let Some(parent) = relative.parent() {
+            root.create_dir_all(parent)?;
         }
         let contents = read_template_asset(template)
             .unwrap_or_else(|_| format!("# {dest}\n\nGenerated by recipe {name}.\n"));
-        fs::write(&destination, contents).map_err(|source| LodeError::Io {
-            path: destination.as_str().into(),
-            source,
-        })?;
+        root.write_atomic(relative, contents)?;
         println!("wrote {destination}");
     }
     Ok(())
@@ -8615,28 +8588,28 @@ fn self_command(command: SelfCommand) -> lode_core::Result<()> {
             );
         }
         SelfCommand::Clean { dry_run } => {
+            let root_path = global_dir()?;
+            let root = ValidatedRoot::new(&root_path)?;
             for path in self_clean_targets()? {
                 if dry_run {
                     println!("would clean {path}");
                 } else if path.exists() {
+                    let relative = path.strip_prefix(&root_path).map_err(|_| {
+                        LodeError::Message(format!("clean target is outside global root: {path}"))
+                    })?;
                     if path.is_dir() {
-                        fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
-                            path: path.as_str().into(),
-                            source,
-                        })?;
+                        root.remove_dir_all(relative)?;
                     } else {
-                        fs::remove_file(&path).map_err(|source| LodeError::Io {
-                            path: path.as_str().into(),
-                            source,
-                        })?;
+                        root.remove_file(relative)?;
                     }
                     println!("cleaned {path}");
                 }
             }
         }
         SelfCommand::Uninstall { keep_config } => {
-            let root = global_dir()?;
+            let root_path = global_dir()?;
             if keep_config {
+                let root = ValidatedRoot::new(&root_path)?;
                 for name in [
                     "cache",
                     "logs",
@@ -8647,21 +8620,21 @@ fn self_command(command: SelfCommand) -> lode_core::Result<()> {
                     "recipes",
                     "commands",
                 ] {
-                    let path = root.join(name);
+                    let path = root_path.join(name);
                     if path.exists() {
-                        fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
-                            path: path.as_str().into(),
-                            source,
-                        })?;
+                        root.remove_dir_all(name)?;
                     }
                 }
                 println!("removed generated Lode data; kept config.toml");
-            } else if root.exists() {
-                fs::remove_dir_all(&root).map_err(|source| LodeError::Io {
-                    path: root.as_str().into(),
-                    source,
+            } else if root_path.exists() {
+                let parent = root_path.parent().ok_or_else(|| {
+                    LodeError::Message(format!("global root has no parent: {root_path}"))
                 })?;
-                println!("removed {root}");
+                let name = root_path.file_name().ok_or_else(|| {
+                    LodeError::Message(format!("global root has no directory name: {root_path}"))
+                })?;
+                ValidatedRoot::new(parent)?.remove_dir_all(name)?;
+                println!("removed {root_path}");
             }
         }
     }
@@ -8860,19 +8833,12 @@ fn file_checksum(path: &Utf8PathBuf) -> lode_core::Result<String> {
 }
 
 fn write_upgrade_state(state: &UpgradeState) -> lode_core::Result<()> {
-    let path = upgrade_state_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
+    let root = daemon_global_root()?;
+    root.create_dir_all("cache/upgrade")?;
     let raw = serde_json::to_string_pretty(state)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    root.write_atomic("cache/upgrade/upgrade-state.json", raw)
+        .map(|_| ())
 }
 
 fn read_upgrade_state() -> lode_core::Result<UpgradeState> {
@@ -8892,10 +8858,7 @@ fn rollback_staged_upgrade(dry_run: bool) -> lode_core::Result<()> {
         println!("would remove {path}");
         return Ok(());
     }
-    fs::remove_file(&path).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    daemon_global_root()?.remove_file("cache/upgrade/upgrade-state.json")?;
     println!("upgrade rollback cleared\t{}", state.version);
     Ok(())
 }
@@ -8922,16 +8885,7 @@ fn completions(
             println!("{source}");
             return Ok(());
         }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                path: parent.as_str().into(),
-                source,
-            })?;
-        }
-        fs::write(&path, script).map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        write_validated_output(&path, script)?;
         if install {
             write_completion_install_receipt(shell, &path, &source, &hint)?;
         }
@@ -9084,10 +9038,28 @@ fn completion_install_hint(shell: &str, path: &Utf8PathBuf) -> lode_core::Result
     Ok(hint)
 }
 
-fn completion_receipt_path() -> lode_core::Result<Utf8PathBuf> {
-    Ok(global_dir()?
-        .join("completions")
-        .join("install-receipt.json"))
+fn write_validated_output(path: &Utf8PathBuf, contents: impl AsRef<[u8]>) -> lode_core::Result<()> {
+    let path = if path.is_absolute() {
+        path.clone()
+    } else {
+        current_dir()?.join(path)
+    };
+    let mut root_path = path.parent().ok_or_else(|| {
+        LodeError::Message(format!("output path has no parent directory: {path}"))
+    })?;
+    while !root_path.exists() {
+        root_path = root_path.parent().ok_or_else(|| {
+            LodeError::Message(format!("output path has no existing ancestor: {path}"))
+        })?;
+    }
+    let root = ValidatedRoot::new(root_path)?;
+    let relative = path.strip_prefix(root_path).map_err(|_| {
+        LodeError::Message(format!("output path is outside validated root: {path}"))
+    })?;
+    if let Some(parent) = relative.parent() {
+        root.create_dir_all(parent)?;
+    }
+    root.write_atomic(relative, contents).map(|_| ())
 }
 
 fn write_completion_install_receipt(
@@ -9104,19 +9076,12 @@ fn write_completion_install_receipt(
         source: source.to_string(),
         hint: hint.to_string(),
     };
-    let receipt_path = completion_receipt_path()?;
-    if let Some(parent) = receipt_path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
     let raw = serde_json::to_string_pretty(&receipt)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&receipt_path, raw).map_err(|source| LodeError::Io {
-        path: receipt_path.as_str().into(),
-        source,
-    })
+    let root = daemon_global_root()?;
+    root.create_dir_all("completions")?;
+    root.write_atomic("completions/install-receipt.json", raw)
+        .map(|_| ())
 }
 
 fn serve_dashboard(
@@ -10140,20 +10105,12 @@ fn gha_command(command: &str, name: Option<&str>) -> lode_core::Result<()> {
         }
         "add" => {
             let name = name.unwrap_or("ci-rust");
-            let path = Utf8PathBuf::from(".github")
+            let relative = Utf8PathBuf::from(".github")
                 .join("workflows")
                 .join(format!("{name}.yml"));
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                    path: parent.as_str().into(),
-                    source,
-                })?;
-            }
-            let body = workflow_contents(name);
-            fs::write(&path, body).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            let root = ValidatedRoot::new(current_dir()?)?;
+            root.create_dir_all(".github/workflows")?;
+            root.write_atomic(relative, workflow_contents(name))?;
             println!("added workflow {name}");
         }
         other => {
@@ -10238,19 +10195,12 @@ fn cp_command(command: &str, problem: Option<&str>, lang: Option<&str>) -> lode_
                 "java" => "java",
                 _ => "cpp",
             };
-            let path = Utf8PathBuf::from("problems")
+            let relative = Utf8PathBuf::from("problems")
                 .join(problem)
                 .join(format!("main.{ext}"));
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                    path: parent.as_str().into(),
-                    source,
-                })?;
-            }
-            fs::write(&path, cp_template(ext)).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            let root = ValidatedRoot::new(current_dir()?)?;
+            root.create_dir_all(relative.parent().expect("problem file has parent"))?;
+            root.write_atomic(relative, cp_template(ext))?;
             println!("created competitive problem {problem}");
         }
         "run" | "test" | "stress" => {
@@ -10259,11 +10209,8 @@ fn cp_command(command: &str, problem: Option<&str>, lang: Option<&str>) -> lode_
         }
         "archive" => {
             let contest = problem.unwrap_or("contest");
-            let path = Utf8PathBuf::from("archive").join(contest);
-            fs::create_dir_all(&path).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            ValidatedRoot::new(current_dir()?)?
+                .create_dir_all(Utf8PathBuf::from("archive").join(contest))?;
             println!("archived contest {contest}");
         }
         other => {
