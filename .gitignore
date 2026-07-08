@@ -6,3 +6,6 @@ target/
 LODE_DESIGN_FINAL.md
 Defaults.txt
 TUI_Design_Demo.png
+AGENTS.md
+SECURITY_AUDIT_PROMPT.md
+MASTER_SECURITY_AUDIT_PROMPT.md

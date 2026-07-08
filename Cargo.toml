@@ -2,6 +2,10 @@
 members = [
     "crates/lode-core",
     "crates/lode-cli",
+    "crates/lode-mcp",
+    "crates/lode-daemon",
+    "crates/lode-tui",
+    "crates/lode-lsp",
 ]
 resolver = "2"
 
@@ -25,3 +29,6 @@ tempfile = "3.10"
 thiserror = "1.0"
 toml = "0.8"
 crossterm = "0.28"
+regex = "1"
+tokio = { version = "1", features = ["full"] }
+notify = "6"

@@ -1,0 +1,13 @@
+[package]
+name = "lode-lsp"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+lode-core = { path = "../lode-core" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["io-util", "sync", "rt", "macros"] }
+camino.workspace = true

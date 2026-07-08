@@ -1,0 +1,6 @@
+id = "zed-lode"
+name = "LODE"
+version = "0.1.0"
+schema_version = 1
+authors = ["LODE Contributors"]
+description = "Personal coding preference system for Zed"

@@ -1,0 +1,17 @@
+# LODE Cargo Configuration
+#
+# On Windows with the GNU toolchain, the `cc` crate needs mingw-w64 tools
+# (gcc, dlltool, ar) from MSYS2 to compile native dependencies like
+# parking_lot_core and windows-sys.
+#
+# Install MSYS2 from https://www.msys2.org and ensure the ucrt64 environment
+# is in your PATH, OR switch to the MSVC toolchain:
+#   rustup default stable-x86_64-pc-windows-msvc
+#
+# With MSYS2 ucrt64 installed at C:\msys64, add to PATH before building:
+#   $env:Path = "C:\msys64\ucrt64\bin;$env:Path"
+
+[env]
+# Point cc crate to MSYS2 ucrt64 tools (requires msys2 ucrt64)
+CC_x86_64-pc-windows-gnu = "C:\\msys64\\ucrt64\\bin\\gcc.exe"
+AR_x86_64-pc-windows-gnu = "C:\\msys64\\ucrt64\\bin\\ar.exe"

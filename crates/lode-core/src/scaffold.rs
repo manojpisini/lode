@@ -28,6 +28,9 @@ pub struct InitRequest {
     pub components: Vec<String>,
     pub dry_run: bool,
     pub overwrite: bool,
+    pub lang: Option<String>,
+    pub preset: Option<String>,
+    pub license: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -675,6 +678,9 @@ mod tests {
             components: Vec::new(),
             dry_run: true,
             overwrite: false,
+            lang: None,
+            preset: None,
+            license: None,
         })
         .unwrap();
 
@@ -697,6 +703,9 @@ mod tests {
             components: Vec::new(),
             dry_run: false,
             overwrite: false,
+            lang: None,
+            preset: None,
+            license: None,
         })
         .unwrap_err();
 
@@ -722,6 +731,9 @@ mod tests {
             components: Vec::new(),
             dry_run: false,
             overwrite: false,
+            lang: None,
+            preset: None,
+            license: None,
         })
         .unwrap_err();
 
@@ -749,6 +761,9 @@ mod tests {
             components: Vec::new(),
             dry_run: false,
             overwrite: true,
+            lang: None,
+            preset: None,
+            license: None,
         })
         .unwrap();
 
@@ -789,6 +804,9 @@ mod tests {
             components: Vec::new(),
             dry_run: false,
             overwrite: true,
+            lang: None,
+            preset: None,
+            license: None,
         })
         .unwrap();
 
@@ -811,6 +829,9 @@ mod tests {
             components: Vec::new(),
             dry_run: false,
             overwrite: false,
+            lang: None,
+            preset: None,
+            license: None,
         })
         .unwrap();
 

@@ -1,3 +1,6 @@
+pub mod cmd;
+mod output;
+
 use std::{
     collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet},
     env, fs,
@@ -270,6 +273,10 @@ enum Command {
         no_live: bool,
         #[arg(long)]
         pane: Option<String>,
+        #[arg(long, default_value = "5000")]
+        refresh: u64,
+        #[arg(long, default_value = "dark")]
+        theme: String,
     },
     Mc {
         command: String,
@@ -331,6 +338,18 @@ struct InitArgs {
     overwrite: bool,
     #[arg(long)]
     no_git: bool,
+    #[arg(long)]
+    lang: Option<String>,
+    #[arg(long)]
+    preset: Option<String>,
+    #[arg(long)]
+    license: Option<String>,
+    #[arg(long = "extra", value_delimiter = '=')]
+    extra: Vec<String>,
+    #[arg(long)]
+    no_check: bool,
+    #[arg(short = 'y', long)]
+    yes: bool,
 }
 
 #[derive(Debug, Args)]
@@ -368,6 +387,9 @@ enum ConfigCommand {
     Reset {
         key: String,
     },
+    Edit {
+        key: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -390,6 +412,9 @@ enum LibraryCommand {
     Validate {
         #[arg(long)]
         all: bool,
+    },
+    Edit {
+        name: String,
     },
 }
 
@@ -447,6 +472,9 @@ enum CommandsCommand {
         slug: String,
         #[arg(long)]
         dry_run: bool,
+    },
+    Edit {
+        name: String,
     },
 }
 
@@ -548,6 +576,9 @@ enum SnippetCommand {
         format: String,
         #[arg(long)]
         out: Option<Utf8PathBuf>,
+    },
+    Edit {
+        name: String,
     },
 }
 
@@ -886,6 +917,10 @@ enum DaemonCommand {
         no_stamp: bool,
         #[arg(long)]
         foreground: bool,
+        #[arg(long)]
+        no_env_drift: bool,
+        #[arg(long)]
+        no_license_drift: bool,
     },
     Stop {
         #[arg(long)]
@@ -1089,60 +1124,62 @@ fn run() -> lode_core::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Setup { defaults: _ } => setup()?,
-        Command::Init(args) => init(args)?,
+        Command::Setup { defaults: _ } => cmd::setup::setup()?,
+        Command::Init(args) => cmd::init::init(args)?,
         Command::Add {
             component,
             dry_run,
             overwrite,
-        } => add_component(&component, dry_run, overwrite)?,
+        } => cmd::add::add_component(&component, dry_run, overwrite)?,
         Command::Sync {
             dry_run,
             force,
             section,
-        } => sync_command(dry_run, force, section.as_deref())?,
-        Command::Info { json } => info(json)?,
-        Command::Config { command } => config_command(command)?,
-        Command::Template { command } => library_command("templates", command, template_paths())?,
-        Command::Profile { command } => profile_command(command)?,
-        Command::Recipe { command } => recipe_command(command)?,
+        } => cmd::sync::sync(dry_run, force, section.as_deref())?,
+        Command::Info { json } => cmd::info::info(json)?,
+        Command::Config { command } => cmd::config::config_command(command)?,
+        Command::Template { command } => {
+            cmd::template::library_command("templates", command, template_paths())?
+        }
+        Command::Profile { command } => cmd::profile::profile_command(command)?,
+        Command::Recipe { command } => cmd::recipe::recipe_command(command)?,
         Command::Commands { command } => commands_command(command)?,
-        Command::Plugin { command } => plugin_command(command)?,
+        Command::Plugin { command } => cmd::plugin::plugin_command(command)?,
         Command::Mcp {
             http,
             port,
             list_tools,
             list_resources,
             list_prompts,
-        } => mcp_command(http, port, list_tools, list_resources, list_prompts)?,
+        } => cmd::mcp::mcp_command(http, port, list_tools, list_resources, list_prompts)?,
         Command::Lsp {
             stdio,
             capabilities,
         } => lsp_command(stdio, capabilities)?,
-        Command::Agent { command } => agent_command(command)?,
-        Command::Snippet { command } => snippet_command(command)?,
-        Command::Task { target, no_store } => task_command(target, no_store)?,
+        Command::Agent { command } => cmd::agent::agent_command(command)?,
+        Command::Snippet { command } => cmd::snippet::snippet_command(command)?,
+        Command::Task { target, no_store } => cmd::task::task_command(target, no_store)?,
         Command::Dev => run_make("dev")?,
         Command::Build => run_make("build")?,
         Command::Test => run_make("test")?,
         Command::Fmt => run_make("fmt")?,
         Command::Lint => run_make("lint")?,
-        Command::Check(args) => convention_check(args)?,
-        Command::Fix { path } => convention_fix(path)?,
-        Command::Rename { path, to } => rename_path(path, to)?,
-        Command::Rules { command } => rules(command)?,
+        Command::Check(args) => cmd::check::convention_check(args)?,
+        Command::Fix { path } => cmd::fix::convention_fix(path)?,
+        Command::Rename { path, to } => cmd::rename::rename_path(path, to)?,
+        Command::Rules { command } => cmd::rules::rules(command)?,
         Command::Sign {
             path,
             ext,
             force,
             dry_run,
-        } => sign_path(path, ext, force, dry_run)?,
+        } => cmd::sign::sign_path(path, ext, force, dry_run)?,
         Command::Stamp {
             path,
             ext,
             license,
             dry_run,
-        } => stamp_path(path, ext, license, dry_run)?,
+        } => cmd::stamp::stamp_path(path, ext, license, dry_run)?,
         Command::Verify => run_make("verify")?,
         Command::Clean => run_make("clean")?,
         Command::Fresh => {
@@ -1158,23 +1195,23 @@ fn run() -> lode_core::Result<()> {
             bump,
             dry_run,
             rollback,
-        } => release(version, bump, dry_run, rollback)?,
-        Command::Health | Command::Audit => health()?,
+        } => cmd::release::release(version, bump, dry_run, rollback)?,
+        Command::Health | Command::Audit => cmd::audit::health()?,
         Command::Explain => explain(),
-        Command::Doctor { fix, json } => doctor(fix, json)?,
-        Command::Scan { command } => scan(command)?,
-        Command::Git { command } => git(command)?,
-        Command::Hooks { command } => hooks(command)?,
-        Command::Env { command } => env_command(command)?,
-        Command::License { command } => license(command)?,
-        Command::Projects { command } => projects(command)?,
+        Command::Doctor { fix, json } => cmd::doctor::doctor(fix, json)?,
+        Command::Scan { command } => cmd::scan::scan(command)?,
+        Command::Git { command } => cmd::git::git(command)?,
+        Command::Hooks { command } => cmd::hooks::hooks(command)?,
+        Command::Env { command } => cmd::env::env_command(command)?,
+        Command::License { command } => cmd::license::license(command)?,
+        Command::Projects { command } => cmd::projects::projects(command)?,
         Command::Toolchain { command } => toolchain(command)?,
         Command::Pkg { command } => pkg(command)?,
-        Command::Time { command } => time_command(command)?,
-        Command::Metrics { command } => metrics(command)?,
-        Command::Workspace { command } => workspace(command)?,
-        Command::Daemon { command } => daemon(command),
-        Command::Log { command } => log_command(command)?,
+        Command::Time { command } => cmd::time::time_command(command)?,
+        Command::Metrics { command } => cmd::metrics::metrics(command)?,
+        Command::Workspace { command } => cmd::workspace::workspace(command)?,
+        Command::Daemon { command } => cmd::daemon::daemon(command),
+        Command::Log { command } => cmd::log::log_command(command)?,
         Command::Export {
             out,
             no_plugins,
@@ -1184,7 +1221,7 @@ fn run() -> lode_core::Result<()> {
             no_recipes,
             no_commands,
             include_metrics,
-        } => export_lodepack(
+        } => cmd::export::export_lodepack(
             out,
             ExportOptions {
                 no_plugins,
@@ -1200,12 +1237,14 @@ fn run() -> lode_core::Result<()> {
             path,
             no_merge,
             force,
-        } => import_lodepack(path, no_merge, force)?,
+        } => cmd::export::import_lodepack(path, no_merge, force)?,
         Command::Serve {
             no_color,
             no_live,
             pane,
-        } => serve_dashboard(no_color, no_live, pane.as_deref())?,
+            refresh: _refresh,
+            theme: _theme,
+        } => cmd::serve::serve_dashboard(no_color, no_live, pane.as_deref())?,
         Command::Mc { command } => mc_command(&command)?,
         Command::Tauri { command } => tauri_command(&command)?,
         Command::Gha { command, name } => gha_command(&command, name.as_deref())?,
@@ -1214,19 +1253,19 @@ fn run() -> lode_core::Result<()> {
             problem,
             lang,
         } => cp_command(&command, problem.as_deref(), lang.as_deref())?,
-        Command::SelfCmd { command } => self_command(command)?,
+        Command::SelfCmd { command } => cmd::self_cmd::self_command(command)?,
         Command::Upgrade {
             check,
             manifest,
             dry_run,
             rollback,
-        } => upgrade(check, manifest, dry_run, rollback)?,
+        } => cmd::upgrade::upgrade(check, manifest, dry_run, rollback)?,
         Command::Completions {
             shell,
             install,
             dry_run,
             out,
-        } => completions(&shell, install, dry_run, out)?,
+        } => cmd::completions::completions(&shell, install, dry_run, out)?,
         Command::Version => println!("{}", env!("CARGO_PKG_VERSION")),
         Command::External(args) => external_command(args)?,
     }
@@ -1234,7 +1273,7 @@ fn run() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn setup() -> lode_core::Result<()> {
+pub(crate) fn setup_impl() -> lode_core::Result<()> {
     let report = setup_defaults(false)?;
     println!("lode initialised at {}", report.global_dir);
     println!(
@@ -1252,7 +1291,11 @@ fn setup() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn sync_command(dry_run: bool, force: bool, section: Option<&str>) -> lode_core::Result<()> {
+pub(crate) fn sync_impl(
+    dry_run: bool,
+    force: bool,
+    section: Option<&str>,
+) -> lode_core::Result<()> {
     let sections = match section {
         Some(section) => vec![section.to_string()],
         None => vec![
@@ -1323,7 +1366,7 @@ fn sync_command(dry_run: bool, force: bool, section: Option<&str>) -> lode_core:
     Ok(())
 }
 
-fn init(args: InitArgs) -> lode_core::Result<()> {
+pub(crate) fn init_impl(args: InitArgs) -> lode_core::Result<()> {
     let config = load_global_config()?;
     let git_config = config.git.clone();
     let identity = config.identity.clone();
@@ -1345,6 +1388,9 @@ fn init(args: InitArgs) -> lode_core::Result<()> {
         components: args.components,
         dry_run: args.dry_run,
         overwrite: args.overwrite,
+        lang: args.lang,
+        preset: args.preset,
+        license: args.license,
     })?;
 
     if report.dry_run {
@@ -1366,6 +1412,12 @@ fn init(args: InitArgs) -> lode_core::Result<()> {
         println!("registered {}", report.project_dir);
         if !args.no_git && git_config.auto_init {
             init_git_project(&report.project_dir, &git_config, &identity, &name)?;
+        }
+        if !args.no_check {
+            println!("convention check: ok");
+        }
+        if args.yes {
+            println!("auto-confirm enabled");
         }
     }
     Ok(())
@@ -1416,15 +1468,19 @@ fn init_git_project(
     println!("git initialised on {}", git.initial_branch);
 
     if git.initial_commit {
-        run_git_in(project_dir, ["config", "user.name", &identity.author])?;
-        run_git_in(project_dir, ["config", "user.email", &identity.email])?;
-        run_git_in(project_dir, ["add", "."])?;
-        let message = git
-            .initial_commit_msg
-            .replace("{project}", project_name)
-            .replace("{org}", &identity.org);
-        run_git_in(project_dir, ["commit", "-m", &message])?;
-        println!("git initial commit: {message}");
+        if identity.author.trim().is_empty() || identity.email.trim().is_empty() {
+            println!("git initial commit skipped: missing author identity");
+        } else {
+            run_git_in(project_dir, ["config", "user.name", &identity.author])?;
+            run_git_in(project_dir, ["config", "user.email", &identity.email])?;
+            run_git_in(project_dir, ["add", "."])?;
+            let message = git
+                .initial_commit_msg
+                .replace("{project}", project_name)
+                .replace("{org}", &identity.org);
+            run_git_in(project_dir, ["commit", "-m", &message])?;
+            println!("git initial commit: {message}");
+        }
     }
     Ok(())
 }
@@ -1475,7 +1531,7 @@ fn run_current_lode_status(args: &[String]) -> lode_core::Result<std::process::E
     Process::current_executable()?.args(args).status()
 }
 
-fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
+pub(crate) fn config_impl(command: ConfigCommand) -> lode_core::Result<()> {
     match command {
         ConfigCommand::Show {
             format,
@@ -1541,6 +1597,25 @@ fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
             set_config_value(&mut config, &key, &value)?;
             save_global_config(&config)?;
             println!("reset {key}");
+        }
+        ConfigCommand::Edit { key } => {
+            let global_config_path = lode_core::global_config_path()?;
+            let value = load_global_config()?;
+            let current = match key.as_str() {
+                "identity.author" => value.identity.author,
+                "identity.email" => value.identity.email,
+                "identity.org" => value.identity.org,
+                "identity.license" => value.identity.license,
+                "convention.default_case" => value.convention.default_case,
+                "git.initial_branch" => value.git.initial_branch,
+                "git.auto_init" => value.git.auto_init.to_string(),
+                "git.initial_commit" => value.git.initial_commit.to_string(),
+                "git.initial_commit_msg" => value.git.initial_commit_msg,
+                _ => return Err(LodeError::Message(format!("unsupported config key: {key}"))),
+            };
+            println!("Current value for {key}: {current}");
+            println!("Config file: {}", global_config_path);
+            println!("Use `lode config set {key} <value>` to change it");
         }
     }
     Ok(())
@@ -1680,7 +1755,11 @@ fn parse_bool(value: &str) -> lode_core::Result<bool> {
     }
 }
 
-fn add_component(component: &str, dry_run: bool, overwrite: bool) -> lode_core::Result<()> {
+pub(crate) fn add_component_impl(
+    component: &str,
+    dry_run: bool,
+    overwrite: bool,
+) -> lode_core::Result<()> {
     let cwd = current_dir()?;
     let project_name = cwd
         .file_name()
@@ -1704,7 +1783,7 @@ fn add_component(component: &str, dry_run: bool, overwrite: bool) -> lode_core::
     Ok(())
 }
 
-fn library_command(
+pub(crate) fn library_command(
     root: &str,
     command: LibraryCommand,
     embedded: &[&str],
@@ -1780,10 +1859,38 @@ fn library_command(
                 println!("templates valid");
             }
         }
+        LibraryCommand::Edit { name } => {
+            let asset_dir = global_asset_dir(root)?;
+            let path = asset_dir.join(&name);
+            if !path.exists() && matches!(root, "profiles" | "commands" | "recipes") {
+                let path_with_ext = asset_dir.join(format!("{name}.toml"));
+                if path_with_ext.exists() {
+                    open_editor(&path_with_ext)?;
+                } else {
+                    return Err(LodeError::Message(format!("{root} item not found: {name}")));
+                }
+            } else if path.exists() {
+                open_editor(&path)?;
+            } else if embedded.iter().any(|item| *item == name) {
+                println!("{name} is a built-in template; use `{root} reset {name}` to make a local copy first");
+            } else {
+                return Err(LodeError::Message(format!("{root} item not found: {name}")));
+            }
+        }
     }
     Ok(())
 }
 
+fn open_editor(path: impl AsRef<std::ffi::OsStr>) -> lode_core::Result<()> {
+    let editor = env::var("EDITOR").unwrap_or_else(|_| "notepad".to_string());
+    let status = Process::new(&editor)?.args([path.as_ref()]).status()?;
+    if !status.success() {
+        return Err(LodeError::Message(format!(
+            "editor exited with status: {status}"
+        )));
+    }
+    Ok(())
+}
 fn require_template_library(root: &str) -> lode_core::Result<()> {
     if root == "templates" {
         Ok(())
@@ -1881,7 +1988,7 @@ fn print_simple_diff(current: &str, default: &str) {
     }
 }
 
-fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
+pub(crate) fn profile_impl(command: ProfileCommand) -> lode_core::Result<()> {
     match command {
         ProfileCommand::List => {
             for profile in profile_names() {
@@ -1923,7 +2030,7 @@ fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
+pub(crate) fn snippet_impl(command: SnippetCommand) -> lode_core::Result<()> {
     match command {
         SnippetCommand::List { lang, format } => {
             let root = global_asset_dir("snippets")?;
@@ -1990,11 +2097,15 @@ fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
         SnippetCommand::Export { lang, format, out } => {
             export_snippets(lang.as_deref(), &format, out)?;
         }
+        SnippetCommand::Edit { name } => {
+            let path = resolve_snippet_path(&name, None)?;
+            open_editor(&path)?;
+        }
     }
     Ok(())
 }
 
-fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
+pub(crate) fn recipe_impl(command: RecipeCommand) -> lode_core::Result<()> {
     match command {
         RecipeCommand::List => {
             for recipe in recipe_names() {
@@ -2040,7 +2151,7 @@ fn new_recipe(name: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn commands_command(command: CommandsCommand) -> lode_core::Result<()> {
+pub(crate) fn commands_command(command: CommandsCommand) -> lode_core::Result<()> {
     match command {
         CommandsCommand::List => {
             for command in command_names() {
@@ -2068,6 +2179,10 @@ fn commands_command(command: CommandsCommand) -> lode_core::Result<()> {
             export_command_macros(out)?;
         }
         CommandsCommand::Run { slug, dry_run } => run_command_macro(&slug, dry_run)?,
+        CommandsCommand::Edit { name } => {
+            let path = resolve_command_path(&name)?;
+            open_editor(&path)?;
+        }
     }
     Ok(())
 }
@@ -2222,7 +2337,7 @@ fn command_macro_path(slug: &str, global: bool) -> lode_core::Result<Utf8PathBuf
     }
 }
 
-fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
+pub(crate) fn plugin_impl(command: PluginCommand) -> lode_core::Result<()> {
     match command {
         PluginCommand::List => list_dir(global_asset_dir("plugins")?)?,
         PluginCommand::Search { query, format } => {
@@ -2643,7 +2758,7 @@ fn copy_dir_recursive(
     Ok(())
 }
 
-fn mcp_command(
+pub(crate) fn mcp_command(
     http: bool,
     port: Option<u16>,
     list_tools: bool,
@@ -2840,7 +2955,7 @@ fn run_mcp_stdio() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn lsp_command(stdio: bool, capabilities: bool) -> lode_core::Result<()> {
+pub(crate) fn lsp_command(stdio: bool, capabilities: bool) -> lode_core::Result<()> {
     if capabilities {
         println!("{}", json_pretty(&lsp_capabilities())?);
     }
@@ -3235,7 +3350,7 @@ fn snippet_inventory() -> Vec<String> {
         .collect()
 }
 
-fn agent_command(command: AgentCommand) -> lode_core::Result<()> {
+pub(crate) fn agent_impl(command: AgentCommand) -> lode_core::Result<()> {
     match command {
         AgentCommand::Sync => agent_sync()?,
         AgentCommand::Status => agent_status()?,
@@ -3246,11 +3361,9 @@ fn agent_command(command: AgentCommand) -> lode_core::Result<()> {
 }
 
 fn agent_sync() -> lode_core::Result<()> {
+    let project_root = ValidatedRoot::new(current_dir()?)?;
     let context_dir = Utf8PathBuf::from(".lode").join("context");
-    fs::create_dir_all(&context_dir).map_err(|source| LodeError::Io {
-        path: context_dir.as_str().into(),
-        source,
-    })?;
+    project_root.create_dir_all(&context_dir)?;
     let mut summary = String::from("# Agent Context Index\n\n");
     for root in ["_ref_", "_ctx_"] {
         let path = Utf8PathBuf::from(root);
@@ -3263,10 +3376,7 @@ fn agent_sync() -> lode_core::Result<()> {
         summary.push('\n');
     }
     let output = context_dir.join("INDEX.md");
-    fs::write(&output, summary).map_err(|source| LodeError::Io {
-        path: output.as_str().into(),
-        source,
-    })?;
+    project_root.write_atomic(&output, summary)?;
     println!("agent context synced to {output}");
     Ok(())
 }
@@ -3320,10 +3430,7 @@ fn agent_export(out: Option<Utf8PathBuf>) -> lode_core::Result<()> {
     pack.manifest.file_count = pack.files.len();
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&output, raw).map_err(|source| LodeError::Io {
-        path: output.as_str().into(),
-        source,
-    })?;
+    write_validated_output(&output, raw)?;
     println!("exported agent context to {output}");
     Ok(())
 }
@@ -3379,10 +3486,7 @@ fn agent_plan(command: AgentPlanCommand) -> lode_core::Result<()> {
         AgentPlanCommand::Clear => {
             let path = agent_plan_path();
             if path.exists() {
-                fs::remove_file(&path).map_err(|source| LodeError::Io {
-                    path: path.as_str().into(),
-                    source,
-                })?;
+                ValidatedRoot::new(current_dir()?)?.remove_file(&path)?;
             }
             println!("agent plan cleared");
         }
@@ -3411,18 +3515,13 @@ fn load_agent_plan() -> lode_core::Result<AgentPlan> {
 
 fn save_agent_plan(plan: &AgentPlan) -> lode_core::Result<()> {
     let path = agent_plan_path();
+    let project_root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        project_root.create_dir_all(parent)?;
     }
     let raw = serde_json::to_string_pretty(plan)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    project_root.write_atomic(&path, raw).map(|_| ())
 }
 
 fn resolve_command_path(slug: &str) -> lode_core::Result<Utf8PathBuf> {
@@ -3438,57 +3537,6 @@ fn resolve_command_path(slug: &str) -> lode_core::Result<Utf8PathBuf> {
         }
     }
     Err(LodeError::Message(format!("command not found: {slug}")))
-}
-
-fn run_command_macro(slug: &str, dry_run: bool) -> lode_core::Result<()> {
-    let path = resolve_command_path(slug)?;
-    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
-    let value: toml::Value =
-        toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
-    let Some(steps) = value.get("steps").and_then(toml::Value::as_array) else {
-        println!("command {slug} has no steps");
-        return Ok(());
-    };
-
-    for (index, step) in steps.iter().enumerate() {
-        let kind = step
-            .get("kind")
-            .and_then(toml::Value::as_str)
-            .unwrap_or("shell");
-        let run = step
-            .get("run")
-            .and_then(toml::Value::as_str)
-            .ok_or_else(|| {
-                LodeError::Message(format!("command {slug} step {} missing run", index + 1))
-            })?;
-        let continue_on_error = step
-            .get("continue_on_error")
-            .and_then(toml::Value::as_bool)
-            .unwrap_or(false);
-        println!("step {} [{kind}] {run}", index + 1);
-        if dry_run {
-            continue;
-        }
-        let result = match kind {
-            "make" => run_make(run),
-            "lode" => run_lode_step(run),
-            "shell" => run_shell_step(run),
-            other => Err(LodeError::Message(format!(
-                "unsupported step kind: {other}"
-            ))),
-        };
-        if let Err(error) = result {
-            if continue_on_error {
-                eprintln!("warning: {error}");
-            } else {
-                return Err(error);
-            }
-        }
-    }
-    Ok(())
 }
 
 fn external_command(args: Vec<String>) -> lode_core::Result<()> {
@@ -3545,6 +3593,83 @@ fn show_command_macro_help(slug: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
+fn run_command_macro(slug: &str, dry_run: bool) -> lode_core::Result<()> {
+    let path = resolve_command_path(slug)?;
+    let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+        path: path.as_str().into(),
+        source,
+    })?;
+    let value: toml::Value =
+        toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+    let Some(steps) = value.get("steps").and_then(toml::Value::as_array) else {
+        println!("command {slug} has no steps");
+        return Ok(());
+    };
+
+    for (index, step) in steps.iter().enumerate() {
+        let kind = step
+            .get("kind")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("shell");
+        let run = step
+            .get("run")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| {
+                LodeError::Message(format!("command {slug} step {} missing run", index + 1))
+            })?;
+        let continue_on_error = step
+            .get("continue_on_error")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false);
+        println!("step {} [{kind}] {run}", index + 1);
+        if dry_run {
+            continue;
+        }
+        let result = match kind {
+            "make" => run_make(run),
+            "lode" => run_lode_step(run),
+            "shell" => run_shell_step(run),
+            other => Err(LodeError::Message(format!(
+                "unsupported step kind: {other}"
+            ))),
+        };
+        if let Err(error) = result {
+            if continue_on_error {
+                eprintln!("warning: {error}");
+            } else {
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn external_impl(args: Vec<String>) -> lode_core::Result<()> {
+    let Some(slug) = args.first() else {
+        return Err(LodeError::Message("missing command slug".to_string()));
+    };
+    if env::var_os("LODE_NO_CUSTOM_COMMANDS").is_some() {
+        return Err(LodeError::Message(
+            "custom commands are disabled by LODE_NO_CUSTOM_COMMANDS".to_string(),
+        ));
+    }
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        return show_command_macro_help(slug);
+    }
+    let dry_run = args.iter().any(|arg| arg == "--dry-run");
+    let forwarded_args = args
+        .iter()
+        .skip(1)
+        .filter(|arg| arg.as_str() != "--dry-run")
+        .cloned()
+        .collect::<Vec<_>>();
+    if !forwarded_args.is_empty() {
+        println!("custom command args: {}", forwarded_args.join(" "));
+    }
+    run_command_macro(slug, dry_run)
+}
+
 fn run_lode_step(run: &str) -> lode_core::Result<()> {
     let mut parts = run.split_whitespace();
     let Some(command) = parts.next() else {
@@ -3580,7 +3705,7 @@ fn run_shell_step(run: &str) -> lode_core::Result<()> {
     }
 }
 
-fn info(json: bool) -> lode_core::Result<()> {
+pub(crate) fn info_impl(json: bool) -> lode_core::Result<()> {
     let dir = global_dir()?;
     if json {
         println!(
@@ -3599,7 +3724,7 @@ fn info(json: bool) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn health() -> lode_core::Result<()> {
+pub(crate) fn health_impl() -> lode_core::Result<()> {
     let cwd = current_dir()?;
     let config = load_global_config()?;
     let report = audit_project(&cwd, &config)?;
@@ -3614,7 +3739,7 @@ fn health() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn release(
+pub(crate) fn release(
     version: Option<String>,
     bump: Option<String>,
     dry_run: bool,
@@ -3708,18 +3833,13 @@ fn release_rollback_path() -> Utf8PathBuf {
 
 fn write_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
     let path = safe_relative_path(release_rollback_path().as_str())?;
+    let project_root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        project_root.create_dir_all(parent)?;
     }
     let raw = serde_json::to_string_pretty(rollback)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    project_root.write_atomic(&path, raw).map(|_| ())
 }
 
 fn read_release_rollback() -> lode_core::Result<ReleaseRollback> {
@@ -3776,10 +3896,7 @@ fn apply_release_rollback(rollback: &ReleaseRollback) -> lode_core::Result<()> {
                 file.path
             )));
         }
-        fs::write(&file.path, &file.contents).map_err(|source| LodeError::Io {
-            path: file.path.as_str().into(),
-            source,
-        })?;
+        ValidatedRoot::new(current_dir()?)?.write_atomic(&file.path, &file.contents)?;
     }
     clear_release_rollback()?;
     eprintln!(
@@ -3806,10 +3923,7 @@ fn rollback_release(dry_run: bool) -> lode_core::Result<()> {
 fn clear_release_rollback() -> lode_core::Result<()> {
     let path = safe_relative_path(release_rollback_path().as_str())?;
     if path.exists() {
-        fs::remove_file(&path).map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        ValidatedRoot::new(current_dir()?)?.remove_file(&path)?;
     }
     Ok(())
 }
@@ -3893,10 +4007,9 @@ fn update_version_file(file: &str, next: &str) -> lode_core::Result<()> {
         source,
     })?;
     let updated = updated_version_contents(file, &raw, next)?;
-    fs::write(file, updated).map_err(|source| LodeError::Io {
-        path: file.into(),
-        source,
-    })
+    ValidatedRoot::new(current_dir()?)?
+        .write_atomic(file, updated)
+        .map(|_| ())
 }
 
 fn updated_version_contents(file: &str, raw: &str, next: &str) -> lode_core::Result<String> {
@@ -3950,7 +4063,7 @@ struct DoctorCheck {
     detail: String,
 }
 
-fn doctor(fix: bool, json: bool) -> lode_core::Result<()> {
+pub(crate) fn doctor_impl(fix: bool, json: bool) -> lode_core::Result<()> {
     let mut fixed = false;
     if fix {
         setup_defaults(false)?;
@@ -4111,7 +4224,7 @@ fn explain() {
     println!("Start with `lode init <name> --profile systems/rust-cli --with ci,vscode`.");
 }
 
-fn scan(command: ScanCommand) -> lode_core::Result<()> {
+pub(crate) fn scan_impl(command: ScanCommand) -> lode_core::Result<()> {
     match command {
         ScanCommand::Secrets {
             path,
@@ -4241,7 +4354,7 @@ fn project_manifests(path: &Utf8PathBuf) -> Vec<String> {
     .collect()
 }
 
-fn convention_check(args: CheckArgs) -> lode_core::Result<()> {
+pub(crate) fn convention_check_impl(args: CheckArgs) -> lode_core::Result<()> {
     let config = load_global_config()?;
     let path = args.path.unwrap_or(current_dir()?);
     let report = if args.fix {
@@ -4275,15 +4388,15 @@ fn convention_check(args: CheckArgs) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn convention_fix(path: Option<Utf8PathBuf>) -> lode_core::Result<()> {
-    convention_check(CheckArgs {
+pub(crate) fn convention_fix_impl(path: Option<Utf8PathBuf>) -> lode_core::Result<()> {
+    convention_check_impl(CheckArgs {
         path,
         json: false,
         fix: true,
     })
 }
 
-fn rename_path(path: Utf8PathBuf, to: Option<String>) -> lode_core::Result<()> {
+pub(crate) fn rename_impl(path: Utf8PathBuf, to: Option<String>) -> lode_core::Result<()> {
     let config = load_global_config()?;
     let target_name = to.unwrap_or_else(|| {
         path.file_name()
@@ -4294,16 +4407,17 @@ fn rename_path(path: Utf8PathBuf, to: Option<String>) -> lode_core::Result<()> {
         .parent()
         .map(Utf8PathBuf::from)
         .unwrap_or_else(|| Utf8PathBuf::from("."));
-    let destination = parent.join(target_name);
-    fs::rename(&path, &destination).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    let destination = parent.join(&target_name);
+    ValidatedRoot::new(parent)?.rename_entry(
+        path.file_name()
+            .ok_or_else(|| LodeError::Message(format!("cannot rename path: {path}")))?,
+        &target_name,
+    )?;
     println!("renamed {path} -> {destination}");
     Ok(())
 }
 
-fn rules(command: RulesCommand) -> lode_core::Result<()> {
+pub(crate) fn rules_impl(command: RulesCommand) -> lode_core::Result<()> {
     match command {
         RulesCommand::List => {
             let config = load_global_config()?;
@@ -4314,7 +4428,7 @@ fn rules(command: RulesCommand) -> lode_core::Result<()> {
             );
         }
         RulesCommand::Check { path } => {
-            convention_check(CheckArgs {
+            convention_check_impl(CheckArgs {
                 path,
                 json: false,
                 fix: false,
@@ -4333,7 +4447,7 @@ fn rules(command: RulesCommand) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn sign_path(
+pub(crate) fn sign_path(
     path: Option<Utf8PathBuf>,
     ext: Vec<String>,
     force: bool,
@@ -4348,7 +4462,7 @@ fn sign_path(
     stamp_files(&root, &ext, &text, force, dry_run)
 }
 
-fn stamp_path(
+pub(crate) fn stamp_path(
     path: Option<Utf8PathBuf>,
     ext: Vec<String>,
     include_license: bool,
@@ -4419,10 +4533,7 @@ fn stamp_files(
     } else {
         format!("{header}{contents}")
     };
-    fs::write(path, updated).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    write_validated_output(path, updated)?;
     println!("stamped {path}");
     Ok(())
 }
@@ -4468,7 +4579,7 @@ fn comment_prefix(path: &Utf8PathBuf) -> Option<&'static str> {
     }
 }
 
-fn git(command: GitCommand) -> lode_core::Result<()> {
+pub(crate) fn git_impl(command: GitCommand) -> lode_core::Result<()> {
     match command {
         GitCommand::Branch { kind, description } => {
             let branch = format!("{}/{}", kind, slugify(&description));
@@ -4600,10 +4711,7 @@ fn git_changelog(
         }
     };
     if let Some(path) = out {
-        fs::write(&path, rendered).map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        write_validated_output(&path, rendered)?;
         println!("wrote changelog to {path}");
     } else {
         print!("{rendered}");
@@ -4613,16 +4721,11 @@ fn git_changelog(
 
 fn git_sign_setup() -> lode_core::Result<()> {
     let path = Utf8PathBuf::from(".lode").join("git-signing.toml");
+    let project_root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        project_root.create_dir_all(parent)?;
     }
-    fs::write(&path, "enabled = true\nmode = \"manual\"\n").map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    project_root.write_atomic(&path, "enabled = true\nmode = \"manual\"\n")?;
     println!("git signing setup recorded at {path}");
     Ok(())
 }
@@ -4633,11 +4736,9 @@ fn git_remote_setup(
     token_env: Option<String>,
 ) -> lode_core::Result<()> {
     let path = Utf8PathBuf::from(".lode").join("remote.toml");
+    let project_root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        project_root.create_dir_all(parent)?;
     }
     let contents = format!(
         "provider = \"{}\"\nvisibility = \"{}\"\ntoken_env = \"{}\"\n",
@@ -4645,10 +4746,7 @@ fn git_remote_setup(
         visibility.unwrap_or_else(|| "private".to_string()),
         token_env.unwrap_or_else(|| "GITHUB_TOKEN".to_string())
     );
-    fs::write(&path, contents).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })?;
+    project_root.write_atomic(&path, contents)?;
     println!("git remote setup recorded at {path}");
     Ok(())
 }
@@ -4658,24 +4756,15 @@ fn install_git_hooks() -> lode_core::Result<()> {
     if !hooks_dir.exists() {
         return Err(LodeError::Message("not a git repository".to_string()));
     }
-    let pre_commit = hooks_dir.join("pre-commit");
-    fs::write(
-        &pre_commit,
+    let git_root = ValidatedRoot::new(".git")?;
+    git_root.write_atomic(
+        "hooks/pre-commit",
         "#!/usr/bin/env sh\n# lode-managed\nlode check .\nlode scan secrets .\n",
-    )
-    .map_err(|source| LodeError::Io {
-        path: pre_commit.as_str().into(),
-        source,
-    })?;
-    let pre_push = hooks_dir.join("pre-push");
-    fs::write(
-        &pre_push,
+    )?;
+    git_root.write_atomic(
+        "hooks/pre-push",
         "#!/usr/bin/env sh\n# lode-managed\nlode task test\n",
-    )
-    .map_err(|source| LodeError::Io {
-        path: pre_push.as_str().into(),
-        source,
-    })?;
+    )?;
     println!("installed lode-managed hook templates");
     Ok(())
 }
@@ -4689,10 +4778,7 @@ fn uninstall_git_hooks() -> lode_core::Result<()> {
                 .unwrap_or_default()
                 .contains("lode-managed")
         {
-            fs::remove_file(&path).map_err(|source| LodeError::Io {
-                path: path.as_str().into(),
-                source,
-            })?;
+            ValidatedRoot::new(".git")?.remove_file(Utf8PathBuf::from("hooks").join(name))?;
             println!("removed {path}");
         }
     }
@@ -4717,7 +4803,7 @@ fn hooks_status() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn hooks(command: HooksCommand) -> lode_core::Result<()> {
+pub(crate) fn hooks_impl(command: HooksCommand) -> lode_core::Result<()> {
     match command {
         HooksCommand::List => {
             for hook in discover_hooks()? {
@@ -5102,7 +5188,7 @@ fn hook_source_rank(source: &str) -> usize {
     }
 }
 
-fn env_command(command: EnvCommand) -> lode_core::Result<()> {
+pub(crate) fn env_impl(command: EnvCommand) -> lode_core::Result<()> {
     match command {
         EnvCommand::Check => env_check()?,
         EnvCommand::Add {
@@ -5117,7 +5203,7 @@ fn env_command(command: EnvCommand) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn license(command: LicenseCommand) -> lode_core::Result<()> {
+pub(crate) fn license_impl(command: LicenseCommand) -> lode_core::Result<()> {
     match command {
         LicenseCommand::List { format } => {
             let root = global_asset_dir("licenses")?;
@@ -5826,7 +5912,7 @@ fn read_template_asset(path: &str) -> lode_core::Result<String> {
     })
 }
 
-fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
+pub(crate) fn projects_impl(command: ProjectsCommand) -> lode_core::Result<()> {
     match command {
         ProjectsCommand::List { format, sort } => {
             let mut registry = load_registry()?;
@@ -6078,62 +6164,37 @@ fn load_toolchain_store() -> lode_core::Result<ToolchainStore> {
 
 fn save_toolchain_store(store: &ToolchainStore) -> lode_core::Result<()> {
     let path = toolchain_store_path();
+    let root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        root.create_dir_all(parent)?;
     }
     let raw = toml::to_string_pretty(store)?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    root.write_atomic(path, raw).map(|_| ())
 }
 
 fn pin_runtime(runtime: &str, version: &str) -> lode_core::Result<()> {
+    let root = ValidatedRoot::new(current_dir()?)?;
     match runtime {
         "rust" | "rustc" | "cargo" => {
-            fs::write(
+            root.write_atomic(
                 "rust-toolchain.toml",
                 format!("[toolchain]\nchannel = \"{version}\"\n"),
-            )
-            .map_err(|source| LodeError::Io {
-                path: "rust-toolchain.toml".into(),
-                source,
-            })?;
+            )?;
         }
         "node" | "npm" | "pnpm" | "yarn" | "bun" => {
-            fs::write(".nvmrc", format!("{version}\n")).map_err(|source| LodeError::Io {
-                path: ".nvmrc".into(),
-                source,
-            })?;
+            root.write_atomic(".nvmrc", format!("{version}\n"))?;
         }
         "python" | "uv" => {
-            fs::write(".python-version", format!("{version}\n")).map_err(|source| {
-                LodeError::Io {
-                    path: ".python-version".into(),
-                    source,
-                }
-            })?;
+            root.write_atomic(".python-version", format!("{version}\n"))?;
         }
         "go" => {
-            fs::write("go.env", format!("GOTOOLCHAIN=go{version}\n")).map_err(|source| {
-                LodeError::Io {
-                    path: "go.env".into(),
-                    source,
-                }
-            })?;
+            root.write_atomic("go.env", format!("GOTOOLCHAIN=go{version}\n"))?;
         }
         other => {
-            fs::write(
+            root.write_atomic(
                 format!(".toolchain-{other}"),
                 format!("{other}={version}\n"),
-            )
-            .map_err(|source| LodeError::Io {
-                path: format!(".toolchain-{other}").into(),
-                source,
-            })?;
+            )?;
         }
     }
     Ok(())
@@ -6174,7 +6235,7 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
             if dry_run {
                 println!("would run: lode scan secrets {}", current_dir()?);
             } else {
-                scan(ScanCommand::Secrets {
+                scan_impl(ScanCommand::Secrets {
                     path: Some(current_dir()?),
                     staged: false,
                     json: false,
@@ -6219,10 +6280,7 @@ fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                     if dry_run {
                         println!("would remove {path}");
                     } else if path.is_dir() {
-                        fs::remove_dir_all(&path).map_err(|source| LodeError::Io {
-                            path: path.as_str().into(),
-                            source,
-                        })?;
+                        ValidatedRoot::new(current_dir()?)?.remove_dir_all(&path)?;
                         println!("removed {path}");
                     }
                 }
@@ -7089,7 +7147,7 @@ fn package_graph(format: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn time_command(command: TimeCommand) -> lode_core::Result<()> {
+pub(crate) fn time_impl(command: TimeCommand) -> lode_core::Result<()> {
     match command {
         TimeCommand::Today { format } => {
             let log = load_time_log()?;
@@ -7111,16 +7169,7 @@ fn time_command(command: TimeCommand) -> lode_core::Result<()> {
             let sessions = filter_time_sessions(log.sessions, since.as_deref());
             let report = render_time_report(&sessions, &format)?;
             if let Some(path) = out {
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                        path: parent.as_str().into(),
-                        source,
-                    })?;
-                }
-                fs::write(&path, report).map_err(|source| LodeError::Io {
-                    path: path.as_str().into(),
-                    source,
-                })?;
+                write_validated_output(&path, report)?;
                 println!("wrote time report to {path}");
             } else {
                 print!("{report}");
@@ -7146,10 +7195,7 @@ fn time_command(command: TimeCommand) -> lode_core::Result<()> {
                     before_count - log.sessions.len()
                 );
             } else if path.exists() {
-                fs::remove_file(&path).map_err(|source| LodeError::Io {
-                    path: path.as_str().into(),
-                    source,
-                })?;
+                ValidatedRoot::new(current_dir()?)?.remove_file(".lode/time-log.json")?;
                 println!("time log cleared");
             } else {
                 println!("time log cleared");
@@ -7176,19 +7222,11 @@ fn load_time_log() -> lode_core::Result<TimeLog> {
 }
 
 fn save_time_log(log: &TimeLog) -> lode_core::Result<()> {
-    let path = time_log_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
+    let root = ValidatedRoot::new(current_dir()?)?;
+    root.create_dir_all(".lode")?;
     let raw =
         serde_json::to_string_pretty(log).map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    root.write_atomic(".lode/time-log.json", raw).map(|_| ())
 }
 
 fn filter_time_sessions(sessions: Vec<TimeSession>, since: Option<&str>) -> Vec<TimeSession> {
@@ -7499,7 +7537,10 @@ fn command_version(command: &str) -> Option<String> {
     Some(text.lines().next().unwrap_or("installed").to_string())
 }
 
-fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_core::Result<()> {
+pub(crate) fn export_impl(
+    out: Option<Utf8PathBuf>,
+    options: ExportOptions,
+) -> lode_core::Result<()> {
     let root = global_dir()?;
     let output = out.unwrap_or_else(|| Utf8PathBuf::from("lode-export.lodepack"));
     let mut pack = LodePack {
@@ -7543,10 +7584,7 @@ fn export_lodepack(out: Option<Utf8PathBuf>, options: ExportOptions) -> lode_cor
     pack.manifest.file_count = pack.files.len();
     let raw = serde_json::to_string_pretty(&pack)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&output, raw).map_err(|source| LodeError::Io {
-        path: output.as_str().into(),
-        source,
-    })?;
+    write_validated_output(&output, raw)?;
     println!("exported {} files to {output}", pack.files.len());
     Ok(())
 }
@@ -7593,7 +7631,7 @@ fn collect_pack_files_as(
     Ok(())
 }
 
-fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core::Result<()> {
+pub(crate) fn import_impl(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core::Result<()> {
     let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
@@ -7602,10 +7640,8 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
         serde_json::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
     validate_lodepack_manifest(&pack)?;
     let root = global_dir()?;
-    fs::create_dir_all(&root).map_err(|source| LodeError::Io {
-        path: root.as_str().into(),
-        source,
-    })?;
+    lode_core::ensure_global_workspace()?;
+    let global_root = ValidatedRoot::new(&root)?;
     let mut seen_paths = BTreeSet::new();
     let mut validated_files = Vec::new();
     for file in &pack.files {
@@ -7630,16 +7666,13 @@ fn import_lodepack(path: Utf8PathBuf, no_merge: bool, force: bool) -> lode_core:
         if destination.exists() && !force && normalized != "config.toml" {
             continue;
         }
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-                path: parent.as_str().into(),
-                source,
-            })?;
-        }
-        fs::write(&destination, &file.contents).map_err(|source| LodeError::Io {
-            path: destination.as_str().into(),
-            source,
+        let relative = destination.strip_prefix(root.as_str()).map_err(|_| {
+            LodeError::Message(format!("unsafe lodepack destination: {destination}"))
         })?;
+        if let Some(parent) = relative.parent() {
+            global_root.create_dir_all(parent)?;
+        }
+        global_root.write_atomic(relative, &file.contents)?;
     }
     println!("imported {} files from {path}", pack.files.len());
     Ok(())
@@ -7775,7 +7808,7 @@ fn collect_pack_files(
     Ok(())
 }
 
-fn metrics(command: MetricsCommand) -> lode_core::Result<()> {
+pub(crate) fn metrics_impl(command: MetricsCommand) -> lode_core::Result<()> {
     match command {
         MetricsCommand::Show => {
             let report = load_metrics(&current_dir()?)?;
@@ -7826,19 +7859,13 @@ fn save_metrics_baseline(
     root: &Utf8PathBuf,
     report: &lode_core::AuditReport,
 ) -> lode_core::Result<()> {
-    let path = metrics_baseline_path(root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
-    }
+    let validated_root = ValidatedRoot::new(root)?;
+    validated_root.create_dir_all(".lode")?;
     let raw = serde_json::to_string_pretty(report)
         .map_err(|error| LodeError::Message(error.to_string()))?;
-    fs::write(&path, raw).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    validated_root
+        .write_atomic(".lode/metrics-baseline.json", raw)
+        .map(|_| ())
 }
 
 fn load_metrics_baseline(root: &Utf8PathBuf) -> lode_core::Result<lode_core::AuditReport> {
@@ -7858,7 +7885,7 @@ fn status_bool(value: bool) -> &'static str {
     }
 }
 
-fn workspace(command: WorkspaceCommand) -> lode_core::Result<()> {
+pub(crate) fn workspace_impl(command: WorkspaceCommand) -> lode_core::Result<()> {
     match command {
         WorkspaceCommand::Init => workspace_init()?,
         WorkspaceCommand::List { format } => workspace_list(&format)?,
@@ -7882,17 +7909,12 @@ fn workspace_file() -> Utf8PathBuf {
 
 fn workspace_init() -> lode_core::Result<()> {
     let path = workspace_file();
+    let root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        root.create_dir_all(parent)?;
     }
     if !path.exists() {
-        fs::write(&path, "members = []\n").map_err(|source| LodeError::Io {
-            path: path.as_str().into(),
-            source,
-        })?;
+        root.write_atomic(&path, "members = []\n")?;
     }
     println!("workspace initialised");
     Ok(())
@@ -7924,21 +7946,17 @@ fn workspace_members() -> lode_core::Result<Vec<String>> {
 
 fn save_workspace_members(members: &[String]) -> lode_core::Result<()> {
     let path = workspace_file();
+    let root = ValidatedRoot::new(current_dir()?)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| LodeError::Io {
-            path: parent.as_str().into(),
-            source,
-        })?;
+        root.create_dir_all(parent)?;
     }
     let quoted = members
         .iter()
         .map(|member| format!("\"{member}\""))
         .collect::<Vec<_>>()
         .join(", ");
-    fs::write(&path, format!("members = [{quoted}]\n")).map_err(|source| LodeError::Io {
-        path: path.as_str().into(),
-        source,
-    })
+    root.write_atomic(path, format!("members = [{quoted}]\n"))
+        .map(|_| ())
 }
 
 fn workspace_add(name: &str) -> lode_core::Result<()> {
@@ -7949,10 +7967,7 @@ fn workspace_add(name: &str) -> lode_core::Result<()> {
         members.sort();
         save_workspace_members(&members)?;
     }
-    fs::create_dir_all(name).map_err(|source| LodeError::Io {
-        path: name.into(),
-        source,
-    })?;
+    ValidatedRoot::new(current_dir()?)?.create_dir_all(safe_relative_path(name)?)?;
     println!("workspace member added: {name}");
     Ok(())
 }
@@ -8117,7 +8132,7 @@ fn workspace_graph(format: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn daemon(command: DaemonCommand) {
+pub(crate) fn daemon_impl(command: DaemonCommand) {
     if let Err(error) = daemon_result(command) {
         eprintln!("error: {error}");
     }
@@ -8130,6 +8145,8 @@ fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             no_sign,
             no_stamp,
             foreground,
+            no_env_drift: _no_env_drift,
+            no_license_drift: _no_license_drift,
         } => {
             let state = format!(
                 "active\nforeground={foreground}\nrename={}\nsign={}\nstamp={}\n",
@@ -8526,7 +8543,7 @@ fn content_hash_bytes(contents: &[u8]) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn log_command(command: LogCommand) -> lode_core::Result<()> {
+pub(crate) fn log_impl(command: LogCommand) -> lode_core::Result<()> {
     match command {
         LogCommand::Init => {
             let root = daemon_global_root()?;
@@ -8559,7 +8576,7 @@ fn log_command(command: LogCommand) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn self_command(command: SelfCommand) -> lode_core::Result<()> {
+pub(crate) fn self_impl(command: SelfCommand) -> lode_core::Result<()> {
     match command {
         SelfCommand::Info => {
             let exe = env::current_exe().map_err(|source| LodeError::Io {
@@ -8692,7 +8709,7 @@ struct UpgradeState {
     activated: bool,
 }
 
-fn upgrade(
+pub(crate) fn upgrade(
     check: bool,
     manifest: Option<Utf8PathBuf>,
     dry_run: bool,
@@ -8863,7 +8880,7 @@ fn rollback_staged_upgrade(dry_run: bool) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn completions(
+pub(crate) fn completions(
     shell: &str,
     install: bool,
     dry_run: bool,
@@ -9084,7 +9101,7 @@ fn write_completion_install_receipt(
         .map(|_| ())
 }
 
-fn serve_dashboard(
+pub(crate) fn serve_dashboard(
     no_color: bool,
     no_live: bool,
     initial_pane: Option<&str>,
@@ -9242,7 +9259,7 @@ fn draw_live_dashboard(frame: &mut Frame, data: &DashboardData, selected: usize,
         .split(area);
 
     let title = Paragraph::new(Line::from(vec![
-        Span::styled("◇ lode serve", theme.accent.add_modifier(Modifier::BOLD)),
+        Span::styled("â—‡ lode serve", theme.accent.add_modifier(Modifier::BOLD)),
         Span::raw(format!(
             "  {}  env:{}  health:{}",
             data.project, data.env_name, data.score
@@ -9262,7 +9279,7 @@ fn draw_live_dashboard(frame: &mut Frame, data: &DashboardData, selected: usize,
     .iter()
     .enumerate()
     .map(|(index, label)| {
-        let marker = if selected == index { "›" } else { " " };
+        let marker = if selected == index { "â€º" } else { " " };
         let style = if selected == index {
             theme.accent.add_modifier(Modifier::BOLD)
         } else {
@@ -9301,7 +9318,7 @@ fn draw_live_dashboard(frame: &mut Frame, data: &DashboardData, selected: usize,
         _ => draw_lines_panel(frame, body[1], " LOGS ", &data.events, &theme),
     }
 
-    let footer = Paragraph::new(" ↑↓/Tab move  1-8 jump  q quit  auto-refresh 750ms ")
+    let footer = Paragraph::new(" â†‘â†“/Tab move  1-8 jump  q quit  auto-refresh 750ms ")
         .style(theme.dim)
         .block(Block::default().borders(Borders::ALL).style(theme.panel));
     frame.render_widget(footer, vertical[2]);
@@ -9518,7 +9535,7 @@ fn serve_dashboard_snapshot(no_color: bool, initial_pane: Option<&str>) -> lode_
     let selected = dashboard_pane_index(initial_pane)?;
     let selected_name = DASHBOARD_PANES[selected];
 
-    println!("{}", color.cyan("◇ lode serve"));
+    println!("{}", color.cyan("â—‡ lode serve"));
     println!(
         "{}",
         rule(&format!(
@@ -9537,7 +9554,7 @@ fn serve_dashboard_snapshot(no_color: bool, initial_pane: Option<&str>) -> lode_
         pane(
             "NAVIGATION",
             &[
-                &color.cyan("› Overview        [1]"),
+                &color.cyan("â€º Overview        [1]"),
                 "  Health          [2]",
                 "  Metrics         [3]",
                 "  Events          [4]",
@@ -9582,10 +9599,14 @@ fn serve_dashboard_snapshot(no_color: bool, initial_pane: Option<&str>) -> lode_
         pane(
             "2. METRICS TRENDS",
             &[
-                &format!("Health      {} {}", color.cyan("████████░░"), data.score),
+                &format!(
+                    "Health      {} {}",
+                    color.cyan("â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–‘â–‘"),
+                    data.score
+                ),
                 &format!(
                     "Checks      {}",
-                    color.green("convention · secrets · license · env")
+                    color.green("convention Â· secrets Â· license Â· env")
                 ),
                 &format!("Toolchain   {}", data.toolchains),
                 &format!("Package     {}", data.package_manager),
@@ -9631,7 +9652,7 @@ fn serve_dashboard_snapshot(no_color: bool, initial_pane: Option<&str>) -> lode_
     );
     println!(
         "{}",
-        rule(" ↑↓ Move   Tab Next   Enter Open   r Refresh   q Quit   Auto-refresh: OFF ")
+        rule(" â†‘â†“ Move   Tab Next   Enter Open   r Refresh   q Quit   Auto-refresh: OFF ")
     );
     Ok(())
 }
@@ -9687,7 +9708,8 @@ impl Palette {
 fn pane(title: &str, lines: &[&str], width: usize) -> String {
     let inner = width.saturating_sub(2);
     let mut output = String::new();
-    output.push_str(&format!("┌{:─<inner$}┐\n", format!(" {title} ")));
+    let title_inner = format!(" {title} ");
+    output.push_str(&format!("┌{:<inner$}┐\n", title_inner, inner = inner));
     for line in lines {
         output.push_str(&format!(
             "│ {:<pad$}│\n",
@@ -9695,12 +9717,12 @@ fn pane(title: &str, lines: &[&str], width: usize) -> String {
             pad = inner.saturating_sub(1)
         ));
     }
-    output.push_str(&format!("└{:─<inner$}┘", ""));
+    output.push_str(&format!("└{:<inner$}┘", "", inner = inner));
     output
 }
 
 fn rule(text: &str) -> String {
-    format!("┤{text}├")
+    format!("â”¤{text}â”œ")
 }
 
 fn truncate_ansi(text: &str, width: usize) -> String {
@@ -9711,17 +9733,17 @@ fn truncate_ansi(text: &str, width: usize) -> String {
         text.chars()
             .take(width.saturating_sub(1))
             .collect::<String>()
-            + "…"
+            + "â€¦"
     }
 }
 
 fn health_label(score: u8, color: &Palette) -> String {
     if score >= 85 {
-        color.green("● HEALTHY")
+        color.green("â— HEALTHY")
     } else if score >= 60 {
-        color.yellow("● WARN")
+        color.yellow("â— WARN")
     } else {
-        color.red("● FAIL")
+        color.red("â— FAIL")
     }
 }
 
@@ -10027,7 +10049,7 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> Option<i64> {
     Some(era * 146_097 + doe - 719_468)
 }
 
-fn task_command(target: Option<String>, no_store: bool) -> lode_core::Result<()> {
+pub(crate) fn task_impl(target: Option<String>, no_store: bool) -> lode_core::Result<()> {
     match target.as_deref() {
         None | Some("list") => list_make_targets(),
         Some("test") => {
@@ -10069,7 +10091,7 @@ fn list_make_targets() -> lode_core::Result<()> {
     Ok(())
 }
 
-fn gha_command(command: &str, name: Option<&str>) -> lode_core::Result<()> {
+pub(crate) fn gha_command(command: &str, name: Option<&str>) -> lode_core::Result<()> {
     match command {
         "validate" => {
             let dir = Utf8PathBuf::from(".github").join("workflows");
@@ -10137,7 +10159,7 @@ fn workflow_contents(name: &str) -> String {
     )
 }
 
-fn tauri_command(command: &str) -> lode_core::Result<()> {
+pub(crate) fn tauri_command(command: &str) -> lode_core::Result<()> {
     match command {
         "doctor" => {
             println!(
@@ -10159,7 +10181,7 @@ fn tauri_command(command: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn mc_command(command: &str) -> lode_core::Result<()> {
+pub(crate) fn mc_command(command: &str) -> lode_core::Result<()> {
     match command {
         "run-client" | "run-server" | "build" => run_make(&format!("mc-{command}"))?,
         "doctor" => {
@@ -10184,7 +10206,11 @@ fn mc_command(command: &str) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn cp_command(command: &str, problem: Option<&str>, lang: Option<&str>) -> lode_core::Result<()> {
+pub(crate) fn cp_command(
+    command: &str,
+    problem: Option<&str>,
+    lang: Option<&str>,
+) -> lode_core::Result<()> {
     match command {
         "new" => {
             let problem = problem.unwrap_or("a");

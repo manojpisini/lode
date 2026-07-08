@@ -1,0 +1,16 @@
+[package]
+name = "lode-daemon"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+lode-core = { path = "../lode-core" }
+serde.workspace = true
+serde_json.workspace = true
+camino.workspace = true
+thiserror.workspace = true
+clap.workspace = true
+tokio.workspace = true
+notify.workspace = true

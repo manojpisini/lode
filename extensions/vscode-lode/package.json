@@ -1,0 +1,50 @@
+{
+  "name": "vscode-lode",
+  "displayName": "LODE",
+  "description": "(L)ocal (O)pinionated (D)evelopment (E)nvironment — personal coding preference system for VS Code",
+  "version": "0.1.0",
+  "publisher": "lode",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Linters", "Formatters"],
+  "activationEvents": ["onLanguage", "onCommand:lode.check", "onCommand:lode.scan", "onCommand:lode.init"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "lode.check", "title": "LODE: Check Conventions" },
+      { "command": "lode.scan", "title": "LODE: Scan Secrets" },
+      { "command": "lode.init", "title": "LODE: Initialize Project" },
+      { "command": "lode.sync", "title": "LODE: Sync Templates" },
+      { "command": "lode.status", "title": "LODE: Show Status" }
+    ],
+    "configuration": {
+      "title": "LODE",
+      "properties": {
+        "lode.binaryPath": {
+          "type": "string",
+          "default": "lode",
+          "description": "Path to the lode CLI binary"
+        },
+        "lode.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable LODE diagnostics for .lode/config.toml and .lode/rules.toml"
+        },
+        "lode.enableDecorations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight convention violations with editor decorations"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

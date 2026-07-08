@@ -1,0 +1,17 @@
+[package]
+name = "lode-mcp"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "lode-mcp"
+path = "src/main.rs"
+
+[dependencies]
+lode-core = { path = "../lode-core" }
+serde.workspace = true
+serde_json.workspace = true
+camino.workspace = true
+toml.workspace = true
