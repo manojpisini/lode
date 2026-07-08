@@ -1,27 +1,63 @@
 use crate::error::{LodeError, Result};
 use crate::ValidatedRoot;
-use std::collections::BTreeMap;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct LodePack {
     pub version: u32,
-    pub name: String,
-    pub description: String,
-    pub files: BTreeMap<String, String>,
-    pub config: Option<String>,
+    #[serde(default = "default_lodepack_manifest")]
+    pub manifest: LodePackManifest,
+    pub files: Vec<LodePackFile>,
 }
 
-/// Export a LodePack from project files
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct LodePackManifest {
+    #[serde(default = "default_lodepack_schema_version")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub lode_version: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub file_count: usize,
+    #[serde(default = "default_lodepack_checksum_algorithm")]
+    pub checksum_algorithm: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct LodePackFile {
+    pub path: String,
+    pub contents: String,
+    #[serde(default)]
+    pub checksum: String,
+}
+
+pub fn default_lodepack_schema_version() -> u32 {
+    3
+}
+
+pub fn default_lodepack_checksum_algorithm() -> String {
+    "lode-default-hash-v1".to_string()
+}
+
+pub fn default_lodepack_manifest() -> LodePackManifest {
+    LodePackManifest {
+        schema_version: default_lodepack_schema_version(),
+        lode_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at: String::new(),
+        file_count: 0,
+        checksum_algorithm: default_lodepack_checksum_algorithm(),
+    }
+}
+
+/// Export a LodePack from project files.
 pub fn export_lodepack(
     project_dir: &camino::Utf8Path,
     out: Option<&camino::Utf8Path>,
 ) -> Result<()> {
     let manifest = LodePack {
         version: 1,
-        name: "project".to_string(),
-        description: "LODE project export".to_string(),
-        files: BTreeMap::new(),
-        config: None,
+        manifest: default_lodepack_manifest(),
+        files: Vec::new(),
     };
 
     let raw =
@@ -33,7 +69,7 @@ pub fn export_lodepack(
     Ok(())
 }
 
-/// Import a LodePack and write files to dest
+/// Import a LodePack and validate its structure.
 pub fn import_lodepack(path: &camino::Utf8Path, dest: &camino::Utf8Path) -> Result<()> {
     let raw = std::fs::read_to_string(path.as_std_path()).map_err(|source| LodeError::Io {
         path: path.as_str().into(),

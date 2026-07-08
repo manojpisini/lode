@@ -33,7 +33,10 @@ pub mod workspace;
 pub use agent::*;
 pub use assets::{command_names, default_assets, profile_names, recipe_names, template_paths};
 pub use audit::{audit_project, load_metrics, save_metrics, AuditReport};
-pub use commands::{export_lodepack, import_lodepack, LodePack};
+pub use commands::{
+    default_lodepack_checksum_algorithm, export_lodepack, import_lodepack, LodePack, LodePackFile,
+    LodePackManifest,
+};
 pub use config::{default_config, LodeConfig, SCHEMA_VERSION};
 pub use convention::{check_path, fix_path, normalize_name, ConventionReport, ConventionViolation};
 pub use env::*;

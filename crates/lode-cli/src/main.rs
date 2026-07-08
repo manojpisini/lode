@@ -20,11 +20,12 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use lode_core::{
-    add_component_to_project, audit_project, check_path, command_names, default_config, fix_path,
-    global_asset_dir, global_dir, init_project, load_global_config, load_metrics, load_registry,
-    profile_names, prune_registry, recipe_names, register_project, save_global_config,
-    save_metrics, save_registry, scan_secrets, setup_defaults, sync_project, template_paths,
-    AddRequest, InitRequest, LodeError, Process, ValidatedRoot,
+    add_component_to_project, audit_project, check_path, command_names, default_config,
+    default_lodepack_checksum_algorithm, fix_path, global_asset_dir, global_dir, init_project,
+    load_global_config, load_metrics, load_registry, profile_names, prune_registry, recipe_names,
+    register_project, save_global_config, save_metrics, save_registry, scan_secrets,
+    setup_defaults, sync_project, template_paths, AddRequest, InitRequest, LodeError, LodePack,
+    LodePackFile, LodePackManifest, Process, ValidatedRoot,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -974,54 +975,6 @@ enum SelfCommand {
 enum OutputFormat {
     Toml,
     Json,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct LodePack {
-    version: u32,
-    #[serde(default = "default_lodepack_manifest")]
-    manifest: LodePackManifest,
-    files: Vec<LodePackFile>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct LodePackManifest {
-    #[serde(default = "default_schema_version")]
-    schema_version: u32,
-    #[serde(default)]
-    lode_version: String,
-    #[serde(default)]
-    created_at: String,
-    #[serde(default)]
-    file_count: usize,
-    #[serde(default = "default_lodepack_checksum_algorithm")]
-    checksum_algorithm: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct LodePackFile {
-    path: String,
-    contents: String,
-    #[serde(default)]
-    checksum: String,
-}
-
-fn default_schema_version() -> u32 {
-    3
-}
-
-fn default_lodepack_checksum_algorithm() -> String {
-    "lode-default-hash-v1".to_string()
-}
-
-fn default_lodepack_manifest() -> LodePackManifest {
-    LodePackManifest {
-        schema_version: default_schema_version(),
-        lode_version: env!("CARGO_PKG_VERSION").to_string(),
-        created_at: String::new(),
-        file_count: 0,
-        checksum_algorithm: default_lodepack_checksum_algorithm(),
-    }
 }
 
 #[derive(Debug, Clone, Copy)]

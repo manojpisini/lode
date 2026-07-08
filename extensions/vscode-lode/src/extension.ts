@@ -86,11 +86,11 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
 function execLode(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const binary = getBinaryPath();
-    const options: cp.ExecOptions = {
+    const options: cp.ExecFileOptions = {
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       maxBuffer: 10 * 1024 * 1024,
     };
-    cp.exec(`${binary} ${args.join(' ')}`, options, (error, stdout, stderr) => {
+    cp.execFile(binary, args, options, (error, stdout, stderr) => {
       if (error && !stdout) {
         reject(new Error(stderr || error.message));
       } else {

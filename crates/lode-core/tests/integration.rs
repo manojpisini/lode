@@ -75,16 +75,25 @@ fn test_profile_names() {
 fn test_lodepack_roundtrip_with_lode_core_types() {
     let pack = lode_core::LodePack {
         version: 1,
-        name: "test-pack".to_string(),
-        description: "test description".to_string(),
-        files: std::collections::BTreeMap::new(),
-        config: None,
+        manifest: lode_core::LodePackManifest {
+            schema_version: 3,
+            lode_version: "0.1.0".to_string(),
+            created_at: "now".to_string(),
+            file_count: 1,
+            checksum_algorithm: lode_core::default_lodepack_checksum_algorithm(),
+        },
+        files: vec![lode_core::LodePackFile {
+            path: "config.toml".to_string(),
+            contents: "schema_version = 3\n".to_string(),
+            checksum: "abc".to_string(),
+        }],
     };
     let raw = serde_json::to_string(&pack).unwrap();
     let restored: lode_core::LodePack = serde_json::from_str(&raw).unwrap();
     assert_eq!(restored.version, 1);
-    assert_eq!(restored.name, "test-pack");
-    assert_eq!(restored.description, "test description");
+    assert_eq!(restored.manifest.schema_version, 3);
+    assert_eq!(restored.files[0].path, "config.toml");
+    assert_eq!(restored.files[0].checksum, "abc");
 }
 
 #[test]

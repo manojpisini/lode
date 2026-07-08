@@ -7,8 +7,8 @@ use clap::Parser;
 use tokio::sync::mpsc;
 
 use lode_daemon::{
-    handle_create, handle_delete, handle_modify, handle_rename, load_state, save_state,
-    DaemonState, DaemonWatcher, IdleWatchdog, IpcServer, WatcherConfig,
+    handle_create, handle_delete, handle_modify, handle_rename, load_state, run_ipc_listener,
+    save_state, DaemonState, DaemonWatcher, IdleWatchdog, IpcServer, WatcherConfig,
 };
 
 #[derive(Parser)]
@@ -55,8 +55,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     watcher.watch()?;
 
     let ipc_socket = args.state_dir.join("daemon.sock");
-    let mut ipc_server = IpcServer::new(ipc_socket);
+    let mut ipc_server = IpcServer::new(ipc_socket.clone());
     ipc_server.start().await?;
+    let ipc_task = tokio::spawn(async move {
+        if let Err(error) = run_ipc_listener(ipc_socket).await {
+            eprintln!("IPC listener stopped: {error}");
+        }
+    });
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     let mut idle_watchdog = IdleWatchdog::new(args.idle_timeout, shutdown_tx.clone());
@@ -129,6 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _ = watcher.stop();
     let _ = ipc_server.stop();
+    ipc_task.abort();
     idle_watchdog.stop().await;
 
     state.stop();

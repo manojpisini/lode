@@ -155,9 +155,7 @@ pub async fn run_ipc_listener(socket_path: PathBuf) -> Result<(), IpcError> {
                     let line = line.trim();
                     if !line.is_empty() {
                         if let Ok(command) = parse_command(line) {
-                            let response = handle_command(&command);
-                            // In a real implementation, we'd write the response back
-                            eprintln!("IPC response: {:?}", response);
+                            let _response = handle_command(&command);
                         }
                     }
                 }
