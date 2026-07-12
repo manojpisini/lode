@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "prompt_id": "UPPS-23",
+  "generated": "2026-07-11",
+  "project_name": "lode",
+  "release_decision": "CONDITIONAL_GO",
+  "risks": [
+    {
+      "id": "R-01",
+      "title": "No centralized secret redaction (F-02)",
+      "severity": "High",
+      "disposition": "BLOCKING — must resolve before release",
+      "effort": "3-5 days",
+      "mitigation": "Implement redact_secrets() in lode-core"
+    },
+    {
+      "id": "R-02",
+      "title": "No CHANGELOG versioned entries",
+      "severity": "Medium",
+      "disposition": "BLOCKING — must resolve before release",
+      "effort": "0.5 day",
+      "mitigation": "Draft v0.1.0 changelog from commit history"
+    },
+    {
+      "id": "R-03",
+      "title": "No SBOM in release artifacts",
+      "severity": "Medium",
+      "disposition": "BLOCKING — must resolve before release",
+      "effort": "1 day",
+      "mitigation": "Add cargo-cyclonedx to release workflow"
+    },
+    {
+      "id": "R-04",
+      "title": "No metrics/tracing layer",
+      "severity": "Low",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "3-5 days",
+      "mitigation": "Gated for v0.2.0 roadmap"
+    },
+    {
+      "id": "R-05",
+      "title": "No incident response plan",
+      "severity": "Low",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "1 day",
+      "mitigation": "Draft after first release feedback"
+    },
+    {
+      "id": "R-06",
+      "title": "No code of conduct",
+      "severity": "Informational",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "0.5 day",
+      "mitigation": "Add before public announcement"
+    },
+    {
+      "id": "R-07",
+      "title": "No security.txt",
+      "severity": "Informational",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "0.5 day",
+      "mitigation": "Add before public announcement"
+    },
+    {
+      "id": "R-08",
+      "title": "Daemon IPC no authentication (F-04)",
+      "severity": "Medium",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "1-2 days",
+      "mitigation": "Token-based auth gated for v0.1.1"
+    },
+    {
+      "id": "R-09",
+      "title": "Two advisory ignores undocumented",
+      "severity": "Medium",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "0.5 day",
+      "mitigation": "Document in next dependency review cycle"
+    },
+    {
+      "id": "R-10",
+      "title": "MCP input validation lacking (F-03)",
+      "severity": "Medium",
+      "disposition": "ACCEPTED — post-release",
+      "effort": "2-3 days",
+      "mitigation": "Gated for v0.2.0"
+    }
+  ],
+  "summary": {
+    "blocking": 3,
+    "accepted": 6,
+    "expired": 0,
+    "total_risks": 10
+  }
+}

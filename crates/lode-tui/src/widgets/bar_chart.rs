@@ -61,19 +61,23 @@ impl Widget for BarChart {
             let y = inner.y + i as u16;
             let bar_len = ((*value as f64 / max as f64) * BAR_WIDTH as f64) as u16;
 
-            let label_width = (inner.width - BAR_WIDTH - 1).min(12);
+            let label_width = (inner.width.saturating_sub(BAR_WIDTH + 1)).min(12);
             let truncated: String = label.chars().take(label_width as usize).collect();
 
             let label_style = self.theme.as_ref().map_or(self.style, |t| t.dim_style());
             let bar_style = self.theme.as_ref().map_or(self.style, |t| t.accent_style());
 
-            buf.set_string(inner.x, y, &truncated, label_style);
+            if inner.x + label_width <= inner.x + inner.width {
+                buf.set_string(inner.x, y, &truncated, label_style);
+            }
 
             let bar_x = inner.x + label_width + 1;
             for bx in 0..bar_len {
                 if bar_x + bx < inner.x + inner.width {
-                    buf.cell_mut((bar_x + bx, y)).unwrap().set_symbol("█");
-                    buf.cell_mut((bar_x + bx, y)).unwrap().set_style(bar_style);
+                    if let Some(cell) = buf.cell_mut((bar_x + bx, y)) {
+                        cell.set_symbol("█");
+                        cell.set_style(bar_style);
+                    }
                 }
             }
         }

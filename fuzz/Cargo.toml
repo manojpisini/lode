@@ -1,0 +1,19 @@
+[package]
+name = "lode-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lode-core = { path = "../crates/lode-core" }
+tempfile = "3.10"
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+debug = 1

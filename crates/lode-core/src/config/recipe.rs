@@ -16,15 +16,7 @@ pub struct Recipe {
     pub env: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecipeConfig {
     pub recipes: Vec<Recipe>,
-}
-
-impl Default for RecipeConfig {
-    fn default() -> Self {
-        Self {
-            recipes: Vec::new(),
-        }
-    }
 }

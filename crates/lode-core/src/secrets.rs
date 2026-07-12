@@ -18,6 +18,21 @@ pub struct SecretScanReport {
     pub findings: Vec<SecretFinding>,
 }
 
+/// Scan a single text buffer in-memory (no file I/O) and return findings.
+pub fn scan_content(content: &str) -> Vec<SecretFinding> {
+    let mut findings = Vec::new();
+    for (index, line) in content.lines().enumerate() {
+        if let Some(kind) = classify_secret(line) {
+            findings.push(SecretFinding {
+                path: Utf8PathBuf::from("<buffer>"),
+                line: index + 1,
+                kind: kind.to_string(),
+            });
+        }
+    }
+    findings
+}
+
 pub fn scan_secrets(path: &Utf8Path) -> Result<SecretScanReport> {
     let mut report = SecretScanReport {
         checked_files: 0,
@@ -60,8 +75,12 @@ fn visit(path: &Utf8Path, report: &mut SecretScanReport) -> Result<()> {
     if is_secret_allowlisted_path(path) {
         return Ok(());
     }
-    let Ok(contents) = fs::read_to_string(path) else {
-        return Ok(());
+    let contents = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("lode: warning: skipping unreadable file {}: {}", path, e);
+            return Ok(());
+        }
     };
     report.checked_files += 1;
     for (index, line) in contents.lines().enumerate() {
@@ -111,7 +130,13 @@ fn classify_secret(line: &str) -> Option<&'static str> {
     if line.contains("ghp_") || line.contains("github_pat_") {
         return Some("github token");
     }
-    if line.contains("AKIA") && line.len() >= 20 {
+    if (line.contains("AKIA")
+        || line.contains("ASIA")
+        || line.contains("ABIA")
+        || line.contains("ACCA")
+        || line.contains("AROA"))
+        && line.len() >= 20
+    {
         return Some("aws access key");
     }
     None

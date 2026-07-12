@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use std::io;
 use std::time::Duration;
 
@@ -28,16 +30,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = App::new(&project_name);
 
-    let result = run_app(&mut terminal, &mut app);
+    let app_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        run_app(&mut terminal, &mut app)
+    }));
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
-    if let Err(err) = result {
-        eprintln!("Error: {:?}", err);
+    match app_result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(err)) => {
+            eprintln!("Error: {:?}", err);
+            Ok(())
+        }
+        Err(panic) => {
+            eprintln!("TUI panicked: {:?}", panic);
+            Err("TUI panicked".into())
+        }
     }
-
-    Ok(())
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
@@ -107,6 +117,6 @@ fn render_tab_bar(f: &mut ratatui::Frame, area: Rect, app: &App) {
 }
 
 fn render_status_bar(f: &mut ratatui::Frame, area: Rect, app: &App) {
-    let bar = StatusBar::new(app.active_pane, &app.theme);
+    let bar = StatusBar::new(&app.theme);
     f.render_widget(bar, area);
 }

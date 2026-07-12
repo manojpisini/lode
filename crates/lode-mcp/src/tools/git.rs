@@ -73,6 +73,9 @@ pub fn lode_git_commit(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: message")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = std::path::Path::new(path);
 
     if !lode_core::is_git_repo(root) {
@@ -93,6 +96,9 @@ pub fn lode_git_changelog(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
     let from_tag = args["from_tag"].as_str();
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = std::path::Path::new(path);
 
@@ -116,6 +122,9 @@ pub fn lode_git_tag(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: tag")?;
     let message = args["message"].as_str();
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = std::path::Path::new(path);
 

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{global_dir, LodeError, Result, ValidatedRoot};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Registry {
     pub projects: Vec<ProjectRecord>,
 }
@@ -16,14 +16,6 @@ pub struct ProjectRecord {
     pub path: Utf8PathBuf,
     pub profile: String,
     pub last_seen: String,
-}
-
-impl Default for Registry {
-    fn default() -> Self {
-        Self {
-            projects: Vec::new(),
-        }
-    }
 }
 
 pub fn registry_path() -> Result<Utf8PathBuf> {

@@ -20,9 +20,17 @@ pub fn lode_release(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
-    let _bump = args["bump"]
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
+    let bump = args["bump"]
         .as_str()
         .ok_or("Missing required argument: bump")?;
+    if !["major", "minor", "patch"].contains(&bump) {
+        return Err(format!(
+            "Invalid bump type '{bump}'. Must be one of: major, minor, patch"
+        ));
+    }
     let dry_run = args["dry_run"].as_bool().unwrap_or(false);
 
     let root = std::path::Path::new(path);

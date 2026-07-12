@@ -62,6 +62,9 @@ pub fn lode_pkg_outdated(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = std::path::Path::new(path);
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
 
@@ -78,6 +81,9 @@ pub fn lode_pkg_audit(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = std::path::Path::new(path);
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
@@ -97,6 +103,9 @@ pub fn lode_pkg_update(args: &Value) -> Result<Value, String> {
         .ok_or("Missing required argument: path")?;
     let package = args["package"].as_str();
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = std::path::Path::new(path);
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
 
@@ -114,6 +123,9 @@ pub fn lode_pkg_list(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = std::path::Path::new(path);
     let pm = lode_core::detect_package_manager(root);
 
@@ -127,6 +139,9 @@ pub fn lode_pkg_clean(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = std::path::Path::new(path);
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;

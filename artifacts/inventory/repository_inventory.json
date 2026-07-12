@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "suite_version": "3.2.0",
+  "prompt_id": "UPPS-03",
+  "generated": "2026-07-11",
+  "project_name": "lode",
+  "repository_url": "https://github.com/lode-rs/lode",
+  "license": "MIT",
+  "version": "0.1.0",
+  "languages": ["rust", "typescript", "lua"],
+  "runtimes": ["rust_stable_x86_64_pc_windows_gnu", "node_20"],
+  "package_managers": ["cargo", "npm"],
+  "build_system": "cargo_workspace_resolver_v2",
+  "supported_platforms": ["x86_64_unknown_linux_gnu", "x86_64_apple_darwin", "x86_64_pc_windows_gnu"],
+  "deployment_targets": ["github_releases"],
+  "git": {
+    "latest_commit": "fd07125",
+    "latest_message": "fix: address critical audit findings",
+    "branch": null,
+    "modified_files_count": 135,
+    "untracked_files_count": 25
+  },
+  "crates": [
+    {
+      "name": "lode-core",
+      "type": "library",
+      "path": "crates/lode-core",
+      "source_files": 56,
+      "lines_of_code": 9072,
+      "dependencies": ["camino", "dirs", "serde", "serde_json", "thiserror", "toml", "regex", "sha2"],
+      "dev_dependencies": ["tempfile"],
+      "test_count": 126,
+      "tests_passing": 126,
+      "build_status": "pass"
+    },
+    {
+      "name": "lode-cli",
+      "type": "binary",
+      "path": "crates/lode-cli",
+      "source_files": 46,
+      "lines_of_code": 10208,
+      "dependencies": ["camino", "clap", "crossterm", "lode-core", "ratatui", "serde", "serde_json", "sha2", "toml"],
+      "dev_dependencies": ["assert_cmd", "lode-daemon", "predicates", "tempfile"],
+      "test_count": 129,
+      "tests_passing": 129,
+      "build_status": "pass",
+      "binary_name": "lode",
+      "entry_point": "src/main.rs"
+    },
+    {
+      "name": "lode-daemon",
+      "type": "binary_library",
+      "path": "crates/lode-daemon",
+      "source_files": 7,
+      "lines_of_code": 1242,
+      "dependencies": ["camino", "clap", "lode-core", "notify", "serde", "serde_json", "thiserror", "tokio"],
+      "dev_dependencies": ["tempfile"],
+      "test_count": 29,
+      "tests_passing": 29,
+      "build_status": "pass",
+      "binary_name": "lode-daemon",
+      "entry_point": "src/main.rs"
+    },
+    {
+      "name": "lode-mcp",
+      "type": "binary",
+      "path": "crates/lode-mcp",
+      "source_files": 24,
+      "lines_of_code": 2721,
+      "dependencies": ["camino", "clap", "lode-core", "serde_json", "toml"],
+      "test_count": 28,
+      "tests_passing": 28,
+      "build_status": "pass",
+      "binary_name": "lode-mcp",
+      "entry_point": "src/main.rs"
+    },
+    {
+      "name": "lode-tui",
+      "type": "binary",
+      "path": "crates/lode-tui",
+      "source_files": 19,
+      "lines_of_code": 1847,
+      "dependencies": ["camino", "crossterm", "lode-core", "ratatui", "serde", "serde_json"],
+      "test_count": 19,
+      "tests_passing": 19,
+      "build_status": "pass",
+      "binary_name": "lode-tui",
+      "entry_point": "src/main.rs"
+    },
+    {
+      "name": "lode-lsp",
+      "type": "binary",
+      "path": "crates/lode-lsp",
+      "source_files": 2,
+      "lines_of_code": 627,
+      "dependencies": ["camino", "lode-core", "serde", "serde_json"],
+      "test_count": 10,
+      "tests_passing": 10,
+      "build_status": "pass",
+      "binary_name": "lode-lsp",
+      "entry_point": "src/main.rs"
+    }
+  ],
+  "extensions": [
+    {
+      "name": "vscode-lode",
+      "language": "typescript",
+      "path": "extensions/vscode-lode",
+      "lines_of_code": 700,
+      "features": ["diagnostics", "status_bar", "decorations", "lsp_client"]
+    },
+    {
+      "name": "lode.nvim",
+      "language": "lua",
+      "path": "extensions/lode.nvim",
+      "lines_of_code": 360,
+      "features": ["async_diagnostics", "floating_preview", "keymaps"]
+    },
+    {
+      "name": "zed-lode",
+      "language": "rust_wasm",
+      "path": "extensions/zed-lode",
+      "lines_of_code": 77,
+      "features": ["slash_commands"]
+    }
+  ],
+  "fuzz_targets": [
+    {"name": "validated_root", "file": "fuzz/fuzz_targets/validated_root.rs"},
+    {"name": "process_validation", "file": "fuzz/fuzz_targets/process_validation.rs"}
+  ],
+  "source_files_total": 154,
+  "lines_of_code_total": 25717,
+  "test_count_total": 347,
+  "tests_passing_total": 347,
+  "total_dependencies": 171,
+  "workspace_resolver": "2"
+}

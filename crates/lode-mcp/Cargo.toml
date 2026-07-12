@@ -4,14 +4,18 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "MCP protocol server for LODE with 38+ tools, 8 resources, and 3 prompts"
+documentation = "https://docs.rs/lode-mcp/latest/lode_mcp/"
+homepage.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "lode-mcp"
 path = "src/main.rs"
 
 [dependencies]
-lode-core = { path = "../lode-core" }
-serde.workspace = true
+clap.workspace = true
+lode-core = { path = "../lode-core", version = "0.1.0" }
 serde_json.workspace = true
 camino.workspace = true
 toml.workspace = true

@@ -3,24 +3,21 @@ use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::widgets::Widget;
 
-use crate::app::Pane;
 use crate::theme::Theme;
 
 pub struct StatusBar<'a> {
-    #[allow(dead_code)]
-    active_pane: Pane,
     theme: &'a Theme,
 }
 
 impl<'a> StatusBar<'a> {
-    pub fn new(active_pane: Pane, theme: &'a Theme) -> Self {
-        Self { active_pane, theme }
+    pub fn new(theme: &'a Theme) -> Self {
+        Self { theme }
     }
 }
 
 impl<'a> Widget for StatusBar<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let hints = vec![
+        let hints = [
             ("1-7", "panes"),
             ("Tab", "next"),
             ("Shift-Tab", "prev"),

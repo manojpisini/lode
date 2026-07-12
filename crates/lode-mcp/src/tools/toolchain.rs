@@ -36,6 +36,9 @@ pub fn lode_toolchain_status(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = std::path::Path::new(path);
     let config = lode_core::ToolchainConfig::default();
 
@@ -70,6 +73,22 @@ pub fn lode_toolchain_pin(args: &Value) -> Result<Value, String> {
     let version = args["version"]
         .as_str()
         .ok_or("Missing required argument: version")?;
+
+    if version.is_empty()
+        || version.contains('/')
+        || version.contains('\\')
+        || version.contains('\0')
+        || !version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '+')
+    {
+        return Err(format!(
+            "Invalid version '{version}': must be a valid semver-like version string"
+        ));
+    }
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = std::path::Path::new(path);
     let config = lode_core::ToolchainConfig::default();

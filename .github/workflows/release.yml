@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            ext: .zip
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: .tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            ext: .tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Set MSYS2 path (Windows)
+        if: runner.os == 'Windows'
+        run: echo "C:\msys64\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release -p lode-cli -p lode-lsp
+
+      - name: Create archive
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          DIR="lode-$VERSION-${{ matrix.target }}"
+          mkdir -p "$DIR"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/release/lode.exe "$DIR/"
+            cp target/release/lode-lsp.exe "$DIR/"
+            7z a "$DIR${{ matrix.ext }}" "$DIR"
+          else
+            cp target/release/lode "$DIR/"
+            cp target/release/lode-lsp "$DIR/"
+            tar czf "$DIR${{ matrix.ext }}" "$DIR"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lode-${{ github.ref_name }}-${{ matrix.target }}
+          path: lode-${{ github.ref_name }}-${{ matrix.target }}${{ matrix.ext }}
+
+  sbom:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+      - name: Generate SBOM
+        run: cargo cyclonedx --workspace --all --output-dir sbom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom/
+
+  release:
+    needs: [build, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate checksums
+        working-directory: artifacts
+        run: |
+          for f in */*; do
+            sha256sum "$f" >> checksums.txt
+          done
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*
+          generate_release_notes: true

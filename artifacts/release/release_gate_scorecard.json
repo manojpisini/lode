@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "prompt_id": "UPPS-23",
+  "generated": "2026-07-11",
+  "project_name": "lode",
+  "decision": "CONDITIONAL_GO",
+  "weighted_total": 5.6,
+  "max_score": 10,
+  "domains": [
+    {"name": "Product Readiness", "score": 6, "max": 10, "weight": 0.20, "weighted_score": 1.2},
+    {"name": "Security Readiness", "score": 5, "max": 10, "weight": 0.25, "weighted_score": 1.25},
+    {"name": "Data Readiness", "score": 8, "max": 10, "weight": 0.10, "weighted_score": 0.8},
+    {"name": "Delivery Readiness", "score": 5, "max": 10, "weight": 0.15, "weighted_score": 0.75},
+    {"name": "Operations Readiness", "score": 3, "max": 10, "weight": 0.10, "weighted_score": 0.3},
+    {"name": "Documentation Readiness", "score": 8, "max": 10, "weight": 0.10, "weighted_score": 0.8},
+    {"name": "Governance Readiness", "score": 5, "max": 10, "weight": 0.10, "weighted_score": 0.5}
+  ],
+  "killing_issues": [
+    {"id": "K-01", "domain": "Security", "criterion": "Secret redaction enforced", "status": "FAIL", "finding_id": "F-02"},
+    {"id": "K-02", "domain": "Product", "criterion": "CHANGELOG populated", "status": "FAIL"},
+    {"id": "K-03", "domain": "Delivery", "criterion": "SBOM generated", "status": "FAIL"}
+  ]
+}

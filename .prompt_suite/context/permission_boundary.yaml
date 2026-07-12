@@ -1,0 +1,51 @@
+# UPPS-00 Permission Boundary
+# Generated: 2026-07-11
+# Suite: universal-project-prompt-suite v3.2.0
+
+mode: AUDIT_ONLY
+scope: entire_repository
+
+permissions:
+  modify_files: false
+  delete_files: false
+  rename_or_move_files: false
+  install_dependencies: false
+  upgrade_dependencies: false
+  access_network: false
+  query_external_advisories: false
+  execute_project_code: false
+  run_tests: true
+  run_builds: true
+  start_local_services: false
+  use_containers: false
+  access_local_secrets: false
+  modify_data: false
+  run_migrations: false
+  change_public_contracts: false
+  execute_unknown_binaries: false
+  create_commits: false
+
+write_output_files: true
+use_prompt_output_contracts: true
+output_path_base: project_root
+create_missing_output_directories: true
+overwrite_policy: preserve_existing
+
+prohibitions:
+  - modifying any source file outside .prompt_suite/ and logs/
+  - deleting or renaming files
+  - installing or upgrading dependencies
+  - accessing the network
+  - executing project binaries
+  - starting services
+  - modifying data
+  - creating commits or tags
+  - changing public APIs, CLIs, or contracts
+
+approval_required_for:
+  - any file modification beyond prompt outputs
+  - dependency changes
+  - network access
+  - code execution
+  - service startup
+  - commit creation

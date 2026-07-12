@@ -76,7 +76,10 @@ pub fn ensure_global_workspace() -> Result<()> {
     for child in GLOBAL_DIRS {
         let path = global_asset_dir(child)?;
         if path.starts_with(&dir) {
-            root.create_dir_all(path.strip_prefix(&dir).expect("checked prefix"))?;
+            root.create_dir_all(
+                path.strip_prefix(&dir)
+                    .map_err(|_| LodeError::Message(format!("expected {path} under {dir}")))?,
+            )?;
         } else {
             trusted_root(&path)?;
         }
@@ -101,7 +104,10 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
             created_dirs.push(path.clone());
         }
         if path.starts_with(&dir) {
-            root.create_dir_all(path.strip_prefix(&dir).expect("checked prefix"))?;
+            root.create_dir_all(
+                path.strip_prefix(&dir)
+                    .map_err(|_| LodeError::Message(format!("expected {path} under {dir}")))?,
+            )?;
         } else {
             trusted_root(&path)?;
         }
@@ -111,9 +117,9 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
     if wrote_config {
         let encoded = toml::to_string_pretty(&config::default_config())?;
         root.write_atomic(
-            config_path
-                .strip_prefix(&dir)
-                .expect("config is under global dir"),
+            config_path.strip_prefix(&dir).map_err(|_| {
+                LodeError::Message(format!("expected config path {config_path} under {dir}"))
+            })?,
             encoded,
         )?;
     }
@@ -121,7 +127,7 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
     let context = RenderContext::new()
         .with("project", "project")
         .with("author", "Your Name")
-        .with("year", "2026");
+        .with("year", crate::current_year());
     for asset in assets::default_assets(&context) {
         let root = match asset.kind {
             assets::AssetKind::Template => "templates",
@@ -162,7 +168,7 @@ pub fn load_global_config() -> Result<config::LodeConfig> {
     let config: config::LodeConfig =
         toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
             path: PathBuf::from(path.as_str()),
-            source,
+            source: Box::new(source),
         })?;
     config::validate_schema(&config)?;
     Ok(config)

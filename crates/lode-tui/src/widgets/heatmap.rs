@@ -72,7 +72,7 @@ impl<'a> Widget for Heatmap<'a> {
             area
         };
 
-        if inner.width < 7 || inner.height < 4 {
+        if inner.width < 13 || inner.height < 4 {
             return;
         }
 
@@ -84,8 +84,10 @@ impl<'a> Widget for Heatmap<'a> {
                 let ch = Self::cell_char(val);
                 let style = self.cell_style(val);
 
-                buf.cell_mut((x, y)).unwrap().set_symbol(ch);
-                buf.cell_mut((x, y)).unwrap().set_style(style);
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_symbol(ch);
+                    cell.set_style(style);
+                }
             }
         }
     }

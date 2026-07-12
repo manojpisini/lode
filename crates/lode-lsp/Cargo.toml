@@ -4,10 +4,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "LSP protocol server for LODE over JSON-RPC (stdin/stdout)"
+documentation = "https://docs.rs/lode-lsp/latest/lode_lsp/"
+homepage.workspace = true
+authors.workspace = true
 
 [dependencies]
-lode-core = { path = "../lode-core" }
+lode-core = { path = "../lode-core", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
-tokio = { version = "1", features = ["io-util", "sync", "rt", "macros"] }
-camino.workspace = true

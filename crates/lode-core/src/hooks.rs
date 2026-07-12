@@ -5,6 +5,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LodeError, Process, Result};
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PluginSecurity {
+    pub network: bool,
+    pub execute: bool,
+    pub fs_write: Vec<String>,
+}
+
+impl Default for PluginSecurity {
+    fn default() -> Self {
+        Self {
+            network: false,
+            execute: false,
+            fs_write: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginInstallReceipt {
+    pub schema_version: u32,
+    pub source: String,
+    pub installed_at: String,
+    pub reviewed: bool,
+    pub allow_unsafe: bool,
+    pub permissions: PluginSecurity,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HookEvent {
     PreCommit,
@@ -130,13 +157,66 @@ fn run_hook_program(
     }
     Ok(())
 }
+
+fn enforce_hook_execute_permission(hook: &Hook) -> Result<()> {
+    let hook_str = hook.path.as_str();
+    if !hook_str.contains("plugins") {
+        return Ok(());
+    }
+    let plugins_dir = crate::install::global_asset_dir("plugins")?;
+    let plugins_str = plugins_dir.as_str();
+    if !hook_str.starts_with(plugins_str) {
+        return Ok(());
+    }
+    let relative = &hook_str[plugins_str.len() + 1..];
+    let plugin_name = relative.split(['/', '\\']).next().unwrap_or("");
+    if plugin_name.is_empty() {
+        return Ok(());
+    }
+    let plugin_path = plugins_dir.join(plugin_name);
+    let receipt_path = plugin_path.join(".lode-install.json");
+    if !receipt_path.exists() {
+        return Err(LodeError::Message(format!(
+            "Plugin '{}' has no install receipt; refusing to execute hook",
+            plugin_name
+        )));
+    }
+    let raw = std::fs::read_to_string(&receipt_path).map_err(|source| LodeError::Io {
+        path: receipt_path.as_str().into(),
+        source,
+    })?;
+    let receipt: crate::PluginInstallReceipt = serde_json::from_str(&raw)
+        .map_err(|e| LodeError::Message(format!("invalid plugin receipt: {e}")))?;
+    if !receipt.permissions.execute && !receipt.allow_unsafe {
+        return Err(LodeError::Message(format!(
+            "Plugin '{}' does not declare execute permission; hook execution blocked",
+            plugin_name
+        )));
+    }
+    Ok(())
+}
+
 pub fn run_hook(hook: &Hook, project_dir: &Utf8Path, dry_run: bool) -> Result<()> {
+    if dry_run {
+        return Ok(());
+    }
+    enforce_hook_execute_permission(hook)?;
     if dry_run {
         return Ok(());
     }
     match &hook.runtime {
         HookRuntime::Shell => {
-            run_hook_program("sh", &["-c", hook.path.as_str()], hook, project_dir)?;
+            let (shell, args): (&str, &[&str]) = if cfg!(target_os = "windows") {
+                let ext = hook.path.extension().unwrap_or("");
+                if ext.eq_ignore_ascii_case("bat") || ext.eq_ignore_ascii_case("cmd") {
+                    ("cmd", &["/c", hook.path.as_str()])
+                } else {
+                    ("sh", &[hook.path.as_str()])
+                }
+            } else {
+                ("sh", &[hook.path.as_str()])
+            };
+            run_hook_program(shell, args, hook, project_dir)?;
         }
         HookRuntime::Node => {
             run_hook_program("node", &[hook.path.as_str()], hook, project_dir)?;

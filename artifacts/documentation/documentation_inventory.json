@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0",
+  "suite_version": "3.2.0",
+  "prompt_id": "UPPS-07",
+  "generated": "2026-07-11",
+  "project_name": "lode",
+  "documentation_root": "docs",
+  "profile": "STANDARD",
+  "files": [
+    {
+      "path": "docs/index.md",
+      "type": "entry_point",
+      "status": "created",
+      "sections": ["architecture", "guides", "reference", "operations", "project_overview", "documentation_map"],
+      "source_authority": "UPPS-03",
+      "maintainer_note": "Update project status and links when architecture changes"
+    },
+    {
+      "path": "docs/architecture/index.md",
+      "type": "architecture",
+      "status": "created",
+      "sections": [
+        "workspace_structure",
+        "crate_architecture",
+        "lode_core_modules",
+        "lode_cli",
+        "lode_daemon",
+        "lode_mcp",
+        "lode_tui",
+        "lode_lsp",
+        "security_model",
+        "data_flow",
+        "ipc_protocol",
+        "mcp_protocol",
+        "lsp_protocol"
+      ],
+      "source_authority": "UPPS-03 component_map + crate deep dive",
+      "maintainer_note": "Update when new crates added or security model changes"
+    },
+    {
+      "path": "docs/guides/index.md",
+      "type": "guide",
+      "status": "created",
+      "sections": [
+        "getting_started",
+        "installation",
+        "quick_start",
+        "basic_workflow",
+        "development_workflow",
+        "git_integration",
+        "environment_management",
+        "package_management",
+        "release",
+        "time_tracking",
+        "extension_guides",
+        "vscode",
+        "neovim",
+        "zed",
+        "fuzz_testing",
+        "coverage"
+      ],
+      "source_authority": "UPPS-03 entry_point_map + command_inventory",
+      "maintainer_note": "Update when new extensions or commands added"
+    },
+    {
+      "path": "docs/reference/index.md",
+      "type": "reference",
+      "status": "created",
+      "sections": [
+        "cli_reference",
+        "global_options",
+        "core_lifecycle",
+        "development",
+        "configuration",
+        "template_library",
+        "profile_management",
+        "recipe_management",
+        "snippet_management",
+        "custom_commands",
+        "plugins",
+        "server_modes",
+        "security",
+        "git",
+        "environment",
+        "license",
+        "projects",
+        "toolchain",
+        "package_management",
+        "time_tracking",
+        "workspace",
+        "daemon",
+        "other_commands",
+        "configuration_reference",
+        "mcp_tools_reference",
+        "mcp_resources",
+        "mcp_prompts",
+        "lsp_protocol"
+      ],
+      "source_authority": "UPPS-03 entry_point_map + lode-cli types.rs + lode-mcp tools/ + lode-lsp lib.rs",
+      "maintainer_note": "Keep in sync with clap derive changes in types.rs"
+    },
+    {
+      "path": "docs/operations/index.md",
+      "type": "operations",
+      "status": "created",
+      "sections": [
+        "building",
+        "prerequisites",
+        "commands",
+        "alternative_toolchain",
+        "testing",
+        "code_quality",
+        "security_audits",
+        "release_process",
+        "manual_release",
+        "daemon",
+        "lifecycle",
+        "idle_watchdog",
+        "ipc_transport",
+        "tui_dashboard",
+        "troubleshooting",
+        "common_issues",
+        "logs",
+        "cleanup"
+      ],
+      "source_authority": "UPPS-03 command_inventory + CI/CD workflows",
+      "maintainer_note": "Update when CI/CD or build process changes"
+    },
+    {
+      "path": "reports/documentation/documentation_generation_report.md",
+      "type": "report",
+      "status": "created",
+      "sections": [
+        "objective",
+        "scope",
+        "mode_and_permissions",
+        "assumptions",
+        "evidence_used",
+        "coverage_and_exclusions",
+        "baseline",
+        "findings",
+        "verification",
+        "remaining_risks"
+      ],
+      "source_authority": "UPPS-07 execution",
+      "maintainer_note": "One-time generation report; not maintained"
+    }
+  ],
+  "existing_documentation": [
+    {"path": "README.md", "type": "readme", "status": "preserved", "gap": "May overlap with docs/reference CLI list"},
+    {"path": "AGENTS.md", "type": "agent_guide", "status": "preserved", "gap": "None identified"},
+    {"path": "CONTRIBUTING.md", "type": "contributing", "status": "preserved", "gap": "No extension development section"},
+    {"path": "SECURITY.md", "type": "security", "status": "preserved", "gap": "No threat model"},
+    {"path": "CHANGELOG.md", "type": "changelog", "status": "preserved", "gap": "Unreleased entries only"}
+  ],
+  "gaps": [
+    "No automated doc-CLI consistency check",
+    "No API docs beyond CLI (covered by Rustdoc)",
+    "No threat model document (consider UPPS-04)"
+  ],
+  "source_mapping": {
+    "cli_reference": ["lode-cli/src/cmd/types.rs", "lode-cli/src/cmd/mod.rs", "lode-cli/src/main.rs"],
+    "mcp_tools": ["lode-mcp/src/tools/mod.rs"],
+    "mcp_resources": ["lode-mcp/src/resources.rs"],
+    "mcp_prompts": ["lode-mcp/src/prompts.rs"],
+    "lsp_protocol": ["lode-lsp/src/lib.rs"],
+    "architecture": ["crates/*/Cargo.toml", "crates/*/src/lib.rs", "crates/*/src/main.rs"],
+    "configuration": ["lode-core/src/config/mod.rs"],
+    "security_model": ["lode-core/src/fs_safety.rs", "lode-core/src/process.rs", "lode-core/src/secrets.rs"],
+    "ci_cd": [".github/workflows/ci.yml", ".github/workflows/release.yml"]
+  }
+}

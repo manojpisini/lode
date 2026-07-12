@@ -25,6 +25,9 @@ impl Default for SignatureConfig {
     }
 }
 
+/// Width of the signature separator line (77 chars fits within 80-col terminals with comment prefix).
+const SEPARATOR_WIDTH: usize = 77;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignatureHeader {
     pub file: String,
@@ -53,7 +56,7 @@ impl SignatureHeader {
     }
 
     pub fn render(&self, config: &SignatureConfig, prefix: &str) -> String {
-        let sep = config.separator_char.repeat(77);
+        let sep = config.separator_char.repeat(SEPARATOR_WIDTH);
         let mut lines = vec![format!("{prefix} {sep}")];
         lines.push(format!("{prefix} @file    {}", self.file));
         lines.push(format!("{prefix} @project {}", self.project));
@@ -99,16 +102,51 @@ pub fn has_signature_header(content: &str) -> bool {
 }
 
 pub fn compute_content_hash(content: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    format!("{:064x}", hasher.finalize())
 }
 
 fn chrono_now_date() -> String {
-    // Simple date without chrono dependency
-    "2026-01-01".to_string()
+    let now = std::time::SystemTime::now();
+    let since_epoch = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let total_secs = since_epoch.as_secs();
+    let days = total_secs / 86400;
+
+    let mut year: u64 = 1970;
+    let mut remaining_days = days;
+    loop {
+        let days_in_year =
+            if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400) {
+                366
+            } else {
+                365
+            };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+    let days_in_months =
+        if (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400) {
+            [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        } else {
+            [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        };
+    let mut month: u64 = 1;
+    for &dim in days_in_months.iter() {
+        if remaining_days < dim {
+            break;
+        }
+        remaining_days -= dim;
+        month += 1;
+    }
+    let day = remaining_days + 1;
+    format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
 #[cfg(test)]

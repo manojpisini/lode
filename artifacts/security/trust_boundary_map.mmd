@@ -1,0 +1,75 @@
+graph TD
+    subgraph Untrusted_Environment["Untrusted Environment (User's System)"]
+        TU[Terminal User]
+        AA[AI Agent / MCP Client]
+        ED[Editor IDE]
+        ML[Malicious Local User]
+        SA[Supply Chain Attacker]
+        GH[GitHub]
+    end
+
+    subgraph Lode_Trusted["Trusted Zone — LODE Processes"]
+        CLI[lode-cli]
+        MCP[lode-mcp]
+        LSP[lode-lsp]
+        TUI[lode-tui]
+        DAEMON[lode-daemon]
+        CORE[lode-core]
+        CORE --> VALIDATED[ValidatedRoot]
+        CORE --> PROCESS[Process Runner]
+        CORE --> SECRETS[Secrets Scanner]
+        CORE --> TEMPLATE[Template Engine]
+    end
+
+    subgraph Filesystem["Filesystem (Untrusted)"]
+        CFG[~/.lode/config.toml]
+        SRC[Project source code]
+        DOTENV[.env files]
+        GIT[.git/ hooks]
+        PLUGIN[Plugins]
+        TEMPLATES[Template files]
+    end
+
+    subgraph Child_Processes["Child Processes"]
+        GIT_CMD[git]
+        CARGO[cargo]
+        NPM[npm]
+        MAKE[make]
+        OTHER[system tools]
+    end
+
+    TU -->|Boundary A: CLI args| CLI
+    AA -->|Boundary A: MCP JSON-RPC| MCP
+    ED -->|Boundary A: LSP JSON-RPC| LSP
+    ML -->|Boundary A: all inputs| CLI
+    ML -->|Boundary A: all inputs| MCP
+    ML -->|Boundary A: all inputs| LSP
+
+    CLI --> CORE
+    MCP --> CORE
+    LSP --> CORE
+    TUI --> CORE
+    DAEMON --> CORE
+
+    CORE -->|Boundary B: validated writes| SRC
+    CORE -->|Boundary B: config reads| CFG
+    CORE -->|Boundary B: scan reads| SRC
+    CORE -->|Boundary B: scan reads| DOTENV
+    CORE -->|Boundary B: template reads| TEMPLATES
+    CLI -->|Boundary B: plugin reads| PLUGIN
+    MCP -->|Boundary B: tool operations| SRC
+    DAEMON -->|Boundary B: file watching| SRC
+
+    CORE -->|Boundary C: validated exec| GIT_CMD
+    CORE -->|Boundary C: validated exec| CARGO
+    CORE -->|Boundary C: validated exec| NPM
+    CORE -->|Boundary C: validated exec| MAKE
+
+    SA -->|Boundary D: network (optional)| CARGO
+    CLI -->|Boundary D: git push| GH
+    RELEASE[Release Workflow] -->|Boundary D: publish| GH
+
+    ML -->|Boundary B: modify files| GIT
+    ML -->|Boundary B: modify files| CFG
+    ML -->|Boundary B: modify files| PLUGIN
+    ML -->|Boundary B: modify files| TEMPLATES

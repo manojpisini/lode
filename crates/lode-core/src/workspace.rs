@@ -57,8 +57,7 @@ pub fn discover_members(
 
     if pattern_str.contains('*') {
         let base = if let Some(star_pos) = pattern_str.rfind('/') {
-            Utf8PathBuf::try_from(&pattern_str[..star_pos])
-                .map_err(|e| LodeError::Message(format!("invalid glob base path: {}", e)))?
+            Utf8PathBuf::from(&pattern_str[..star_pos])
         } else {
             project_dir.to_path_buf()
         };
@@ -104,7 +103,15 @@ fn visit_members(dir: &Utf8Path, suffix: &str, members: &mut Vec<WorkspaceMember
         } else if let Some(inner) = suffix.strip_suffix("/*").or(suffix.strip_suffix("\\*")) {
             child.file_name().is_some_and(|n| n == inner) || suffix.ends_with("/*")
         } else {
-            child.file_name().is_some_and(|n| suffix.contains(n))
+            child.file_name().is_some_and(|n| {
+                if let Some(prefix) = suffix.strip_suffix('*') {
+                    n.starts_with(prefix)
+                } else if let Some(end) = suffix.strip_prefix('*') {
+                    n.ends_with(end)
+                } else {
+                    n == suffix
+                }
+            })
         };
         if matches {
             if let Some(name) = child.file_name() {

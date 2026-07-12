@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use camino::Utf8PathBuf;
@@ -113,16 +112,14 @@ impl DaemonWatcher {
     }
 
     pub fn receive_event(&self) -> Option<WatchEvent> {
-        let timeout = Duration::from_millis(self.config.debounce_ms);
-
-        match self.rx.recv_timeout(timeout) {
+        match self.rx.try_recv() {
             Ok(Ok(event)) => self.map_event(event),
             Ok(Err(e)) => {
                 eprintln!("Watcher error: {e}");
                 None
             }
-            Err(RecvTimeoutError::Timeout) => None,
-            Err(RecvTimeoutError::Disconnected) => None,
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => None,
         }
     }
 

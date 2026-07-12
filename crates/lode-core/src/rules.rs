@@ -13,15 +13,9 @@ pub struct ConventionRule {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RulesConfig {
     pub rules: Vec<ConventionRule>,
-}
-
-impl Default for RulesConfig {
-    fn default() -> Self {
-        Self { rules: Vec::new() }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,7 +45,7 @@ pub fn load_rules(project_dir: &Path) -> Result<RulesConfig> {
     let config: RulesConfig =
         toml::from_str(&content).map_err(|source| LodeError::TomlDeserialize {
             path: rules_path,
-            source,
+            source: Box::new(source),
         })?;
 
     Ok(config)
@@ -60,23 +54,26 @@ pub fn load_rules(project_dir: &Path) -> Result<RulesConfig> {
 fn is_case_valid(name: &str, case: &str) -> bool {
     match case {
         "kebab-case" => {
-            let re = Regex::new(r"^[a-z0-9]+(-[a-z0-9]+)*$").unwrap();
+            let re =
+                Regex::new(r"^[a-z0-9]+(-[a-z0-9]+)*$").expect("hardcoded pattern: kebab-case");
             re.is_match(name)
         }
         "snake_case" => {
-            let re = Regex::new(r"^[a-z0-9]+(_[a-z0-9]+)*$").unwrap();
+            let re =
+                Regex::new(r"^[a-z0-9]+(_[a-z0-9]+)*$").expect("hardcoded pattern: snake_case");
             re.is_match(name)
         }
         "PascalCase" => {
-            let re = Regex::new(r"^[A-Z][a-zA-Z0-9]*$").unwrap();
+            let re = Regex::new(r"^[A-Z][a-zA-Z0-9]*$").expect("hardcoded pattern: PascalCase");
             re.is_match(name)
         }
         "camelCase" => {
-            let re = Regex::new(r"^[a-z][a-zA-Z0-9]*$").unwrap();
+            let re = Regex::new(r"^[a-z][a-zA-Z0-9]*$").expect("hardcoded pattern: camelCase");
             re.is_match(name)
         }
         "SCREAMING_SNAKE_CASE" => {
-            let re = Regex::new(r"^[A-Z0-9]+(_[A-Z0-9]+)*$").unwrap();
+            let re = Regex::new(r"^[A-Z0-9]+(_[A-Z0-9]+)*$")
+                .expect("hardcoded pattern: SCREAMING_SNAKE_CASE");
             re.is_match(name)
         }
         _ => true,

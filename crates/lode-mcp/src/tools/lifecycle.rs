@@ -23,6 +23,11 @@ pub fn tools() -> Vec<Tool> {
                     "Scaffold profile (e.g. core/app, systems/rust-cli)",
                     optional_string_schema(),
                 ),
+                (
+                    "components",
+                    "Comma-separated list of components to include",
+                    optional_string_schema(),
+                ),
             ]),
         },
         Tool {
@@ -79,6 +84,18 @@ pub fn lode_init(args: &Value) -> Result<Value, String> {
     let author = args["author"].as_str().unwrap_or("");
     let org = args["org"].as_str().unwrap_or("");
     let profile = args["profile"].as_str();
+    let components = args["components"]
+        .as_str()
+        .map(|s| {
+            s.split(',')
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let base_path = camino::Utf8PathBuf::from(path);
     let mut config = lode_core::config::default_config();
@@ -94,7 +111,7 @@ pub fn lode_init(args: &Value) -> Result<Value, String> {
         base_path,
         config,
         profile: profile.map(|s| s.to_string()),
-        components: Vec::new(),
+        components,
         dry_run: false,
         overwrite: false,
         lang: None,
@@ -124,6 +141,9 @@ pub fn lode_add(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: component")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let project_dir = camino::Utf8PathBuf::from(path);
     let config = load_config(&project_dir)?;
 
@@ -151,6 +171,9 @@ pub fn lode_sync(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let project_dir = camino::Utf8PathBuf::from(path);
     let config = load_config(&project_dir)?;
 
@@ -169,6 +192,9 @@ pub fn lode_info(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = camino::Utf8PathBuf::from(path);
     let project_toml = root.join(".lode").join("project.toml");

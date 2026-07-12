@@ -14,7 +14,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = tree
         .iter()
         .map(|node| {
-            let prefix = if node.is_dir { "  📁 " } else { "  📄 " };
+            let prefix = if node.is_dir { " [DIR] " } else { " [FILE] " };
             let name = &node.name;
 
             let mut spans = vec![Span::raw(prefix.to_string())];

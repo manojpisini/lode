@@ -1,7 +1,12 @@
+#![deny(unsafe_code)]
+
+pub(crate) mod types;
+
 pub mod add;
 pub mod agent;
 pub mod audit;
 pub mod check;
+pub mod commands;
 pub mod completions;
 pub mod config;
 pub mod daemon;
@@ -15,8 +20,10 @@ pub mod info;
 pub mod init;
 pub mod license;
 pub mod log;
+pub mod lsp;
 pub mod mcp;
 pub mod metrics;
+pub mod pkg;
 pub mod plugin;
 pub mod profile;
 pub mod projects;
@@ -35,5 +42,6 @@ pub mod sync;
 pub mod task;
 pub mod template;
 pub mod time;
+pub mod toolchain;
 pub mod upgrade;
 pub mod workspace;

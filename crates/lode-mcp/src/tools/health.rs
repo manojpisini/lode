@@ -32,6 +32,9 @@ pub fn lode_audit(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = camino::Utf8PathBuf::from(path);
 
     if !root.join(".lode").exists() {
@@ -56,6 +59,9 @@ pub fn lode_metrics(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = camino::Utf8PathBuf::from(path);
 

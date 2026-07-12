@@ -36,17 +36,9 @@ pub struct TimeSession {
     pub task: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TimeLog {
     pub sessions: Vec<TimeSession>,
-}
-
-impl Default for TimeLog {
-    fn default() -> Self {
-        Self {
-            sessions: Vec::new(),
-        }
-    }
 }
 
 fn log_path(project_dir: &Utf8Path) -> Utf8PathBuf {

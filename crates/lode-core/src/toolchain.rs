@@ -77,6 +77,16 @@ pub fn detect_installed_version(version_cmd: &str) -> Option<String> {
     if parts.is_empty() {
         return None;
     }
+    // Reject parts containing shell metacharacters
+    let dangerous = [
+        ';', '|', '&', '`', '$', '(', ')', '{', '}', '<', '>', '\\', '\'', '"', '!', '#',
+    ];
+    if parts
+        .iter()
+        .any(|p| p.chars().any(|c| dangerous.contains(&c)))
+    {
+        return None;
+    }
     let output = Process::new(parts[0])
         .ok()?
         .args(&parts[1..])
@@ -175,7 +185,18 @@ pub fn pin_runtime(project_dir: &Path, runtime: &RuntimeConfig, version: &str) -
 pub fn load_store(project_dir: &Path) -> ToolchainStore {
     let path = project_dir.join(".lode").join("toolchain.json");
     if path.exists() {
-        let content = fs::read_to_string(&path).unwrap_or_default();
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_e) => {
+                let backup = path.with_extension("json.bak");
+                fs::rename(&path, &backup).ok();
+                eprintln!(
+                    "lode: warning: corrupted toolchain data backed up to {:?}",
+                    backup
+                );
+                String::new()
+            }
+        };
         serde_json::from_str(&content).unwrap_or_default()
     } else {
         ToolchainStore::default()

@@ -177,7 +177,7 @@ pub fn branch_name(kind: &str, description: &str) -> String {
             } else if !kind.ends_with('-') {
                 '-'
             } else {
-                return '\0';
+                '\0'
             }
         })
         .filter(|ch| *ch != '\0')
@@ -209,7 +209,13 @@ pub fn uninstall_git_hooks(path: &Path) -> Result<()> {
     for name in ["pre-commit", "pre-push"] {
         let hook_path = hooks_dir.join(name);
         if hook_path.exists() {
-            let content = fs::read_to_string(&hook_path).unwrap_or_default();
+            let content = fs::read_to_string(&hook_path).unwrap_or_else(|e| {
+                eprintln!(
+                    "warning: failed to read hook file {}: {e}",
+                    hook_path.display()
+                );
+                String::new()
+            });
             if content.contains("lode-managed") {
                 root.remove_file(Path::new(".git").join("hooks").join(name))?;
             }

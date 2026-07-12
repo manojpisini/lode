@@ -1,7 +1,12 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use camino::Utf8PathBuf;
-use serde::{Deserialize, Serialize};
+use lode_core::signature::{
+    comment_prefix_for_extension, has_signature_header, SignatureConfig, SignatureHeader,
+};
 use thiserror::Error;
 
 use crate::watcher::WatcherConfig;
@@ -12,24 +17,52 @@ pub enum HandlerError {
     Failed(String),
     #[error("Path error: {0}")]
     PathError(String),
+    #[error("IO error: {0}")]
+    IoError(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandlerResult {
-    pub actions: Vec<String>,
-    pub errors: Vec<String>,
+fn extension(path: &Utf8PathBuf) -> Option<String> {
+    path.extension().map(|e| e.to_string())
 }
 
 pub fn handle_create(path: &PathBuf, config: &WatcherConfig) -> Result<Vec<String>, HandlerError> {
     let mut actions = Vec::new();
 
-    let utf8_path =
-        Utf8PathBuf::try_from(path.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
+    let utf8_path = Utf8PathBuf::try_from(path.to_path_buf())
+        .map_err(|e| HandlerError::PathError(e.to_string()))?;
 
     actions.push(format!("File created: {utf8_path}"));
 
     if !config.no_stamp {
-        actions.push(format!("Stamp applied: {utf8_path}"));
+        let ext = extension(&utf8_path);
+        if let Some(ext) = ext {
+            if let Some(prefix) = comment_prefix_for_extension(&ext) {
+                let content =
+                    fs::read_to_string(path).map_err(|e| HandlerError::IoError(e.to_string()))?;
+                if !has_signature_header(&content) {
+                    let header = SignatureHeader::new(
+                        utf8_path.file_name().unwrap_or("unknown"),
+                        "default",
+                        "lode-daemon",
+                        "MIT",
+                    );
+                    let sig_config = SignatureConfig::default();
+                    let header_text = header.render(&sig_config, prefix);
+                    let new_content = format!("{header_text}{content}");
+                    fs::write(path, &new_content)
+                        .map_err(|e| HandlerError::IoError(e.to_string()))?;
+                    actions.push(format!("Stamp added: {utf8_path} (prefix={prefix})"));
+                } else {
+                    actions.push(format!("Stamp skipped (already present): {utf8_path}"));
+                }
+            } else {
+                actions.push(format!(
+                    "Stamp skipped (no comment prefix for .{ext}): {utf8_path}"
+                ));
+            }
+        } else {
+            actions.push(format!("Stamp skipped (no extension): {utf8_path}"));
+        }
     }
 
     Ok(actions)
@@ -38,92 +71,128 @@ pub fn handle_create(path: &PathBuf, config: &WatcherConfig) -> Result<Vec<Strin
 pub fn handle_modify(path: &PathBuf, config: &WatcherConfig) -> Result<Vec<String>, HandlerError> {
     let mut actions = Vec::new();
 
-    let utf8_path =
-        Utf8PathBuf::try_from(path.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
+    let utf8_path = Utf8PathBuf::try_from(path.to_path_buf())
+        .map_err(|e| HandlerError::PathError(e.to_string()))?;
 
     actions.push(format!("File modified: {utf8_path}"));
 
     if !config.no_sign {
-        actions.push(format!("Signature checked: {utf8_path}"));
+        let content = fs::read_to_string(path).map_err(|e| HandlerError::IoError(e.to_string()))?;
+        if has_signature_header(&content) {
+            actions.push(format!("Signature verified: {utf8_path}"));
+        } else {
+            actions.push(format!("Signature missing: {utf8_path}"));
+        }
     }
 
     Ok(actions)
 }
 
 pub fn handle_rename(
-    from: &PathBuf,
-    to: &PathBuf,
+    from: &Path,
+    to: &Path,
     _config: &WatcherConfig,
 ) -> Result<Vec<String>, HandlerError> {
     let mut actions = Vec::new();
 
-    let utf8_from =
-        Utf8PathBuf::try_from(from.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
-    let utf8_to =
-        Utf8PathBuf::try_from(to.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
+    let utf8_from = Utf8PathBuf::try_from(from.to_path_buf())
+        .map_err(|e| HandlerError::PathError(e.to_string()))?;
+    let utf8_to = Utf8PathBuf::try_from(to.to_path_buf())
+        .map_err(|e| HandlerError::PathError(e.to_string()))?;
 
     actions.push(format!("File renamed: {utf8_from} -> {utf8_to}"));
+
+    // Update signature path field in destination file if it has a signature
+    if let Ok(content) = fs::read_to_string(to) {
+        if has_signature_header(&content) {
+            actions.push(format!("Signature path update needed: {utf8_to}"));
+        }
+    }
 
     Ok(actions)
 }
 
-pub fn handle_delete(path: &PathBuf, _config: &WatcherConfig) -> Result<Vec<String>, HandlerError> {
+pub fn handle_delete(path: &Path, _config: &WatcherConfig) -> Result<Vec<String>, HandlerError> {
     let mut actions = Vec::new();
 
-    let utf8_path =
-        Utf8PathBuf::try_from(path.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
+    let utf8_path = Utf8PathBuf::try_from(path.to_path_buf())
+        .map_err(|e| HandlerError::PathError(e.to_string()))?;
 
     actions.push(format!("File deleted: {utf8_path}"));
 
     Ok(actions)
 }
 
-pub fn convention_handler(path: &PathBuf) -> Result<Vec<String>, HandlerError> {
-    let mut actions = Vec::new();
+#[cfg(test)]
+mod daemon_handler_tests {
+    use super::*;
 
-    let utf8_path =
-        Utf8PathBuf::try_from(path.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
-
-    let filename = utf8_path
-        .file_name()
-        .ok_or_else(|| HandlerError::PathError("No filename".to_string()))?;
-
-    if filename.contains(' ') {
-        actions.push(format!("Naming warning: spaces in {filename}"));
+    #[test]
+    fn extension_returns_some_for_known_extensions() {
+        let path = Utf8PathBuf::from("file.rs");
+        assert_eq!(extension(&path), Some("rs".to_string()));
     }
 
-    if filename.len() > 100 {
-        actions.push(format!("Naming warning: long filename {filename}"));
+    #[test]
+    fn extension_returns_none_for_no_extension() {
+        let path = Utf8PathBuf::from("Makefile");
+        assert_eq!(extension(&path), None);
     }
 
-    Ok(actions)
-}
-
-pub fn signature_handler(path: &PathBuf) -> Result<Vec<String>, HandlerError> {
-    let mut actions = Vec::new();
-
-    let utf8_path =
-        Utf8PathBuf::try_from(path.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
-
-    actions.push(format!("Signature processed: {utf8_path}"));
-
-    Ok(actions)
-}
-
-pub fn env_drift_handler(path: &PathBuf) -> Result<Vec<String>, HandlerError> {
-    let mut actions = Vec::new();
-
-    let utf8_path =
-        Utf8PathBuf::try_from(path.clone()).map_err(|e| HandlerError::PathError(e.to_string()))?;
-
-    let ext = utf8_path.extension().unwrap_or_default().to_string();
-
-    match ext.as_str() {
-        "toml" => actions.push(format!("Config drift detected: {utf8_path}")),
-        "env" => actions.push(format!("Environment drift detected: {utf8_path}")),
-        "lock" => actions.push(format!("Lock file drift detected: {utf8_path}")),
-        _ => {}
+    #[test]
+    fn extension_returns_last_component() {
+        let path = Utf8PathBuf::from("archive.tar.gz");
+        assert_eq!(extension(&path), Some("gz".to_string()));
     }
 
-    Ok(actions)
+    #[test]
+    fn handle_create_adds_stamp_to_unsigned_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("hello.rs");
+        std::fs::write(&file_path, "fn main() {}").unwrap();
+
+        let config = WatcherConfig::default();
+        let result = handle_create(&file_path, &config).unwrap();
+
+        assert!(result.iter().any(|a| a.starts_with("Stamp added")));
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert!(content.starts_with("// "));
+    }
+
+    #[test]
+    fn handle_create_skips_stamp_when_no_stamp_is_set() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("hello.rs");
+        std::fs::write(&file_path, "fn main() {}").unwrap();
+
+        let config = WatcherConfig {
+            no_stamp: true,
+            ..Default::default()
+        };
+        let result = handle_create(&file_path, &config).unwrap();
+
+        assert!(result.iter().all(|a| !a.starts_with("Stamp")));
+    }
+
+    #[test]
+    fn handle_modify_reports_signature_status() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("hello.rs");
+        std::fs::write(&file_path, "fn main() {}").unwrap();
+
+        let config = WatcherConfig::default();
+        let result = handle_modify(&file_path, &config).unwrap();
+        assert!(result.iter().any(|a| a.contains("Signature missing")));
+    }
+
+    #[test]
+    fn handle_delete_reports_deletion() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("gone.rs");
+        std::fs::write(&file_path, "content").unwrap();
+
+        let config = WatcherConfig::default();
+        let result = handle_delete(file_path.as_path(), &config).unwrap();
+        assert!(result.iter().any(|a| a.starts_with("File deleted")));
+    }
 }

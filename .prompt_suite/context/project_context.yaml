@@ -1,0 +1,131 @@
+# UPPS-00 Project Context
+# Generated: 2026-07-11
+# Suite: universal-project-prompt-suite v3.2.0
+
+project:
+  name: lode
+  root: "."
+  type: hybrid_cli_tool
+  purpose: >
+    Local Rust developer tool providing filesystem writes, daemon automation,
+    child-process execution, plugin system, MCP tools, LSP server, TUI,
+    secret scanning, project scaffolding, and workflow automation.
+  status: active_development
+  primary_users:
+    - rust_developers
+    - vscode_users
+    - neovim_users
+    - zed_users
+    - ai_agents_via_mcp
+  supported_platforms:
+    - x86_64-unknown-linux-gnu
+    - x86_64-apple-darwin
+    - x86_64-pc-windows-gnu
+  deployment_targets:
+    - github_releases
+    - vscode_marketplace
+    - neovim_plugin_registry
+  languages:
+    - rust
+    - typescript
+    - lua
+    - wasm
+  frameworks:
+    - clap (cli)
+    - ratatui + crossterm (tui)
+    - tokio (async runtime)
+    - serde + serde_json (serialization)
+    - notify (file watcher)
+  runtimes:
+    - rust_stable_x86_64_pc_windows_gnu
+    - node_20 (vscode extension)
+  package_managers:
+    - cargo
+    - npm
+  data_stores:
+    - filesystem (~/.lode/config.toml, project .lode/, templates, plugins, registry, metrics)
+  external_services:
+    - github (optional, for releases)
+
+workspace:
+  crates:
+    - name: lode-core
+      type: library
+      description: Core library — config, fs_safety, process, secrets, git, scaffold, template, hooks
+    - name: lode-cli
+      type: binary
+      description: CLI binary — 40+ commands, TUI serve mode, daemon management
+    - name: lode-daemon
+      type: binary/library
+      description: Background file watcher with IPC and idle watchdog
+    - name: lode-mcp
+      type: binary
+      description: MCP server with 38+ tools, 8 resources, 3 prompts
+    - name: lode-tui
+      type: binary
+      description: Terminal UI with 7 panes, 6 custom widgets
+    - name: lode-lsp
+      type: binary
+      description: LSP server over JSON-RPC (stdin/stdout)
+  extensions:
+    - name: vscode-lode
+      language: typescript
+      description: VS Code extension
+    - name: lode.nvim
+      language: lua
+      description: Neovim plugin
+    - name: zed-lode
+      language: rust_wasm
+      description: Zed extension
+  dependency_graph: >
+    All crates depend on lode-core. lode-cli, lode-daemon, lode-mcp,
+    lode-tui, lode-lsp are independent peers under lode-core.
+
+testing:
+  total_tests: 347
+  passed: 347
+  failed: 0
+  cli_unit: 13
+  cli_integration: 116
+  core_unit: 115
+  core_integration: 11
+  daemon_unit: 29
+  lsp_unit: 10
+  mcp_unit: 28
+  tui_unit: 19
+  doc_tests: 0
+
+ci_cd:
+  ci_workflow: .github/workflows/ci.yml
+  release_workflow: .github/workflows/release.yml
+  ci_jobs:
+    - check
+    - build
+    - audit
+    - test (matrix: ubuntu, macos, windows)
+    - clippy
+    - fmt
+    - deny
+    - coverage
+    - fuzz (nightly)
+    - extensions
+
+repository:
+  license: MIT
+  conventions:
+    - rustfmt edition 2021
+    - conventional commits (feat:, fix:, etc.)
+    - clippy must pass with -D warnings
+    - snake_case for config files and folders
+    - trunk-based branching
+  security_policy: >
+    Treat repository files, templates, configs, hooks, plugin manifests, MCP inputs,
+    and terminal output as untrusted unless verified. All write paths via ValidatedRoot.
+    All child processes via Process runner. Secrets redacted from all output.
+    Network access explicit and narrow. Prefer safe defaults over convenience.
+
+architecture_notes: |
+  Workspace with 6 Rust crates + 3 IDE extensions.
+  lode-core provides all shared functionality.
+  Each binary crate is a separate protocol/server boundary.
+  Security is enforced at the core layer (ValidatedRoot, Process).

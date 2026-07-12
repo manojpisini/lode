@@ -1,12 +1,45 @@
+# Rust
 target/
+*.wasm
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Backup
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment
 .env
 .env.*
 !.env.example
+
+# Node
+node_modules/
+
+# Lode
 *.lodepack
-LODE_DESIGN_FINAL.md
+outputs/
+.omx/
+.agents/
+
+# Legacy project artifacts
 Defaults.txt
 TUI_Design_Demo.png
-AGENTS.md
 SECURITY_AUDIT_PROMPT.md
 MASTER_SECURITY_AUDIT_PROMPT.md
-outputs/
+prompts/
+LODE_DESIGN_FINAL.md

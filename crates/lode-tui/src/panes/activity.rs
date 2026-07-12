@@ -13,7 +13,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = events
         .iter()
         .rev()
-        .take(area.height as usize - 2)
+        .take(area.height.saturating_sub(2) as usize)
         .map(|ev| {
             let text = format_event(ev, theme);
             ListItem::new(text)

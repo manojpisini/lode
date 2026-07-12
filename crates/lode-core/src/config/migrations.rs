@@ -12,7 +12,7 @@ pub fn migrate_config_source_if_needed(path: &Utf8PathBuf, raw: &str) -> Result<
     let mut value: toml::Value =
         toml::from_str(raw).map_err(|source| LodeError::TomlDeserialize {
             path: PathBuf::from(path.as_str()),
-            source,
+            source: Box::new(source),
         })?;
     let schema_version = value
         .get("schema_version")
@@ -124,7 +124,7 @@ fn prune_config_backups(path: &Utf8PathBuf) -> Result<()> {
             ));
         }
     }
-    backups.sort_by(|left, right| right.0.cmp(&left.0));
+    backups.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     let root = ValidatedRoot::new(parent)?;
     for (_, backup) in backups.into_iter().skip(5) {
         root.remove_file(

@@ -31,6 +31,9 @@ pub fn lode_agent_sync(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = camino::Utf8PathBuf::from(path);
 
     let agents_dir = root.join(".lode").join("agents");
@@ -51,6 +54,9 @@ pub fn lode_agent_plan(args: &Value) -> Result<Value, String> {
     let task = args["task"]
         .as_str()
         .ok_or("Missing required argument: task")?;
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let mut steps = Vec::new();
     steps.push(json!({"step": 1, "action": "analyse", "description": format!("Analyse project at {path}")}));

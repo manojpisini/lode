@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "documentation-writer": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "skillPath": "skills/documentation-writer/SKILL.md",
+      "computedHash": "ee53d65b163cd7eb953a930c95841cfe398cc2c0bd24c06508bbaa07c432be35"
+    },
+    "frontend-slides": {
+      "source": "zarazhangrui/frontend-slides",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "a862de3e74a25cc4a5d27716489c59ebb69b970716840d04426201f32196cda4"
+    }
+  }
+}

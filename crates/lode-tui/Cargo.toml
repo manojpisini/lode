@@ -4,16 +4,19 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Terminal UI dashboard for LODE with 7 panes and custom widgets"
+documentation = "https://docs.rs/lode-tui/latest/lode_tui/"
+homepage.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "lode-tui"
 path = "src/main.rs"
 
 [dependencies]
-lode-core = { path = "../lode-core" }
+lode-core = { path = "../lode-core", version = "0.1.0" }
+camino.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
-camino.workspace = true
-tokio = { version = "1", features = ["full", "net"] }

@@ -1,0 +1,12 @@
+# Auto-detect text files
+* text=auto
+
+# Shell scripts must have LF endings
+*.sh text eol=lf
+
+# PowerShell scripts should have CRLF endings
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.wasm binary

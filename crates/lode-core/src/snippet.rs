@@ -153,7 +153,7 @@ pub fn export_snippets(snippets: &[Snippet], format: &str) -> Result<String> {
         "json" => {
             serde_json::to_string_pretty(snippets).map_err(|e| LodeError::Message(e.to_string()))
         }
-        "toml" => toml::to_string_pretty(snippets).map_err(LodeError::TomlSerialize),
+        "toml" => toml::to_string_pretty(snippets).map_err(LodeError::from),
         _ => Err(LodeError::Message(format!(
             "unsupported export format: {format}"
         ))),

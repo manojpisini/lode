@@ -30,11 +30,11 @@ pub enum LodeError {
     TomlDeserialize {
         path: PathBuf,
         #[source]
-        source: toml::de::Error,
+        source: Box<toml::de::Error>,
     },
 
     #[error("failed to serialize TOML: {0}")]
-    TomlSerialize(#[from] toml::ser::Error),
+    TomlSerialize(#[source] Box<toml::ser::Error>),
 
     #[error("schema version mismatch: expected {expected}, found {found}")]
     SchemaMismatch { expected: u32, found: u32 },
@@ -47,6 +47,12 @@ pub enum LodeError {
 
     #[error("{count} secret finding(s) found")]
     SecretFindings { count: usize },
+}
+
+impl From<toml::ser::Error> for LodeError {
+    fn from(source: toml::ser::Error) -> Self {
+        Self::TomlSerialize(Box::new(source))
+    }
 }
 
 impl LodeError {

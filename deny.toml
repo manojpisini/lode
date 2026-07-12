@@ -1,0 +1,43 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+# Downgraded to "warn" because RUSTSEC-2026-0002 (lru 0.12.5 stacked borrows)
+# is accepted as transitive risk via ratatui 0.28. Keeping "deny" while
+# ignoring a known unsound advisory was contradictory.
+unsound = "warn"
+yanked = "warn"
+notice = "warn"
+# Review expiry: reviewed 2026-07-11, next review 2026-10-11 (quarterly)
+ignore = [
+    # RUSTSEC-2024-0436: paste 1.0.15 is unmaintained, but it's a transitive dep
+    # via ratatui 0.28 which pins `paste = "^1.0"`. No newer paste version exists
+    # and ratatui cannot be bumped to 0.30 without breaking API changes.
+    # Next review: 2026-10-11
+    "RUSTSEC-2024-0436",
+    # RUSTSEC-2026-0002: lru 0.12.5 has a stacked borrows violation in IterMut.
+    # It's a transitive dep via ratatui 0.28 which pins `lru = "^0.12"`.
+    # Next review: 2026-10-11
+    "RUSTSEC-2026-0002",
+]
+
+[licenses]
+unlicensed = "deny"
+allow = ["MIT", "Apache-2.0", "MIT OR Apache-2.0"]
+deny = []
+copyleft = "deny"
+allow-osi-fsf-free = "neither"
+default = "deny"
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []

@@ -91,14 +91,13 @@ impl Widget for ScoreRing {
         ];
 
         for (i, (x, y, ch)) in segments.iter().enumerate() {
-            if i < filled {
-                buf.cell_mut((*x, *y)).unwrap().set_symbol(&ch.to_string());
-                buf.cell_mut((*x, *y)).unwrap().set_style(style);
-            } else {
-                buf.cell_mut((*x, *y)).unwrap().set_symbol(&ch.to_string());
-                buf.cell_mut((*x, *y))
-                    .unwrap()
-                    .set_style(self.theme.as_ref().map_or(self.style, |t| t.dim_style()));
+            if let Some(cell) = buf.cell_mut((*x, *y)) {
+                cell.set_symbol(&ch.to_string());
+                if i < filled {
+                    cell.set_style(style);
+                } else {
+                    cell.set_style(self.theme.as_ref().map_or(self.style, |t| t.dim_style()));
+                }
             }
         }
 

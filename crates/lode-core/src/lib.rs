@@ -1,3 +1,14 @@
+//! Core library for the LODE developer tool.
+//!
+//! This crate provides the foundational types and operations used by all LODE
+//! components: filesystem safety (ValidatedRoot), process execution (Process),
+//! project scaffolding, naming conventions, secret scanning, git integration,
+//! configuration management, package manager overlays, templates, recipes,
+//! snippets, plugins, hooks, release management, time tracking, and more.
+
+// Note: #![deny(unsafe_code)] is intentionally omitted because
+// fs_safety.rs contains unsafe ReplaceFileW for atomic Windows replacements.
+
 pub mod agent;
 pub mod assets;
 pub mod audit;
@@ -10,11 +21,13 @@ pub mod fs_safety;
 pub mod git;
 pub mod hooks;
 pub mod install;
+pub mod ipc;
 pub mod license;
 pub mod pkg;
 pub mod prereq;
 pub mod process;
 pub mod recipe;
+pub mod redact;
 pub mod registry;
 pub mod release;
 pub mod rules;
@@ -43,7 +56,7 @@ pub use env::*;
 pub use error::{ExitCode, LodeError, Result};
 pub use fs_safety::ValidatedRoot;
 pub use git::*;
-pub use hooks::*;
+pub use hooks::{PluginInstallReceipt, PluginSecurity, *};
 pub use install::{
     ensure_global_workspace, global_asset_dir, global_config_path, global_dir, load_global_config,
     save_global_config, setup_defaults, SetupReport,
@@ -53,6 +66,7 @@ pub use pkg::*;
 pub use prereq::*;
 pub use process::Process;
 pub use recipe::*;
+pub use redact::{redact, redact_findings};
 pub use registry::{
     load_registry, prune_registry, register_project, registry_path, save_registry, ProjectRecord,
     Registry,
@@ -63,7 +77,7 @@ pub use scaffold::{
     add_component_to_project, init_project, load_scaffold_lock, scaffold_lock_path, sync_project,
     AddRequest, InitRequest, ProjectConfig, ScaffoldLock, ScaffoldLockEntry, ScaffoldReport,
 };
-pub use secrets::{scan_secrets, SecretFinding, SecretScanReport};
+pub use secrets::{scan_content, scan_secrets, SecretFinding, SecretScanReport};
 pub use signature::*;
 pub use snippet::*;
 pub use task::*;

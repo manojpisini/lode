@@ -1,4 +1,50 @@
-use crate::ProfileCommand;
+#![deny(unsafe_code)]
+
+use lode_core::{
+    global_asset_dir, load_global_config, profile_names, save_global_config, LodeError,
+    ValidatedRoot,
+};
+
+use crate::{LibraryCommand, ProfileCommand};
+
 pub(crate) fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
-    crate::profile_impl(command)
+    match command {
+        ProfileCommand::List => {
+            for profile in profile_names() {
+                println!("{profile}");
+            }
+        }
+        ProfileCommand::Show { name } => {
+            crate::cmd::template::library_command(
+                "profiles",
+                LibraryCommand::Show { name, raw: true },
+                &profile_names(),
+            )?;
+        }
+        ProfileCommand::Use { name } => {
+            let mut config = load_global_config()?;
+            config.active_profile = Some(name.clone());
+            save_global_config(&config)?;
+            println!("active profile: {name}");
+        }
+        ProfileCommand::New { name } => {
+            let root = ValidatedRoot::new(global_asset_dir("profiles")?)?;
+            let relative = format!("{name}.toml");
+            let config = load_global_config()?;
+            let raw = toml::to_string_pretty(&config)?;
+            root.write_atomic(relative, raw)?;
+            println!("created profile {name}");
+        }
+        ProfileCommand::Delete { name } => {
+            if profile_names().iter().any(|profile| *profile == name) {
+                return Err(LodeError::Message(format!(
+                    "refusing to delete embedded profile: {name}"
+                )));
+            }
+            let root = ValidatedRoot::new(global_asset_dir("profiles")?)?;
+            root.remove_file(format!("{name}.toml"))?;
+            println!("deleted profile {name}");
+        }
+    }
+    Ok(())
 }

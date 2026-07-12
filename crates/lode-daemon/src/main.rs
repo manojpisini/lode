@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -34,12 +36,16 @@ struct Args {
     idle_timeout: u64,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let project_dir = std::env::current_dir()
-        .map(|p| Utf8PathBuf::try_from(p).expect("Invalid project directory"))?;
+        .ok()
+        .and_then(|p| Utf8PathBuf::try_from(p).ok())
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "non-UTF-8 project path")
+        })?;
 
     let config = WatcherConfig {
         debounce_ms: 200,
@@ -49,7 +55,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let state_path = args.state_dir.join("state.json");
-    let mut state = load_state(&state_path).unwrap_or_else(|_| DaemonState::new());
+    let mut state = load_state(&state_path).unwrap_or_else(|e| {
+        eprintln!(
+            "lode-daemon: warning: failed to load state from {}: {}. Using fresh state.",
+            state_path.display(),
+            e
+        );
+        DaemonState::new()
+    });
 
     let mut watcher = DaemonWatcher::start(project_dir.clone(), config.clone())?;
     watcher.watch()?;
@@ -57,8 +70,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ipc_socket = args.state_dir.join("daemon.sock");
     let mut ipc_server = IpcServer::new(ipc_socket.clone());
     ipc_server.start().await?;
+    let auth_token = ipc_server.auth_token().to_string();
     let ipc_task = tokio::spawn(async move {
-        if let Err(error) = run_ipc_listener(ipc_socket).await {
+        if let Err(error) = run_ipc_listener(ipc_socket, auth_token).await {
             eprintln!("IPC listener stopped: {error}");
         }
     });
@@ -75,24 +89,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("State saved to {}", state_path.display());
 
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
 
-    tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        eprintln!("Received SIGINT, shutting down...");
-        r.store(false, Ordering::SeqCst);
-        let _ = shutdown_tx.send(()).await;
-    });
+    {
+        let r = running.clone();
+        let shutdown_tx = shutdown_tx.clone();
+        tokio::spawn(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            eprintln!("Received SIGINT, shutting down...");
+            r.store(false, Ordering::SeqCst);
+            let _ = shutdown_tx.send(()).await;
+        });
+    }
 
     #[cfg(unix)]
     {
         let r = running.clone();
+        let shutdown_tx = shutdown_tx.clone();
         tokio::spawn(async move {
             let mut sigterm =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("Failed to register SIGTERM handler");
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to register SIGTERM handler: {e}");
+                        return;
+                    }
+                };
             sigterm.recv().await;
             eprintln!("Received SIGTERM, shutting down...");
+            r.store(false, Ordering::SeqCst);
+            let _ = shutdown_tx.send(()).await;
+        });
+    }
+
+    #[cfg(windows)]
+    {
+        let r = running.clone();
+        let shutdown_tx = shutdown_tx.clone();
+        tokio::spawn(async move {
+            let _ = tokio::task::spawn_blocking(|| {
+                use std::io::Read;
+                let mut buf = [0u8; 1];
+                loop {
+                    match std::io::stdin().read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {}
+                    }
+                }
+            })
+            .await;
+            eprintln!("Received shutdown signal, shutting down...");
             r.store(false, Ordering::SeqCst);
             let _ = shutdown_tx.send(()).await;
         });
@@ -133,12 +178,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Shutting down daemon...");
 
     let _ = watcher.stop();
-    let _ = ipc_server.stop();
+    let _ = ipc_server.stop().await;
     ipc_task.abort();
     idle_watchdog.stop().await;
 
     state.stop();
     save_state(&state_path, &state)?;
+
+    // Clean up IPC socket, port, lock, and token files
+    let sock = args.state_dir.join("daemon.sock");
+    let port_file = sock.with_extension("port");
+    let lock_file = sock.with_extension("lock");
+    let token_file = sock.with_extension("token");
+    let _ = std::fs::remove_file(&sock);
+    let _ = std::fs::remove_file(&port_file);
+    let _ = std::fs::remove_file(&lock_file);
+    let _ = std::fs::remove_file(&token_file);
 
     eprintln!("Daemon stopped.");
     Ok(())

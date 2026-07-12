@@ -66,9 +66,13 @@ impl ValidatedRoot {
     /// Creates a directory tree while revalidating every created component.
     pub fn create_dir_all(&self, relative: impl AsRef<Path>) -> Result<PathBuf> {
         let target = self.resolve(relative)?;
-        let suffix = target
-            .strip_prefix(&self.root)
-            .expect("validated descendant");
+        let suffix = target.strip_prefix(&self.root).map_err(|_| LodeError::Io {
+            path: target.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "path strip_prefix failed",
+            ),
+        })?;
         let mut current = self.root.clone();
         for component in suffix.components() {
             current.push(component.as_os_str());
@@ -229,11 +233,14 @@ impl ValidatedRoot {
     fn resolve_without_symlinks(&self, relative: impl AsRef<Path>) -> Result<PathBuf> {
         let target = self.resolve(relative)?;
         let mut current = self.root.clone();
-        for component in target
-            .strip_prefix(&self.root)
-            .expect("validated descendant")
-            .components()
-        {
+        let suffix = target.strip_prefix(&self.root).map_err(|_| LodeError::Io {
+            path: target.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "path strip_prefix failed",
+            ),
+        })?;
+        for component in suffix.components() {
             current.push(component.as_os_str());
             match fs::symlink_metadata(&current) {
                 Ok(meta) if meta.file_type().is_symlink() => {

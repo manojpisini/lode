@@ -29,21 +29,6 @@ pub fn dark_theme() -> Theme {
     }
 }
 
-pub fn light_theme() -> Theme {
-    Theme {
-        bg: Color::Rgb(245, 245, 250),
-        fg: Color::Rgb(30, 30, 40),
-        accent: Color::Rgb(40, 100, 200),
-        warn: Color::Rgb(200, 140, 20),
-        error: Color::Rgb(200, 50, 50),
-        success: Color::Rgb(40, 160, 80),
-        border: Color::Rgb(180, 180, 200),
-        text: Color::Rgb(60, 60, 80),
-        dim: Color::Rgb(150, 150, 170),
-        highlight: Color::Rgb(60, 140, 220),
-    }
-}
-
 impl Theme {
     pub fn bg_style(&self) -> Style {
         Style::default().bg(self.bg)
@@ -96,5 +81,56 @@ impl Theme {
             .borders(ratatui::widgets::Borders::ALL)
             .border_style(self.border_style())
             .style(self.bg_style())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dark_theme_has_correct_colors() {
+        let t = dark_theme();
+        assert_eq!(t.bg, Color::Rgb(18, 18, 24));
+        assert_eq!(t.fg, Color::Rgb(220, 220, 230));
+        assert_eq!(t.accent, Color::Rgb(100, 180, 255));
+        assert_eq!(t.warn, Color::Rgb(255, 180, 50));
+        assert_eq!(t.error, Color::Rgb(255, 80, 80));
+        assert_eq!(t.success, Color::Rgb(80, 220, 120));
+        assert_eq!(t.border, Color::Rgb(60, 60, 80));
+        assert_eq!(t.text, Color::Rgb(180, 180, 200));
+        assert_eq!(t.dim, Color::Rgb(100, 100, 120));
+        assert_eq!(t.highlight, Color::Rgb(140, 200, 255));
+    }
+
+    #[test]
+    fn bg_style_has_no_foreground() {
+        let t = dark_theme();
+        let s = t.bg_style();
+        assert_eq!(s.bg, Some(t.bg));
+    }
+
+    #[test]
+    fn accent_style_is_bold() {
+        let t = dark_theme();
+        let s = t.accent_style();
+        assert_eq!(s.fg, Some(t.accent));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn highlight_style_is_bold() {
+        let t = dark_theme();
+        let s = t.highlight_style();
+        assert_eq!(s.fg, Some(t.highlight));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn title_style_uses_accent_color() {
+        let t = dark_theme();
+        let s = t.title_style();
+        assert_eq!(s.fg, Some(t.accent));
+        assert!(s.add_modifier.contains(Modifier::BOLD));
     }
 }

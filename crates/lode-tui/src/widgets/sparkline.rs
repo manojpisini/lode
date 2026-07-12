@@ -5,20 +5,11 @@ use ratatui::widgets::Widget;
 
 const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
+#[derive(Default)]
 pub struct Sparkline<'a> {
     data: Vec<u64>,
     style: Style,
     block: Option<ratatui::widgets::Block<'a>>,
-}
-
-impl<'a> Default for Sparkline<'a> {
-    fn default() -> Self {
-        Self {
-            data: Vec::new(),
-            style: Style::default(),
-            block: None,
-        }
-    }
 }
 
 impl<'a> Sparkline<'a> {
@@ -74,10 +65,10 @@ impl<'a> Widget for Sparkline<'a> {
             let idx = normalized.min(7);
             let ch = BLOCKS[idx];
             let x = inner.x + i as u16;
-            buf.cell_mut((x, inner.y))
-                .unwrap()
-                .set_symbol(&ch.to_string());
-            buf.cell_mut((x, inner.y)).unwrap().set_style(self.style);
+            if let Some(cell) = buf.cell_mut((x, inner.y)) {
+                cell.set_symbol(&ch.to_string());
+                cell.set_style(self.style);
+            }
         }
     }
 }

@@ -51,7 +51,10 @@ pub fn load_test_history(project_dir: &std::path::Path) -> Result<TestHistory> {
             });
         }
     };
-    toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize { path, source })
+    toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
+        path,
+        source: Box::new(source),
+    })
 }
 
 pub fn save_test_history(project_dir: &std::path::Path, history: &TestHistory) -> Result<()> {
@@ -67,7 +70,21 @@ pub fn add_test_run(
     run: TestRun,
     config: &TestHistoryConfig,
 ) -> Result<()> {
-    let mut history = load_test_history(project_dir).unwrap_or(TestHistory { runs: Vec::new() });
+    let mut history = match load_test_history(project_dir) {
+        Ok(h) => h,
+        Err(_e) => {
+            let path = history_path(project_dir);
+            if path.exists() {
+                let backup = path.with_extension("toml.bak");
+                std::fs::rename(&path, &backup).ok();
+                eprintln!(
+                    "lode: warning: corrupted test history backed up to {:?}",
+                    backup
+                );
+            }
+            TestHistory { runs: Vec::new() }
+        }
+    };
     history.runs.push(run);
     if history.runs.len() > config.max_runs {
         let drain_count = history.runs.len() - config.max_runs;

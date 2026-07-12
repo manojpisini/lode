@@ -7,19 +7,10 @@ pub struct EnvVar {
     pub secret: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvValidation {
     pub required: Vec<String>,
     pub warn_missing: Vec<String>,
-}
-
-impl Default for EnvValidation {
-    fn default() -> Self {
-        Self {
-            required: Vec::new(),
-            warn_missing: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

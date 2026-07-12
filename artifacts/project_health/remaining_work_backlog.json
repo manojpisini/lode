@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "prompt_id": "UPPS-24",
+  "generated": "2026-07-11",
+  "project_name": "lode",
+  "total_items": 14,
+  "items": [
+    {"priority": "P0", "title": "Centralize secret redaction module", "effort_days": "3-5", "source": "UPPS-05/UPPS-23", "dependencies": []},
+    {"priority": "P0", "title": "Populate CHANGELOG v0.1.0 entries", "effort_days": 0.5, "source": "UPPS-23", "dependencies": []},
+    {"priority": "P0", "title": "Add SBOM generation to release workflow", "effort_days": 1, "source": "UPPS-13/UPPS-23", "dependencies": ["cargo-cyclonedx"]},
+    {"priority": "P1", "title": "Document and expire advisory ignores", "effort_days": 0.5, "source": "UPPS-13", "dependencies": []},
+    {"priority": "P1", "title": "Add MCP input length limits", "effort_days": 1, "source": "UPPS-04", "dependencies": []},
+    {"priority": "P1", "title": "Add daemon IPC token authentication", "effort_days": "1-2", "source": "UPPS-05", "dependencies": []},
+    {"priority": "P1", "title": "Add lode scan secrets to CI pipeline", "effort_days": 0.5, "source": "UPPS-05", "dependencies": []},
+    {"priority": "P2", "title": "Enable Dependabot for monthly cargo updates", "effort_days": 0.5, "source": "UPPS-13", "dependencies": []},
+    {"priority": "P2", "title": "Add MCP input validation layer", "effort_days": "2-3", "source": "UPPS-05", "dependencies": []},
+    {"priority": "P2", "title": "Enforce plugin permissions at runtime", "effort_days": "2-3", "source": "UPPS-05", "dependencies": []},
+    {"priority": "P3", "title": "Define incident response plan", "effort_days": 1, "source": "UPPS-24", "dependencies": []},
+    {"priority": "P3", "title": "Add metrics/tracing layer", "effort_days": "3-5", "source": "UPPS-24", "dependencies": ["architecture_decision"]},
+    {"priority": "P3", "title": "Add security.txt file", "effort_days": 0.5, "source": "UPPS-05/UPPS-23", "dependencies": []},
+    {"priority": "P3", "title": "Add code of conduct", "effort_days": 0.5, "source": "UPPS-23", "dependencies": []}
+  ]
+}

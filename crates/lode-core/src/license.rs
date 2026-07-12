@@ -219,7 +219,7 @@ pub fn license_text(id: &str, author: &str, year: &str) -> Result<String> {
              \tand distribute the Covered Software in Source and Object Form.\n\n\
              See the full license text at https://www.mozilla.org/en-US/MPL/2.0/"
         )),
-        "unlicense" => Ok(format!(
+        "unlicense" => Ok(
             "This is free and unencumbered software released into the public domain.\n\n\
              Anyone is free to copy, modify, publish, use, compile, sell, or\n\
              distribute this software, either in source code form or as a compiled\n\
@@ -239,8 +239,7 @@ pub fn license_text(id: &str, author: &str, year: &str) -> Result<String> {
              OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,\n\
              ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE\n\
              OR OTHER DEALINGS IN THE SOFTWARE.\n\n\
-             For more information, please refer to <http://unlicense.org/>"
-        )),
+             For more information, please refer to <http://unlicense.org/>".to_string()),
         _ => Err(LodeError::Message(format!(
             "unknown license id: {id}"
         ))),
@@ -316,8 +315,16 @@ pub fn check_license_consistency(
     Ok(ConsistencyReport { mismatches })
 }
 
-fn current_year() -> String {
-    "2026".to_string()
+pub fn current_year() -> String {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = since_epoch.as_secs();
+    let days = secs / 86400;
+    let years_since_1970 = days / 365;
+    let year = 1970 + years_since_1970 as u32;
+    year.to_string()
 }
 
 #[cfg(test)]

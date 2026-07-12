@@ -72,8 +72,14 @@ pub fn apply_recipe(
         }
         match step.kind.as_str() {
             "command" => {
-                let status = Process::new("sh")?
-                    .args(["-c", step.run.as_str()])
+                let args = shell_split(&step.run).ok_or_else(|| {
+                    LodeError::Message(format!("unable to parse command arguments: {}", step.run))
+                })?;
+                if args.is_empty() {
+                    return Err(LodeError::Message(format!("empty command: {}", step.run)));
+                }
+                let status = Process::new(&args[0])?
+                    .args(&args[1..])
                     .current_dir(project_dir)
                     .status()?;
                 if !status.success() {
@@ -154,6 +160,42 @@ pub fn list_recipes(dir: &Path) -> Result<Vec<Recipe>> {
         }
     }
     Ok(recipes)
+}
+
+/// Split a command string into arguments, respecting single and double quotes.
+/// Returns `None` if quotes are unbalanced.
+fn shell_split(input: &str) -> Option<Vec<String>> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_single = false;
+    let mut in_double = false;
+
+    for ch in input.chars() {
+        match ch {
+            '\'' if !in_double => {
+                in_single = !in_single;
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+            }
+            c if c.is_whitespace() && !in_single && !in_double => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            c => {
+                current.push(c);
+            }
+        }
+    }
+
+    if in_single || in_double {
+        return None;
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    Some(args)
 }
 
 #[cfg(test)]

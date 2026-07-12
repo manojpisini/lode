@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::SystemTime;
 
 use lode_core::ValidatedRoot;
@@ -27,25 +27,13 @@ impl StateFile {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DaemonState {
     pub active: bool,
     pub paused: bool,
     pub watchers: Vec<String>,
     pub events_count: u64,
     pub started_at: Option<u64>,
-}
-
-impl Default for DaemonState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            paused: false,
-            watchers: Vec::new(),
-            events_count: 0,
-            started_at: None,
-        }
-    }
 }
 
 impl DaemonState {
@@ -91,7 +79,7 @@ impl DaemonState {
     }
 }
 
-pub fn load_state(path: &PathBuf) -> Result<DaemonState, StateError> {
+pub fn load_state(path: &Path) -> Result<DaemonState, StateError> {
     if !path.exists() {
         return Ok(DaemonState::default());
     }
@@ -105,7 +93,7 @@ pub fn load_state(path: &PathBuf) -> Result<DaemonState, StateError> {
     Ok(state_file.state)
 }
 
-pub fn save_state(path: &PathBuf, state: &DaemonState) -> Result<(), StateError> {
+pub fn save_state(path: &Path, state: &DaemonState) -> Result<(), StateError> {
     let state_file = StateFile::new(state.clone());
 
     let content = serde_json::to_string_pretty(&state_file)
@@ -135,4 +123,115 @@ pub fn save_state(path: &PathBuf, state: &DaemonState) -> Result<(), StateError>
         .map_err(|e| StateError::FileError(e.to_string()))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod daemon_state_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn new_state_is_active_and_not_paused() {
+        let state = DaemonState::new();
+        assert!(state.active);
+        assert!(!state.paused);
+        assert_eq!(state.events_count, 0);
+        assert!(state.watchers.is_empty());
+    }
+
+    #[test]
+    fn increment_events_increases_count() {
+        let mut state = DaemonState::new();
+        state.increment_events();
+        assert_eq!(state.events_count, 1);
+        state.increment_events();
+        assert_eq!(state.events_count, 2);
+    }
+
+    #[test]
+    fn add_watcher_does_not_duplicate() {
+        let mut state = DaemonState::new();
+        state.add_watcher("src".to_string());
+        state.add_watcher("src".to_string());
+        assert_eq!(state.watchers.len(), 1);
+    }
+
+    #[test]
+    fn remove_watcher_ignores_missing() {
+        let mut state = DaemonState::new();
+        state.add_watcher("src".to_string());
+        state.remove_watcher("tests");
+        assert_eq!(state.watchers.len(), 1);
+    }
+
+    #[test]
+    fn pause_resume_toggle() {
+        let mut state = DaemonState::new();
+        state.pause();
+        assert!(state.paused);
+        state.resume();
+        assert!(!state.paused);
+    }
+
+    #[test]
+    fn stop_deactivates() {
+        let mut state = DaemonState::new();
+        state.stop();
+        assert!(!state.active);
+    }
+
+    #[test]
+    fn load_state_returns_default_for_missing_file() {
+        let state = load_state(Path::new("nonexistent.json")).unwrap();
+        assert!(!state.active);
+        assert_eq!(state.events_count, 0);
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("state.json");
+
+        let mut state = DaemonState::new();
+        state.add_watcher("src".to_string());
+        state.increment_events();
+
+        save_state(&path, &state).unwrap();
+        let loaded = load_state(&path).unwrap();
+
+        assert_eq!(loaded.active, state.active);
+        assert_eq!(loaded.paused, state.paused);
+        assert_eq!(loaded.events_count, state.events_count);
+        assert_eq!(loaded.watchers, state.watchers);
+    }
+
+    #[test]
+    fn load_state_errors_on_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad.json");
+        std::fs::write(&path, b"not json").unwrap();
+        assert!(load_state(&path).is_err());
+    }
+
+    #[test]
+    fn save_state_creates_parent_directories() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("sub").join("state.json");
+        let state = DaemonState::new();
+        save_state(&path, &state).unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn state_file_version_is_1() {
+        let state = DaemonState::new();
+        let file = StateFile::new(state);
+        assert_eq!(file.version, 1);
+    }
+
+    #[test]
+    fn default_state_is_inactive() {
+        let state = DaemonState::default();
+        assert!(!state.active);
+    }
 }

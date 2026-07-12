@@ -1,10 +1,10 @@
 use std::{
-    collections::hash_map::DefaultHasher,
     fs,
-    hash::{Hash, Hasher},
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use sha2::{Digest, Sha256};
 
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
@@ -109,7 +109,7 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
         .with("author", &request.config.identity.author)
         .with("org", &request.config.identity.org)
         .with("license", &request.config.identity.license)
-        .with("year", "2026")
+        .with("year", crate::current_year())
         .with("profile", profile);
     let manifest = scaffold_manifest(Some(profile), &request.components);
 
@@ -197,7 +197,7 @@ pub fn add_component_to_project(request: AddRequest) -> Result<ScaffoldReport> {
         .with("author", &request.config.identity.author)
         .with("org", &request.config.identity.org)
         .with("license", &request.config.identity.license)
-        .with("year", "2026")
+        .with("year", crate::current_year())
         .with("profile", "core/bare");
     let mut manifest = Vec::new();
     add_component_items(&request.component, &mut manifest);
@@ -277,7 +277,7 @@ pub fn sync_project(
         .with("author", &config.identity.author)
         .with("org", &config.identity.org)
         .with("license", &config.identity.license)
-        .with("year", "2026")
+        .with("year", crate::current_year())
         .with("profile", &profile);
     let manifest = scaffold_manifest(Some(&profile), &components);
     let mut planned_paths = Vec::new();
@@ -363,7 +363,7 @@ pub fn load_scaffold_lock(project_dir: &Utf8PathBuf) -> Result<ScaffoldLock> {
     })?;
     toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
         path: PathBuf::from(path.as_str()),
-        source,
+        source: Box::new(source),
     })
 }
 
@@ -385,7 +385,7 @@ fn load_project_config(project_dir: &Utf8PathBuf) -> Result<ProjectConfig> {
     let config: ProjectConfig =
         toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
             path: PathBuf::from(path.as_str()),
-            source,
+            source: Box::new(source),
         })?;
     if config.schema_version != config::SCHEMA_VERSION {
         return Err(LodeError::SchemaMismatch {
@@ -422,34 +422,39 @@ fn render_project_template(
 }
 
 fn content_hash(contents: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    contents.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(contents.as_bytes());
+    format!("{:064x}", hasher.finalize())
 }
 
 fn preserve_user_content(existing: &str, generated: &str) -> String {
-    const BEGIN: &str = "<!-- lode:user-content -->";
-    const END: &str = "<!-- /lode:user-content -->";
-    let Some(existing_start) = existing.find(BEGIN) else {
-        return generated.to_string();
-    };
-    let Some(existing_end_relative) = existing[existing_start..].find(END) else {
-        return generated.to_string();
-    };
-    let existing_end = existing_start + existing_end_relative + END.len();
-    let Some(generated_start) = generated.find(BEGIN) else {
-        return generated.to_string();
-    };
-    let Some(generated_end_relative) = generated[generated_start..].find(END) else {
-        return generated.to_string();
-    };
-    let generated_end = generated_start + generated_end_relative + END.len();
-    format!(
-        "{}{}{}",
-        &generated[..generated_start],
-        &existing[existing_start..existing_end],
-        &generated[generated_end..]
-    )
+    let markers: &[(&str, &str)] = &[
+        ("<!-- lode:user-content -->", "<!-- /lode:user-content -->"),
+        ("// lode:user-content", "// /lode:user-content"),
+        ("# lode:user-content", "# /lode:user-content"),
+        ("; lode:user-content", "; /lode:user-content"),
+        ("-- lode:user-content", "-- /lode:user-content"),
+    ];
+    for &(begin, end) in markers {
+        let has_existing = existing.contains(begin) && existing.contains(end);
+        let has_generated = generated.contains(begin) && generated.contains(end);
+        if has_existing && has_generated {
+            let existing_start = existing.find(begin).unwrap();
+            let existing_end_relative = existing[existing_start..].find(end).unwrap();
+            let existing_end = existing_start + existing_end_relative + end.len();
+            let generated_start = generated.find(begin).unwrap();
+            let generated_end_relative = generated[generated_start..].find(end).unwrap();
+            let generated_end = generated_start + generated_end_relative + end.len();
+            return format!(
+                "{}{}{}",
+                &generated[..generated_start],
+                &existing[existing_start..existing_end],
+                &generated[generated_end..]
+            );
+        }
+    }
+    eprintln!("lode: warning: user content markers not found, preserving generated content");
+    generated.to_string()
 }
 
 fn scaffold_manifest(profile: Option<&str>, components: &[String]) -> Vec<ManifestItem> {

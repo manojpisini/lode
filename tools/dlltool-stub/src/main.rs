@@ -1,9 +1,8 @@
-/// A minimal dlltool replacement that:
-/// 1. Copies existing import libraries from the rust toolchain when possible
-/// 2. Creates minimal valid import libraries otherwise
+/// A minimal dlltool replacement that copies existing Rust GNU import libraries.
+/// It fails loudly when no real import library exists; creating an empty archive
+/// hides the root cause and fails later at link time.
 use std::env;
 use std::fs;
-use std::io::{self, Write};
 use std::path::Path;
 use std::process::exit;
 
@@ -15,8 +14,14 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "-l" => { i += 1; out_file = args.get(i).cloned().unwrap_or_default(); }
-            "-D" => { i += 1; dll_name = args.get(i).cloned().unwrap_or_default(); }
+            "-l" => {
+                i += 1;
+                out_file = args.get(i).cloned().unwrap_or_default();
+            }
+            "-D" => {
+                i += 1;
+                dll_name = args.get(i).cloned().unwrap_or_default();
+            }
             _ => {}
         }
         i += 1;
@@ -28,15 +33,17 @@ fn main() {
     }
 
     let parent = Path::new(&out_file).parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(parent).ok();
+    if let Err(error) = fs::create_dir_all(parent) {
+        eprintln!("stub-dlltool: FATAL: could not create {}: {error}", parent.display());
+        exit(1);
+    }
 
-    // Try to find existing import library in rust toolchain
     let rustup_home = env::var("RUSTUP_HOME")
         .or_else(|_| {
             let home = env::var("USERPROFILE")
                 .or_else(|_| env::var("HOME"))
                 .unwrap_or_default();
-            Ok::<String, _>(format!("{home}\\.rustup"))
+            Ok::<String, env::VarError>(format!("{home}\\.rustup"))
         })
         .unwrap_or_default();
 
@@ -50,24 +57,13 @@ fn main() {
         .join("lib")
         .join(format!("lib{lib_name}.a"));
 
-    if toolchain_lib.exists() {
-        fs::copy(&toolchain_lib, &out_file).ok();
-        eprintln!("stub-dlltool: copied {out_file} from rust toolchain");
-    } else {
-        // Create minimal valid ar archive
-        create_empty_archive(&out_file).ok();
-        eprintln!("stub-dlltool: created empty archive {out_file} (no toolchain lib for {lib_name})");
-    }
-
-    // Verify the file was created
-    if !Path::new(&out_file).exists() {
-        eprintln!("stub-dlltool: FATAL: could not create {out_file}");
+    if let Err(error) = fs::copy(&toolchain_lib, &out_file) {
+        eprintln!(
+            "stub-dlltool: FATAL: no usable import library for {lib_name}; expected {} ({error}). Install MSYS2/LLVM dlltool or add the real import library.",
+            toolchain_lib.display()
+        );
         exit(1);
     }
-}
 
-fn create_empty_archive(path: &str) -> io::Result<()> {
-    let mut file = fs::File::create(path)?;
-    file.write_all(b"!<arch>\n")?;
-    Ok(())
+    eprintln!("stub-dlltool: copied {out_file} from rust toolchain");
 }

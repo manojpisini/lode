@@ -1,0 +1,134 @@
+{
+  "schema_version": "1.0",
+  "suite_version": "3.2.0",
+  "prompt_id": "UPPS-02",
+  "generated": "2026-07-11",
+  "project_name": "lode",
+  "scenario": "unknown_repository_full_assessment",
+  "completed_prompts": [
+    {
+      "prompt_id": "UPPS-00",
+      "status": "PASS",
+      "outputs": [
+        ".prompt_suite/context/project_context.yaml",
+        ".prompt_suite/context/permission_boundary.yaml",
+        ".prompt_suite/context/verification_requirements.yaml"
+      ]
+    },
+    {
+      "prompt_id": "UPPS-01",
+      "status": "PASS",
+      "outputs": [
+        ".prompt_suite/contracts/universal_execution_contract.md",
+        ".prompt_suite/contracts/generated_output_contract.yaml"
+      ]
+    },
+    {
+      "prompt_id": "UPPS-03",
+      "status": "PASS",
+      "outputs": [
+        "reports/discovery/project_discovery_report.md",
+        "artifacts/inventory/repository_inventory.json",
+        "artifacts/inventory/entry_point_map.json",
+        "artifacts/inventory/component_map.json",
+        "artifacts/inventory/command_inventory.json"
+      ]
+    },
+    {
+      "prompt_id": "UPPS-07",
+      "status": "PASS",
+      "outputs": [
+        "docs/index.md",
+        "docs/architecture/index.md",
+        "docs/guides/index.md",
+        "docs/reference/index.md",
+        "docs/operations/index.md",
+        "reports/documentation/documentation_generation_report.md",
+        "artifacts/documentation/documentation_inventory.json"
+      ]
+    }
+  ],
+  "pending_prompts": [
+    {
+      "prompt_id": "UPPS-04",
+      "priority": "high",
+      "phase": 1,
+      "dependency": "UPPS-03"
+    },
+    {
+      "prompt_id": "UPPS-05",
+      "priority": "high",
+      "phase": 1,
+      "dependency": "UPPS-04"
+    },
+    {
+      "prompt_id": "UPPS-13",
+      "priority": "medium",
+      "phase": 2,
+      "dependency": "UPPS-05",
+      "condition": "supply_chain_risks_found"
+    },
+    {
+      "prompt_id": "UPPS-14",
+      "priority": "medium",
+      "phase": 2,
+      "dependency": "UPPS-05",
+      "condition": "config_secret_issues_found"
+    },
+    {
+      "prompt_id": "UPPS-15",
+      "priority": "medium",
+      "phase": 2,
+      "dependency": "UPPS-05",
+      "condition": "contract_issues_found"
+    },
+    {
+      "prompt_id": "UPPS-10",
+      "priority": "medium",
+      "phase": 2,
+      "dependency": "UPPS-05",
+      "condition": "regression_or_coverage_issues_found"
+    },
+    {
+      "prompt_id": "UPPS-24",
+      "priority": "medium",
+      "phase": 3,
+      "dependency": "phase_2_complete"
+    },
+    {
+      "prompt_id": "UPPS-23",
+      "priority": "low",
+      "phase": 4,
+      "dependency": "UPPS-24",
+      "condition": "release_decision_requested"
+    }
+  ],
+  "key_metrics": {
+    "total_crates": 6,
+    "total_source_files": 154,
+    "total_lines_of_code": 25717,
+    "total_tests": 347,
+    "tests_passing": 347,
+    "total_dependencies": 171,
+    "total_cli_commands": 61,
+    "total_mcp_tools": 38,
+    "total_mcp_resources": 8,
+    "total_mcp_prompts": 3,
+    "total_extensions": 3,
+    "fuzz_targets": 2,
+    "ci_jobs": 10
+  },
+  "critical_risks": [],
+  "high_risks": [
+    "Security model not audited (deferred to UPPS-05)",
+    "No threat model (deferred to UPPS-04)",
+    "171 dependencies without supply chain review (deferred to UPPS-13)"
+  ],
+  "medium_risks": [
+    "Two cargo-deny advisory ignores (paste 1.0.15, lru 0.12.5)",
+    "Extensions have no test suites",
+    "No dependency audit results (network access not authorized)"
+  ],
+  "completion_status": "PASS_WITH_CONDITIONS",
+  "next_prompt_id": "UPPS-04"
+}

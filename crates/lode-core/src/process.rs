@@ -76,6 +76,26 @@ fn validate_program(program: &str) -> Result<()> {
         || program.contains('\\')
         || program.contains(':')
         || program.contains('\0')
+        || program.contains('|')
+        || program.contains(';')
+        || program.contains('&')
+        || program.contains('$')
+        || program.contains('`')
+        || program.contains('(')
+        || program.contains(')')
+        || program.contains('<')
+        || program.contains('>')
+        || program.contains('!')
+        || program.contains('\'')
+        || program.contains('"')
+        || program.contains('#')
+        || program.contains('*')
+        || program.contains('?')
+        || program.contains('[')
+        || program.contains(']')
+        || program.contains('{')
+        || program.contains('}')
+        || program.contains('~')
     {
         return Err(LodeError::Message(format!(
             "unsafe process program: {program}"
@@ -99,6 +119,60 @@ mod tests {
             "cmd.exe\0ignored",
         ] {
             assert!(Process::new(program).is_err(), "{program:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_shell_metacharacters() {
+        for program in [
+            "cmd|echo",
+            "cmd;ls",
+            "cmd&wait",
+            "cmd$PATH",
+            "cmd`ls`",
+            "cmd(sub)",
+            "cmd)sub(",
+            "cmd<file",
+            "cmd>file",
+            "cmd!hist",
+            "cmd'arg'",
+            r#"cmd"arg""#,
+            "cmd#comment",
+            "cmd*glob",
+            "cmd?glob",
+            "cmd[glob]",
+            "cmd{glob}",
+            "cmd~home",
+        ] {
+            assert!(
+                Process::new(program).is_err(),
+                "shell metacharacter should be rejected: {program:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_empty_program_name() {
+        assert!(Process::new("").is_err());
+    }
+
+    #[test]
+    fn rejects_path_separators_in_program_name() {
+        for program in ["foo/bar", r"foo\bar", "C:cmd"] {
+            assert!(
+                Process::new(program).is_err(),
+                "path separator should be rejected: {program:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_valid_program_names() {
+        for program in ["git", "cargo", "rustc", "node", "npm", "python3", "bash"] {
+            assert!(
+                Process::new(program).is_ok(),
+                "valid program should be accepted: {program:?}"
+            );
         }
     }
 }

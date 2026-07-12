@@ -4,24 +4,27 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "LODE CLI — local developer tool: projects, secrets, daemon, MCP, LSP, plugins, git, and more"
+homepage.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "lode"
 path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace = true
 camino.workspace = true
 clap.workspace = true
 crossterm.workspace = true
-lode-core = { path = "../lode-core" }
+lode-core = { path = "../lode-core", version = "0.1.0" }
+sha2.workspace = true
 ratatui.workspace = true
-regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
+lode-daemon = { path = "../lode-daemon", version = "0.1.0" }
 predicates.workspace = true
 tempfile.workspace = true

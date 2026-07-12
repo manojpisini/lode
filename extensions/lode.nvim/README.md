@@ -42,7 +42,7 @@ use {
 ### [vim-plug](https://github.com/junegunn/vim-plug)
 
 ```vim
-Plug 'D:\Manoj\Project\04_Languages\Rust\lode\extensions\lode.nvim'
+Plug '~/path/to/lode/extensions/lode.nvim'
 
 " In your init.vim / lua:
 " lua require('lode').setup({ bin_path = 'lode' })

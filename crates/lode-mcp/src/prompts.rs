@@ -1,5 +1,9 @@
 use serde_json::{json, Value};
 
+use crate::error::McpError;
+
+type PromptResult<T> = Result<T, McpError>;
+
 pub fn list_prompt_names() -> Vec<String> {
     vec![
         "lode-project-review".to_string(),
@@ -44,40 +48,40 @@ pub fn list_prompts() -> Vec<Value> {
     ]
 }
 
-pub fn get_prompt(name: &str, args: &Value) -> Result<Value, String> {
+pub fn get_prompt(name: &str, args: &Value) -> PromptResult<Value> {
     match name {
         "lode-project-review" => get_project_review(args),
         "lode-scaffold-plan" => get_scaffold_plan(args),
         "lode-convention-check" => get_convention_check(args),
-        _ => Err(format!("Unknown prompt: {name}")),
+        _ => Err(McpError::NotFound(format!("Unknown prompt: {name}"))),
     }
 }
 
-fn load_config(root: &camino::Utf8Path) -> Result<lode_core::config::LodeConfig, String> {
+fn load_config(root: &camino::Utf8Path) -> PromptResult<lode_core::config::LodeConfig> {
     let project_toml = root.join(".lode").join("project.toml");
     if !project_toml.exists() {
         return Ok(lode_core::config::default_config());
     }
-    let raw = std::fs::read_to_string(&project_toml).map_err(|e| e.to_string())?;
-    let config: lode_core::config::LodeConfig = toml::from_str(&raw).map_err(|e| e.to_string())?;
+    let raw = std::fs::read_to_string(&project_toml)?;
+    let config: lode_core::config::LodeConfig = toml::from_str(&raw)?;
     Ok(config)
 }
 
-fn get_project_review(args: &Value) -> Result<Value, String> {
+fn get_project_review(args: &Value) -> PromptResult<Value> {
     let path = args["path"]
         .as_str()
-        .ok_or("Missing required argument: path")?;
+        .ok_or_else(|| McpError::InvalidParams("Missing required argument: path".to_string()))?;
 
     let root = camino::Utf8PathBuf::from(path);
     let mut sections = Vec::new();
 
     let project_toml = root.join(".lode").join("project.toml");
     if project_toml.exists() {
-        let raw = std::fs::read_to_string(&project_toml).map_err(|e| e.to_string())?;
+        let raw = std::fs::read_to_string(&project_toml)?;
         sections.push(format!("## Project Configuration\n{raw}"));
 
         let config = load_config(&root)?;
-        let audit = lode_core::audit_project(&root, &config).map_err(|e| e.to_string())?;
+        let audit = lode_core::audit_project(&root, &config)?;
         sections.push(format!(
             "## Health\n- Score: {}/100\n- Convention violations: {}\n- Secret findings: {}\n- License: {}\n- README: {}",
             audit.score,
@@ -104,10 +108,10 @@ fn get_project_review(args: &Value) -> Result<Value, String> {
     }))
 }
 
-fn get_scaffold_plan(args: &Value) -> Result<Value, String> {
+fn get_scaffold_plan(args: &Value) -> PromptResult<Value> {
     let path = args["path"]
         .as_str()
-        .ok_or("Missing required argument: path")?;
+        .ok_or_else(|| McpError::InvalidParams("Missing required argument: path".to_string()))?;
     let recipe = args["recipe"].as_str().unwrap_or("none");
 
     let text = format!(
@@ -131,10 +135,10 @@ fn get_scaffold_plan(args: &Value) -> Result<Value, String> {
     }))
 }
 
-fn get_convention_check(args: &Value) -> Result<Value, String> {
+fn get_convention_check(args: &Value) -> PromptResult<Value> {
     let path = args["path"]
         .as_str()
-        .ok_or("Missing required argument: path")?;
+        .ok_or_else(|| McpError::InvalidParams("Missing required argument: path".to_string()))?;
 
     let root = camino::Utf8PathBuf::from(path);
 
@@ -144,7 +148,7 @@ fn get_convention_check(args: &Value) -> Result<Value, String> {
     if project_toml.exists() {
         let config = load_config(&root)?;
 
-        let report = lode_core::check_path(&root, &config).map_err(|e| e.to_string())?;
+        let report = lode_core::check_path(&root, &config)?;
 
         sections.push(format!(
             "Convention rule: {}",

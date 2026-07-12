@@ -4,10 +4,20 @@ use serde_json::Value;
 
 use crate::server::McpServer;
 
-#[derive(Debug, Clone)]
-pub enum Transport {
-    Stdio,
-    Http { port: u16, host: String },
+const MAX_MESSAGE_SIZE: usize = 1_048_576; // 1 MB
+
+fn send_error(writer: &mut impl Write, code: i32, message: &str) {
+    let error_response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "error": { "code": code, "message": message },
+        "id": null,
+    });
+    if let Err(e) = writeln!(writer, "{error_response}") {
+        eprintln!("lode-mcp: transport write error: {e}");
+    }
+    if let Err(e) = writer.flush() {
+        eprintln!("lode-mcp: transport flush error: {e}");
+    }
 }
 
 pub fn run_stdio_transport(server: &McpServer) {
@@ -21,7 +31,12 @@ pub fn run_stdio_transport(server: &McpServer) {
         let mut line = String::new();
         match reader.read_line(&mut line) {
             Ok(0) => break,
-            Ok(_) => {}
+            Ok(n) => {
+                if n > MAX_MESSAGE_SIZE {
+                    send_error(&mut writer, -32600, "Request too large");
+                    continue;
+                }
+            }
             Err(e) => {
                 eprintln!("Error reading stdin: {e}");
                 break;
@@ -36,32 +51,18 @@ pub fn run_stdio_transport(server: &McpServer) {
         let request: Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(e) => {
-                let error_response = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "error": {
-                        "code": -32700,
-                        "message": format!("Parse error: {e}")
-                    },
-                    "id": null,
-                });
-                writeln!(writer, "{error_response}").ok();
-                writer.flush().ok();
+                send_error(&mut writer, -32700, &format!("Parse error: {e}"));
                 continue;
             }
         };
 
         let response = server.handle_request(&request);
 
-        writeln!(writer, "{response}").ok();
-        writer.flush().ok();
-    }
-}
-
-pub fn start_transport(_transport: Transport, server: &McpServer) {
-    match _transport {
-        Transport::Stdio => run_stdio_transport(server),
-        Transport::Http { port: _, host: _ } => {
-            eprintln!("HTTP transport not yet implemented");
+        if let Err(e) = writeln!(writer, "{response}") {
+            eprintln!("lode-mcp: transport write error: {e}");
+        }
+        if let Err(e) = writer.flush() {
+            eprintln!("lode-mcp: transport flush error: {e}");
         }
     }
 }

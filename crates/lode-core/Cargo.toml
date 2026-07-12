@@ -4,6 +4,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 version.workspace = true
+description = "Core library for LODE: config, rules, secrets, scaffolding, git, env, templates, and security"
+documentation = "https://docs.rs/lode-core/latest/lode_core/"
+homepage.workspace = true
+authors.workspace = true
 
 [dependencies]
 camino.workspace = true
@@ -13,6 +17,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 regex.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

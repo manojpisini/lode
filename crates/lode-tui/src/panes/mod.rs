@@ -11,10 +11,6 @@ use ratatui::Frame;
 
 use crate::app::{App, Pane};
 
-pub trait PaneRenderer {
-    fn render(&self, frame: &mut Frame, area: Rect, app: &App);
-}
-
 pub fn render_pane(pane: Pane, frame: &mut Frame, area: Rect, app: &App) {
     match pane {
         Pane::Overview => overview::render(frame, area, app),

@@ -66,7 +66,7 @@ pub fn detect_stale(project_dir: &std::path::Path) -> Result<Vec<StaleEntry>> {
         let lock: crate::ScaffoldLock =
             toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
                 path: lock_path,
-                source,
+                source: Box::new(source),
             })?;
         for entry in &lock.entries {
             let dest = project_dir.join(&entry.destination);
@@ -143,7 +143,7 @@ pub fn reconcile(
                 if let Some(parent) = entry.path.parent() {
                     root.create_dir_all(parent)?;
                 }
-                let contents = format!("<!-- reconciled by lode -->\n");
+                let contents = "<!-- reconciled by lode -->\n".to_string();
                 root.write_atomic(&entry.path, &contents)?;
                 wrote.push(entry.path.clone());
                 reconciled += 1;
@@ -266,11 +266,7 @@ fn collect_template_targets(
 }
 
 fn content_hash(contents: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    contents.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    crate::signature::compute_content_hash(contents)
 }
 
 #[cfg(test)]

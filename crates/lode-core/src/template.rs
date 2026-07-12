@@ -253,7 +253,7 @@ fn render_blocks<'a>(
 
 fn block_tag_value<'a>(trimmed: &'a str, name: &str) -> Option<&'a str> {
     let inner = trimmed.strip_prefix("{%")?.strip_suffix("%}")?.trim();
-    inner.strip_prefix(name)?.trim().split_whitespace().next()
+    inner.strip_prefix(name)?.split_whitespace().next()
 }
 
 fn for_tag(trimmed: &str) -> Option<(&str, &str)> {

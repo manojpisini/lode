@@ -41,6 +41,9 @@ pub fn lode_env_check(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
+
     let root = camino::Utf8PathBuf::from(path);
     let env_config = lode_core::EnvConfig::default();
 
@@ -65,7 +68,18 @@ pub fn lode_env_add(args: &Value) -> Result<Value, String> {
     let key = args["key"]
         .as_str()
         .ok_or("Missing required argument: key")?;
+
+    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(format!(
+            "Invalid key '{key}': must contain only alphanumeric characters and underscores"
+        ));
+    }
+
     let value = args["value"].as_str().unwrap_or("");
+
+    if value.contains('\n') || value.contains('\r') || value.contains('\0') {
+        return Err("Invalid .env value: must not contain newlines or null bytes".to_string());
+    }
 
     let root = camino::Utf8PathBuf::from(path);
     let validated = lode_core::ValidatedRoot::new(root.as_std_path()).map_err(|e| e.to_string())?;
@@ -95,6 +109,9 @@ pub fn lode_env_sync(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
+
+    let _validated =
+        lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let root = camino::Utf8PathBuf::from(path);
     let project_name = root.file_name().unwrap_or("project");

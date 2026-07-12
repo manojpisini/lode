@@ -39,7 +39,7 @@ fn render_coverage(frame: &mut Frame, area: Rect, app: &App) {
     let coverage = app.project_data.metrics.coverage;
 
     let label = format!("{:.1}%", coverage);
-    let ratio = (coverage / 100.0) as f64;
+    let ratio = (coverage / 100.0).clamp(0.0, 1.0);
 
     let gauge = Gauge::default()
         .block(theme.block_style().title("Coverage"))

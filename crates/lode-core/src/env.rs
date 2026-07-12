@@ -182,7 +182,7 @@ pub fn check_env_drift(project_dir: &Path, config: &EnvConfig) -> Result<Vec<Env
         return Ok(Vec::new());
     }
     let content = fs::read_to_string(&env_path).map_err(|source| LodeError::Io {
-        path: env_path.into(),
+        path: env_path,
         source,
     })?;
     let actual = EnvFile::parse(&content);
@@ -210,7 +210,7 @@ pub fn validate_env(project_dir: &Path, config: &EnvConfig) -> Result<Vec<EnvVal
         return Ok(Vec::new());
     }
     let content = fs::read_to_string(&env_path).map_err(|source| LodeError::Io {
-        path: env_path.into(),
+        path: env_path,
         source,
     })?;
     let actual = EnvFile::parse(&content);

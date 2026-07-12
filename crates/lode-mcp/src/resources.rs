@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use crate::error::McpError;
+
 pub fn list_resource_uris() -> Vec<String> {
     vec![
         "lode://config".to_string(),
@@ -66,7 +68,9 @@ pub fn list_resources() -> Vec<Value> {
     ]
 }
 
-pub fn read_resource(uri: &str) -> Result<Vec<Value>, String> {
+type ResResult<T> = Result<T, McpError>;
+
+pub fn read_resource(uri: &str) -> ResResult<Vec<Value>> {
     match uri {
         "lode://config" => read_config_resource(),
         "lode://registry" => read_registry_resource(),
@@ -76,13 +80,13 @@ pub fn read_resource(uri: &str) -> Result<Vec<Value>, String> {
         "lode://project/info" => read_project_info(),
         "lode://project/health" => read_project_health(),
         "lode://project/metrics" => read_project_metrics(),
-        _ => Err(format!("Unknown resource URI: {uri}")),
+        _ => Err(McpError::NotFound(format!("Unknown resource URI: {uri}"))),
     }
 }
 
-fn read_config_resource() -> Result<Vec<Value>, String> {
+fn read_config_resource() -> ResResult<Vec<Value>> {
     let config = lode_core::config::default_config();
-    let content = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    let content = toml::to_string_pretty(&config)?;
     Ok(vec![json!({
         "uri": "lode://config",
         "mimeType": "application/toml",
@@ -90,9 +94,9 @@ fn read_config_resource() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_registry_resource() -> Result<Vec<Value>, String> {
-    let registry = lode_core::load_registry().map_err(|e| e.to_string())?;
-    let content = serde_json::to_string_pretty(&registry).map_err(|e| e.to_string())?;
+fn read_registry_resource() -> ResResult<Vec<Value>> {
+    let registry = lode_core::load_registry()?;
+    let content = serde_json::to_string_pretty(&registry)?;
     Ok(vec![json!({
         "uri": "lode://registry",
         "mimeType": "application/json",
@@ -100,10 +104,10 @@ fn read_registry_resource() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_templates_resource() -> Result<Vec<Value>, String> {
+fn read_templates_resource() -> ResResult<Vec<Value>> {
     let templates = lode_core::template_paths();
     let items: Vec<Value> = templates.iter().map(|name| json!({"name": name})).collect();
-    let content = serde_json::to_string_pretty(&items).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&items)?;
     Ok(vec![json!({
         "uri": "lode://templates",
         "mimeType": "application/json",
@@ -111,10 +115,10 @@ fn read_templates_resource() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_profiles_resource() -> Result<Vec<Value>, String> {
+fn read_profiles_resource() -> ResResult<Vec<Value>> {
     let profiles = lode_core::profile_names();
     let items: Vec<Value> = profiles.iter().map(|name| json!({"name": name})).collect();
-    let content = serde_json::to_string_pretty(&items).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&items)?;
     Ok(vec![json!({
         "uri": "lode://profiles",
         "mimeType": "application/json",
@@ -122,10 +126,10 @@ fn read_profiles_resource() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_recipes_resource() -> Result<Vec<Value>, String> {
+fn read_recipes_resource() -> ResResult<Vec<Value>> {
     let recipes = lode_core::recipe_names();
     let items: Vec<Value> = recipes.iter().map(|name| json!({"name": name})).collect();
-    let content = serde_json::to_string_pretty(&items).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&items)?;
     Ok(vec![json!({
         "uri": "lode://recipes",
         "mimeType": "application/json",
@@ -133,9 +137,10 @@ fn read_recipes_resource() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_project_info() -> Result<Vec<Value>, String> {
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let root = camino::Utf8PathBuf::from_path_buf(cwd).map_err(|_| "non-UTF-8 path".to_string())?;
+fn read_project_info() -> ResResult<Vec<Value>> {
+    let cwd = std::env::current_dir()?;
+    let root = camino::Utf8PathBuf::from_path_buf(cwd)
+        .map_err(|_| McpError::Internal("non-UTF-8 path".to_string()))?;
     let project_toml = root.join(".lode").join("project.toml");
 
     if !project_toml.exists() {
@@ -146,7 +151,7 @@ fn read_project_info() -> Result<Vec<Value>, String> {
         })]);
     }
 
-    let raw = std::fs::read_to_string(&project_toml).map_err(|e| e.to_string())?;
+    let raw = std::fs::read_to_string(&project_toml)?;
     Ok(vec![json!({
         "uri": "lode://project/info",
         "mimeType": "application/toml",
@@ -154,13 +159,14 @@ fn read_project_info() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_project_health() -> Result<Vec<Value>, String> {
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let root = camino::Utf8PathBuf::from_path_buf(cwd).map_err(|_| "non-UTF-8 path".to_string())?;
+fn read_project_health() -> ResResult<Vec<Value>> {
+    let cwd = std::env::current_dir()?;
+    let root = camino::Utf8PathBuf::from_path_buf(cwd)
+        .map_err(|_| McpError::Internal("non-UTF-8 path".to_string()))?;
 
     let config = lode_core::config::default_config();
-    let report = lode_core::audit_project(&root, &config).map_err(|e| e.to_string())?;
-    let content = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+    let report = lode_core::audit_project(&root, &config)?;
+    let content = serde_json::to_string_pretty(&report)?;
     Ok(vec![json!({
         "uri": "lode://project/health",
         "mimeType": "application/json",
@@ -168,12 +174,13 @@ fn read_project_health() -> Result<Vec<Value>, String> {
     })])
 }
 
-fn read_project_metrics() -> Result<Vec<Value>, String> {
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let root = camino::Utf8PathBuf::from_path_buf(cwd).map_err(|_| "non-UTF-8 path".to_string())?;
+fn read_project_metrics() -> ResResult<Vec<Value>> {
+    let cwd = std::env::current_dir()?;
+    let root = camino::Utf8PathBuf::from_path_buf(cwd)
+        .map_err(|_| McpError::Internal("non-UTF-8 path".to_string()))?;
 
-    let report = lode_core::load_metrics(&root).map_err(|e| e.to_string())?;
-    let content = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+    let report = lode_core::load_metrics(&root)?;
+    let content = serde_json::to_string_pretty(&report)?;
     Ok(vec![json!({
         "uri": "lode://project/metrics",
         "mimeType": "application/json",
