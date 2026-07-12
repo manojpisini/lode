@@ -6,6 +6,7 @@ repository.workspace = true
 version.workspace = true
 description = "MCP protocol server for LODE with 38+ tools, 8 resources, and 3 prompts"
 documentation = "https://docs.rs/lode-mcp/latest/lode_mcp/"
+readme = "README.md"
 homepage.workspace = true
 authors.workspace = true
 

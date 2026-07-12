@@ -6,6 +6,7 @@ repository.workspace = true
 version.workspace = true
 description = "Core library for LODE: config, rules, secrets, scaffolding, git, env, templates, and security"
 documentation = "https://docs.rs/lode-core/latest/lode_core/"
+readme = "README.md"
 homepage.workspace = true
 authors.workspace = true
 

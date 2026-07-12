@@ -6,6 +6,7 @@ repository.workspace = true
 version.workspace = true
 description = "LSP protocol server for LODE over JSON-RPC (stdin/stdout)"
 documentation = "https://docs.rs/lode-lsp/latest/lode_lsp/"
+readme = "README.md"
 homepage.workspace = true
 authors.workspace = true
 

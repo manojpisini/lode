@@ -6,6 +6,7 @@ repository.workspace = true
 version.workspace = true
 description = "Background file watcher daemon for LODE with IPC communication and idle watchdog"
 documentation = "https://docs.rs/lode-daemon/latest/lode_daemon/"
+readme = "README.md"
 homepage.workspace = true
 authors.workspace = true
 

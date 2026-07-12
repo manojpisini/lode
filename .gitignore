@@ -35,6 +35,10 @@ node_modules/
 outputs/
 .omx/
 .agents/
+reports/
+artifacts/
+logs/
+plans/
 
 # Legacy project artifacts
 Defaults.txt

@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "lode-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "assert_cmd",
  "camino",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "lode-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "camino",
  "dirs",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "lode-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "camino",
  "clap",
@@ -671,7 +671,7 @@ dependencies = [
 
 [[package]]
 name = "lode-lsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lode-core",
  "serde",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "lode-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "camino",
  "clap",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "lode-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "camino",
  "crossterm",

@@ -6,6 +6,7 @@ repository.workspace = true
 version.workspace = true
 description = "Terminal UI dashboard for LODE with 7 panes and custom widgets"
 documentation = "https://docs.rs/lode-tui/latest/lode_tui/"
+readme = "README.md"
 homepage.workspace = true
 authors.workspace = true
 

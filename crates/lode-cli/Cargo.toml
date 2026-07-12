@@ -5,6 +5,7 @@ license.workspace = true
 repository.workspace = true
 version.workspace = true
 description = "LODE CLI — local developer tool: projects, secrets, daemon, MCP, LSP, plugins, git, and more"
+readme = "README.md"
 homepage.workspace = true
 authors.workspace = true
 
