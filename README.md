@@ -1,45 +1,60 @@
 # LODE
 
-**Local Rust Developer Tool** — filesystem writes, daemon automation, child-process execution, plugins, MCP tools, and secret scanning.
+[![CI](https://github.com/manojpisini/lode/actions/workflows/ci.yml/badge.svg)](https://github.com/manojpisini/lode/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/lode-cli.svg)](https://crates.io/crates/lode-cli)
+[![docs.rs](https://img.shields.io/docsrs/lode-core)](https://docs.rs/lode-core/latest/lode_core/)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Quick Start
+**LODE** — an all-in-one local developer tool for Rust projects.  
+Manage projects, track time, scan secrets, enforce conventions, run daemons, serve MCP/LSP protocols, manage plugins and packages, automate git workflows, and export/import portable LodePacks.
+
+## Crates.io packages
+
+| Crate | Version | Description |
+|---|---|---|
+| [lode-cli](https://crates.io/crates/lode-cli) | [![crates.io](https://img.shields.io/crates/v/lode-cli.svg)](https://crates.io/crates/lode-cli) | CLI binary — the main entry point |
+| [lode-core](https://crates.io/crates/lode-core) | [![crates.io](https://img.shields.io/crates/v/lode-core.svg)](https://crates.io/crates/lode-core) | Core library: config, rules, secrets, scaffold, git |
+| [lode-daemon](https://crates.io/crates/lode-daemon) | [![crates.io](https://img.shields.io/crates/v/lode-daemon.svg)](https://crates.io/crates/lode-daemon) | Background file watcher with IPC |
+| [lode-mcp](https://crates.io/crates/lode-mcp) | [![crates.io](https://img.shields.io/crates/v/lode-mcp.svg)](https://crates.io/crates/lode-mcp) | MCP server: 38+ tools, 8 resources, 3 prompts |
+| [lode-tui](https://crates.io/crates/lode-tui) | [![crates.io](https://img.shields.io/crates/v/lode-tui.svg)](https://crates.io/crates/lode-tui) | Terminal UI with 7 panes |
+| [lode-lsp](https://crates.io/crates/lode-lsp) | [![crates.io](https://img.shields.io/crates/v/lode-lsp.svg)](https://crates.io/crates/lode-lsp) | LSP server over JSON-RPC |
+
+## Installation
+
+### From crates.io (recommended)
 
 ```bash
-# Build the CLI binary
-cargo build -p lode-cli
-
-# Build the LSP server
-cargo build -p lode-lsp
-
-# Run all tests
-cargo test --workspace
-
-# Check compilation
-cargo check --workspace
+cargo install lode-cli
 ```
 
-### Initialize lode
+### From source (GitHub)
 
 ```bash
-# Set up lode with default templates, profiles, recipes, and plugins
+git clone https://github.com/manojpisini/lode.git
+cd lode
+cargo build -p lode-cli
+./target/debug/lode --help
+```
+
+### Requirements
+
+- **Rust toolchain** (`stable-x86_64-pc-windows-gnu` or MSVC)
+- **Windows**: MSYS2 ucrt64 (`C:\msys64\ucrt64\bin` in PATH) for native deps, or use MSVC toolchain
+
+## Quick start
+
+```bash
+# Set up lode with defaults
 lode setup --defaults
 
 # Create a new project
 lode init my-project --profile core/bare
 
-# Add components to an existing project
+# Add components
 lode add testing
-```
 
-### Common workflows
-
-```bash
 # Check project health
 lode health
-
-# Run code quality checks
-lode lint
-lode fmt
 
 # View configuration
 lode config show
@@ -60,54 +75,22 @@ lode git branch feature login-system
 lode serve
 ```
 
-## Build Commands
-
-| Command | Description |
-|---|---|
-| `cargo check --workspace` | Check all 6 crates compile |
-| `cargo test --workspace` | Run all tests |
-| `cargo build -p lode-cli` | Build the main `lode` binary |
-| `cargo build -p lode-lsp` | Build the LSP server binary |
-
-## Requirements
-
-- **Rust toolchain**: `stable-x86_64-pc-windows-gnu` (default)
-- **Windows build tools**: MSYS2 ucrt64 (`C:\msys64\ucrt64\bin`) must be in PATH
-  - Required: `gcc.exe`, `ar.exe`, `dlltool.exe`
-  - Set before building: `$env:Path = "C:\msys64\ucrt64\bin;$env:Path"`
-- **Alternative**: `rustup default stable-x86_64-pc-windows-msvc` with VS Build Tools
-
-## Project Structure
-
-| Crate | Description |
-|---|---|
-| `lode-core` | Core library: config, rules, secrets, scaffold, git, env |
-| `lode-cli` | CLI binary: 40+ commands, TUI serve mode, daemon management |
-| `lode-daemon` | Background file watcher with IPC and idle watchdog |
-| `lode-mcp` | MCP server with 38+ tools, 8 resources, 3 prompts |
-| `lode-tui` | Terminal UI with 7 panes, 6 custom widgets |
-| `lode-lsp` | LSP server over JSON-RPC (stdin/stdout) |
-
-### Extensions
-
-| Extension | Tech | Status |
-|---|---|---|
-| `vscode-lode` | TypeScript | VS Code extension |
-| `lode.nvim` | Lua | Neovim plugin |
-| `zed-lode` | Rust/WASM | Zed extension |
-
-## Badges
-
-[![CI](https://github.com/lode-rs/lode/actions/workflows/ci.yml/badge.svg)](https://github.com/lode-rs/lode/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
 ## Documentation
 
-See the [AGENTS.md](AGENTS.md) for detailed project guide.
+See [docs/](docs/index.md) for architecture, guides, operations, and reference documentation.
+
+## Build
+
+```bash
+cargo check --workspace   # Check all 6 crates compile
+cargo test --workspace    # Run all tests
+cargo build -p lode-cli   # Build the CLI binary
+cargo build -p lode-lsp   # Build the LSP server
+```
 
 ## License
 
-Licensed under the MIT license. See [LICENSE](LICENSE).
+MIT
 
 ## CLI Command Reference
 
