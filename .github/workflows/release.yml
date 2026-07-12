@@ -58,7 +58,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lode-${{ github.ref_name }}-${{ matrix.target }}
           path: lode-${{ github.ref_name }}-${{ matrix.target }}${{ matrix.ext }}
@@ -74,7 +74,7 @@ jobs:
         run: cargo install cargo-cyclonedx --locked
       - name: Generate SBOM
         run: cargo cyclonedx --workspace --all --output-dir sbom
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom/
