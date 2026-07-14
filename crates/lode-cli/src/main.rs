@@ -5,13 +5,15 @@ pub mod cmd;
 pub(crate) use cmd::plugin::{read_plugin_install_receipt, read_plugin_security};
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     env, fs, io,
     io::{IsTerminal, Read},
     process::ExitCode,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+use crate::cmd::output;
 
 use camino::Utf8PathBuf;
 use clap::{CommandFactory, Parser};
@@ -46,8 +48,11 @@ fn run() -> lode_core::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Setup { defaults: _ } => cmd::setup::setup()?,
+        Command::Setup { defaults: _, output } => cmd::setup::setup_with_output(output)?,
         Command::Init(args) => cmd::init::init(args)?,
+        Command::Adopt { path, apply, dry_run, output } => {
+            cmd::adopt::adopt_command(path, apply, dry_run, output)?
+        }
         Command::Add {
             component,
             dry_run,
@@ -58,7 +63,7 @@ fn run() -> lode_core::Result<()> {
             force,
             section,
         } => cmd::sync::sync(dry_run, force, section.as_deref())?,
-        Command::Info { json } => cmd::info::info(json)?,
+        Command::Info { output } => cmd::info::info_with_output(output)?,
         Command::Config { command } => cmd::config::config_command(command)?,
         Command::Template { command } => {
             cmd::template::library_command("templates", command, template_paths())?
@@ -78,7 +83,6 @@ fn run() -> lode_core::Result<()> {
             stdio,
             capabilities,
         } => cmd::lsp::lsp_command(stdio, capabilities)?,
-        Command::Agent { command } => cmd::agent::agent_command(command)?,
         Command::Snippet { command } => cmd::snippet::snippet_command(command)?,
         Command::Task { target, no_store } => cmd::task::task_command(target, no_store)?,
         Command::Dev => run_make("dev")?,
@@ -86,7 +90,16 @@ fn run() -> lode_core::Result<()> {
         Command::Test => run_make("test")?,
         Command::Fmt => run_make("fmt")?,
         Command::Lint => run_make("lint")?,
-        Command::Check(args) => cmd::check::convention_check(args)?,
+        Command::Check(args) => cmd::check::convention_check_with_output(args)?,
+        Command::Agent { command } => cmd::agent::agent_command(command)?,
+        Command::Assets { command } => cmd::assets::assets_command(command)?,
+        Command::Plan { command } => cmd::plan::plan_command(command)?,
+        Command::Project { command } => cmd::project::project_command(command)?,
+        Command::Lock { command } => cmd::lock::lock_command(command)?,
+        Command::Receipts { command } => cmd::receipts::receipt_command(command)?,
+        Command::Context { command } => cmd::context::context_command(command)?,
+        Command::Handoff { command } => cmd::handoff::handoff_command(command)?,
+        Command::DepGraph { command } => cmd::depgraph::depgraph_command(command)?,
         Command::Fix { path } => cmd::fix::convention_fix(path)?,
         Command::Rename { path, to } => cmd::rename::rename_path(path, to)?,
         Command::Rules { command } => cmd::rules::rules(command)?,
@@ -118,14 +131,15 @@ fn run() -> lode_core::Result<()> {
             dry_run,
             rollback,
         } => cmd::release::release(version, bump, dry_run, rollback)?,
-        Command::Health | Command::Audit => cmd::audit::health()?,
+        Command::Health { output } | Command::Audit { output } => cmd::audit::health_with_output(output)?,
         Command::Explain => explain(),
-        Command::Doctor { fix, json } => cmd::doctor::doctor(fix, json)?,
+        Command::Doctor { fix, output } => cmd::doctor::doctor_with_output(fix, output)?,
         Command::Scan { command } => cmd::scan::scan(command)?,
         Command::Git { command } => cmd::git::git(command)?,
         Command::Hooks { command } => cmd::hooks::hooks(command)?,
         Command::Env { command } => cmd::env::env_command(command)?,
         Command::License { command } => cmd::license::license(command)?,
+        Command::File { command } => cmd::file::file_command(command)?,
         Command::Projects { command } => cmd::projects::projects(command)?,
         Command::Toolchain { command } => cmd::toolchain::toolchain(command)?,
         Command::Pkg { command } => cmd::pkg::pkg(command)?,
@@ -1176,6 +1190,116 @@ fn run_command_macro(slug: &str, dry_run: bool) -> lode_core::Result<()> {
         if let Err(error) = result {
             if continue_on_error {
                 eprintln!("warning: {error}");
+            } else {
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn run_command_macro_loaded(
+    slug: &str,
+    value: &toml::Value,
+    args: &HashMap<String, String>,
+    dry_run: bool,
+) -> lode_core::Result<()> {
+    let Some(steps) = value.get("steps").and_then(toml::Value::as_array) else {
+        println!("command {slug} has no steps");
+        return Ok(());
+    };
+
+    if let Some(description) = value.get("description").and_then(toml::Value::as_str) {
+        println!("{slug}: {description}");
+    } else {
+        println!("{slug}");
+    }
+
+    for (index, step) in steps.iter().enumerate() {
+        let kind = step
+            .get("kind")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("shell");
+        let run_raw = step
+            .get("run")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| {
+                LodeError::Message(format!("command {slug} step {} missing run", index + 1))
+            })?;
+        let show_output = step
+            .get("show_output")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false);
+        let continue_on_error = step
+            .get("continue_on_error")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false);
+        let skip_if = step
+            .get("skip_if")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("");
+
+        // Substitute {{ args.X }} and {{ X }} patterns
+        let mut run = run_raw.to_string();
+        for (key, val) in args {
+            run = run.replace(&format!("{{{{ args.{key} }}}}"), val);
+            run = run.replace(&format!("{{{{ args.{key} }}}}"), val);
+            run = run.replace(&format!("{{{{{key}}}}}"), val);
+            run = run.replace(&format!("{{{{{key}}}}}"), val);
+        }
+
+        // Check skip condition
+        if let Some(condition) = skip_if.strip_prefix("if_exists:") {
+            if Utf8PathBuf::from(condition).exists() {
+                if !dry_run {
+                    println!("  {} {} [skip] {}", output::dim("−"), output::dim(&format!("{}.", index + 1)), output::dim(&run));
+                }
+                continue;
+            }
+        }
+
+        println!("  {} {} [{}] {}", output::cyan("▶"), output::dim(&format!("{}.", index + 1)), output::cyan(kind), run);
+        if dry_run {
+            continue;
+        }
+
+        let result = match kind {
+            "make" => run_make(&run),
+            "lode" => run_lode_step(&run),
+            "shell" | "npm" | "pnpm" | "cargo" | "python3" | "python" | "node" | "just" | "docker" => {
+                let mut parts = shell_split(&run)
+                    .ok_or_else(|| LodeError::Message(format!("unable to parse command: {run}")))?;
+                if parts.is_empty() {
+                    continue;
+                }
+                if kind != "shell" {
+                    parts.insert(0, kind.to_string());
+                }
+                let step_ok = if show_output {
+                    let output = run_process_output(&parts[0], &parts[1..])?;
+                    print!("{}", String::from_utf8_lossy(&output.stdout));
+                    output.status.success()
+                } else {
+                    run_process_status(&parts[0], &parts[1..], None)?.success()
+                };
+                if step_ok {
+                    println!("  {} {} [{}] {}", output::green("✔"), output::dim(&format!("{}.", index + 1)), output::cyan(kind), output::dim("done"));
+                } else {
+                    if continue_on_error {
+                        eprintln!("  {} {} [{}] {}", output::yellow("⚠"), output::dim(&format!("{}.", index + 1)), output::cyan(kind), output::dim("failed"));
+                    } else {
+                        return Err(LodeError::Message(format!("step {} failed: {run}", index + 1)));
+                    }
+                }
+                Ok(())
+            }
+            other => Err(LodeError::Message(format!(
+                "unsupported step kind: {other}"
+            ))),
+        };
+        if let Err(error) = result {
+            if continue_on_error {
+                eprintln!("  warning: {error}");
             } else {
                 return Err(error);
             }
@@ -2791,9 +2915,9 @@ pub(crate) fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
             append_daemon_log("daemon resumed")?;
             println!("daemon resumed");
         }
-        DaemonCommand::ListWatchers { json } => {
+        DaemonCommand::ListWatchers { output } => {
             let runtime = load_daemon_runtime_state()?;
-            if json {
+            if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&json!({
@@ -2814,12 +2938,12 @@ pub(crate) fn daemon_result(command: DaemonCommand) -> lode_core::Result<()> {
                 }
             }
         }
-        DaemonCommand::Status { quiet, json } => {
+        DaemonCommand::Status { quiet, output } => {
             let state =
                 fs::read_to_string(daemon_state_path()?).unwrap_or_else(|_| "inactive".to_string());
             let runtime = load_daemon_runtime_state()?;
             let active = runtime.active;
-            if json {
+            if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string(&runtime)

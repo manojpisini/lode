@@ -2,29 +2,41 @@
 
 pub(crate) mod types;
 
+pub(crate) mod output;
+
 pub mod add;
+pub mod adopt;
 pub mod agent;
+pub mod assets;
 pub mod audit;
 pub mod check;
 pub mod commands;
 pub mod completions;
 pub mod config;
+pub mod context;
 pub mod daemon;
+pub mod depgraph;
 pub mod doctor;
+pub(crate) mod git;
 pub mod env;
 pub mod export;
+pub mod file;
 pub mod fix;
-pub mod git;
+pub mod handoff;
 pub mod hooks;
 pub mod info;
 pub mod init;
 pub mod license;
+pub mod lock;
 pub mod log;
 pub mod lsp;
 pub mod mcp;
 pub mod metrics;
 pub mod pkg;
+pub mod plan;
 pub mod plugin;
+pub mod project;
+pub mod receipts;
 pub mod profile;
 pub mod projects;
 pub mod recipe;

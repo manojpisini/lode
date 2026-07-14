@@ -28,10 +28,23 @@ pub(crate) enum Command {
     Setup {
         #[arg(long, help = "Apply default settings")]
         defaults: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Create a new project with scaffolding
     #[command(alias = "new")]
     Init(InitArgs),
+    /// Analyze an existing project and generate an adoption plan
+    Adopt {
+        #[arg(help = "Project directory to analyze (default: current dir)")]
+        path: Option<camino::Utf8PathBuf>,
+        #[arg(long, help = "Apply the adoption plan (create .lode/project.toml)")]
+        apply: bool,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
     /// Add a component, toolchain, or integration to the project
     Add {
         component: String,
@@ -51,8 +64,8 @@ pub(crate) enum Command {
     },
     /// Show project information and metadata
     Info {
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// View or change configuration settings
     Config {
@@ -186,17 +199,23 @@ pub(crate) enum Command {
         rollback: bool,
     },
     /// Run a project health audit
-    Health,
+    Health {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
     /// Explain a concept or lode feature
     Explain,
     /// Run a project health audit (alias for health)
-    Audit,
+    Audit {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
     /// Run system diagnostics and optionally fix issues
     Doctor {
         #[arg(long, help = "Attempt to auto-fix detected issues")]
         fix: bool,
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Scan for secrets or foreign (non-lode) projects
     Scan {
@@ -207,6 +226,41 @@ pub(crate) enum Command {
     Git {
         #[command(subcommand)]
         command: GitCommand,
+    },
+    /// Manage and search LODE assets (search, show, catalog, list)
+    Assets {
+        #[command(subcommand)]
+        command: AssetsCommand,
+    },
+    /// Manage execution plans (create, show, validate, apply, rollback, list)
+    Plan {
+        #[command(subcommand)]
+        command: PlanCommand,
+    },
+    /// Declarative project manifest management (plan, apply, diff, reconcile, explain)
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
+    /// Manage the asset lockfile (show, verify, update, diff)
+    Lock {
+        #[command(subcommand)]
+        command: LockCommand,
+    },
+    /// Manage command receipts (list, show, resume)
+    Receipts {
+        #[command(subcommand)]
+        command: ReceiptCommand,
+    },
+    /// Manage project context packs (build, show, diff, verify)
+    Context {
+        #[command(subcommand)]
+        command: ContextCommand,
+    },
+    /// Create and manage agent handoffs (create, show, verify, resume, list)
+    Handoff {
+        #[command(subcommand)]
+        command: HandoffCommand,
     },
     /// Manage git hooks (list, status, test, run)
     Hooks {
@@ -222,6 +276,11 @@ pub(crate) enum Command {
     License {
         #[command(subcommand)]
         command: LicenseCommand,
+    },
+    /// Manage tracked files in the file manifest (list, check, add, remove)
+    File {
+        #[command(subcommand)]
+        command: FileCommand,
     },
     /// Manage the project registry (list, cd, register, remove, health, prune)
     Projects {
@@ -252,6 +311,11 @@ pub(crate) enum Command {
     Workspace {
         #[command(subcommand)]
         command: WorkspaceCommand,
+    },
+    /// Analyze and visualize the asset dependency graph
+    DepGraph {
+        #[command(subcommand)]
+        command: DepGraphCommand,
     },
     /// Manage the background file watcher daemon
     Daemon {
@@ -356,10 +420,272 @@ pub(crate) enum Command {
     External(Vec<String>),
 }
 
+#[derive(Debug, Subcommand)]
+pub(crate) enum PlanCommand {
+    /// Create a new plan from an intent
+    Create {
+        #[arg(long, help = "Natural language intent")]
+        intent: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show plan details
+    Show {
+        plan_id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Validate a plan against the project
+    Validate {
+        plan_id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Apply a plan to the project
+    Apply {
+        plan_id: String,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Rollback a plan's changes
+    Rollback {
+        plan_id: String,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// List all plans
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ProjectCommand {
+    /// Generate a plan to sync the project with the manifest
+    Plan {
+        #[arg(long, help = "Plan intent description")]
+        intent: Option<String>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Apply a project plan
+    Apply {
+        plan_id: String,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show differences between current state and the manifest
+    Diff {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Resolve discrepancies between the manifest and filesystem
+    Reconcile {
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Explain the current project configuration
+    Explain {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum LockCommand {
+    /// Show the lockfile contents
+    Show {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Verify all asset hashes match the lockfile
+    Verify {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Update the lockfile with current asset versions and hashes
+    Update {
+        #[arg(long, help = "Asset IDs to update (e.g., recipe://database/postgres)")]
+        id: Option<Vec<String>>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show differences between current state and the lockfile
+    Diff {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum FileCommand {
+    /// List managed files in the manifest
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Check integrity of managed files
+    Check {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Add a file to the managed manifest
+    Add {
+        #[arg(help = "Path to the file to manage")]
+        path: camino::Utf8PathBuf,
+        #[arg(long, help = "Subsystem that manages this file (scaffold, adopt, sync, agent, init, context, handoff, verify, depgraph)")]
+        managed_by: Option<String>,
+        #[arg(long, help = "Description of why this file is managed")]
+        desc: Option<String>,
+    },
+    /// Remove a file from the managed manifest
+    Remove {
+        #[arg(help = "Path to the file to unmanage")]
+        path: camino::Utf8PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ReceiptCommand {
+    /// List all receipts
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show receipt details
+    Show {
+        receipt_id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Resume from a receipt
+    Resume {
+        receipt_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ContextCommand {
+    /// Build context pack for the project
+    Build {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show the context pack
+    Show {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Diff context against last build
+    Diff,
+    /// Verify context files exist
+    Verify,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DepGraphCommand {
+    /// List all assets in the dependency graph
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show dependency details for a specific asset
+    Show {
+        id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Check the graph for conflicts, cycles, and missing deps
+    Check {
+        #[arg(long, help = "Root asset IDs to start resolution from")]
+        root: Vec<String>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Export the graph in DOT format for visualization
+    Dot {
+        #[arg(long, help = "Root asset IDs to include (empty = all)")]
+        root: Vec<String>,
+        #[arg(long, help = "Output file path (default: stdout)")]
+        out: Option<camino::Utf8PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum HandoffCommand {
+    /// Create a handoff
+    Create {
+        #[arg(long, help = "Task description")]
+        task: String,
+        #[arg(long, default_value = "pidgin", help = "Format (pidgin, markdown, json)")]
+        format: String,
+        #[arg(long, help = "Next action")]
+        next: String,
+        #[arg(long, help = "Plan ID to reference")]
+        plan_id: Option<String>,
+    },
+    /// Show handoff details
+    Show {
+        handoff_id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Verify a handoff
+    Verify {
+        handoff_id: String,
+    },
+    /// Resume from a handoff
+    Resume {
+        handoff_id: String,
+    },
+    /// List all handoffs
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AssetsCommand {
+    /// Search assets by intent or keyword
+    Search {
+        query: String,
+        #[arg(long, help = "Filter by asset kind (profile, template, recipe, command, snippet, license)")]
+        kind: Option<String>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show detailed asset info
+    Show {
+        id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// List all assets of a kind
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Export the asset catalog to a JSON file
+    Catalog {
+        #[arg(long, help = "Output file path")]
+        out: Option<Utf8PathBuf>,
+    },
+}
+
 #[derive(Debug, Args)]
 pub(crate) struct InitArgs {
-    /// Project name (also used as the directory name)
-    pub(crate) name: String,
+    /// Project name (omit to init/assimilate the current directory)
+    pub(crate) name: Option<String>,
     #[arg(short = 'p', long = "path", help = "Parent directory for the project")]
     pub(crate) path: Option<Utf8PathBuf>,
     #[arg(long, help = "Profile to use (e.g. core/bare)")]
@@ -372,6 +698,8 @@ pub(crate) struct InitArgs {
     pub(crate) overwrite: bool,
     #[arg(long, help = "Skip git repository initialization")]
     pub(crate) no_git: bool,
+    #[arg(long, help = "Assimilate existing project (detect git remote, files, etc.)")]
+    pub(crate) assimilate: bool,
     #[arg(long, help = "Programming language (rust, python, node, etc.)")]
     pub(crate) lang: Option<String>,
     #[arg(long, help = "Scaffold preset")]
@@ -390,8 +718,8 @@ pub(crate) struct InitArgs {
 pub(crate) struct CheckArgs {
     /// Path to check (defaults to current directory)
     pub(crate) path: Option<Utf8PathBuf>,
-    #[arg(long, help = "Output as JSON")]
-    pub(crate) json: bool,
+    #[arg(long, value_enum, default_value = "table", help = "Output format")]
+    pub(crate) output: OutputFormat,
     #[arg(long, help = "Auto-fix violations")]
     pub(crate) fix: bool,
 }
@@ -441,8 +769,8 @@ pub(crate) enum ConfigCommand {
 pub(crate) enum LibraryCommand {
     /// List available templates
     List {
-        #[arg(long, default_value = "table", help = "Output format (table, json)")]
-        format: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Show a template's content
     Show {
@@ -478,7 +806,11 @@ pub(crate) enum ProfileCommand {
     /// List all profiles
     List,
     /// Show profile details
-    Show { name: String },
+    Show {
+        name: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
     /// Activate a profile
     Use { name: String },
     /// Create a new profile
@@ -494,6 +826,8 @@ pub(crate) enum RecipeCommand {
     /// Show a recipe's content
     Show {
         name: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Apply a recipe to the project
     Apply {
@@ -518,6 +852,8 @@ pub(crate) enum CommandsCommand {
     /// Show a command macro's definition
     Show {
         name: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Register a new command macro
     Add {
@@ -557,8 +893,8 @@ pub(crate) enum PluginCommand {
     /// Search the plugin registry
     Search {
         query: Option<String>,
-        #[arg(long, default_value = "table", help = "Output format (table, json)")]
-        format: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Install a plugin from a manifest path
     Add {
@@ -596,6 +932,18 @@ pub(crate) enum AgentCommand {
         #[command(subcommand)]
         command: AgentPlanCommand,
     },
+    /// Bootstrap agent discovery info
+    Bootstrap {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Resolve an intent to LODE capabilities
+    Resolve {
+        #[arg(long, help = "Natural language intent description")]
+        intent: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -624,8 +972,8 @@ pub(crate) enum SnippetCommand {
     List {
         #[arg(long, help = "Filter by language")]
         lang: Option<String>,
-        #[arg(long, default_value = "table", help = "Output format (table, json)")]
-        format: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Show a snippet's content
     Show {
@@ -684,16 +1032,16 @@ pub(crate) enum ScanCommand {
         path: Option<Utf8PathBuf>,
         #[arg(long, help = "Scan staged git changes")]
         staged: bool,
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
         #[arg(long, help = "Suppress verbose output")]
         quiet: bool,
     },
     /// Scan a directory for non-lode projects
     Foreign {
         path: Option<Utf8PathBuf>,
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
 }
 
@@ -808,8 +1156,8 @@ pub(crate) enum EnvCommand {
 pub(crate) enum LicenseCommand {
     /// List available licenses
     List {
-        #[arg(long, default_value = "table", help = "Output format (table, json)")]
-        format: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Show a license's full text
     Show {
@@ -837,8 +1185,8 @@ pub(crate) enum LicenseCommand {
     },
     /// Check license compliance
     Check {
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Apply license headers to project files
     Apply {
@@ -851,8 +1199,8 @@ pub(crate) enum LicenseCommand {
 pub(crate) enum ProjectsCommand {
     /// List registered projects
     List {
-        #[arg(long, default_value = "table", help = "Output format (table, json)")]
-        format: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
         #[arg(long, default_value = "name", help = "Sort field (name, path, added)")]
         sort: String,
     },
@@ -872,8 +1220,8 @@ pub(crate) enum ProjectsCommand {
     Health {
         #[arg(long, help = "Show only stale projects")]
         stale_only: bool,
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
         #[arg(long, help = "Force refresh health data")]
         refresh: bool,
     },
@@ -1098,15 +1446,15 @@ pub(crate) enum DaemonCommand {
     Resume,
     /// List active file watchers
     ListWatchers {
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Show daemon status
     Status {
         #[arg(long, help = "Suppress output (exit code only)")]
         quiet: bool,
-        #[arg(long, help = "Output as JSON")]
-        json: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
     /// Show daemon log
     Log {
@@ -1148,8 +1496,59 @@ pub(crate) enum SelfCommand {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub(crate) enum OutputFormat {
+    Table,
     Toml,
     Json,
+}
+
+impl OutputFormat {
+    pub(crate) fn should_use_json(&self) -> bool {
+        matches!(self, OutputFormat::Json)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ResultEnvelope<T: Serialize> {
+    pub command: String,
+    pub status: String,
+    pub data: T,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl<T: Serialize> ResultEnvelope<T> {
+    pub(crate) fn success(command: impl Into<String>, data: T) -> Self {
+        Self {
+            command: command.into(),
+            status: "success".to_string(),
+            data,
+            error: None,
+        }
+    }
+}
+
+pub(crate) fn print_output<T: Serialize>(
+    command_name: &str,
+    data: T,
+    format: OutputFormat,
+    render_table: impl Fn() -> String,
+) {
+    match format {
+        OutputFormat::Table => print!("{}", render_table()),
+        OutputFormat::Json => {
+            let envelope = ResultEnvelope::success(command_name, &data);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&envelope).unwrap_or_else(|_| "{}".to_string())
+            );
+        }
+        OutputFormat::Toml => {
+            println!(
+                "{}",
+                toml::to_string_pretty(&data).unwrap_or_else(|_| String::new())
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

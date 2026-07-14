@@ -9,23 +9,32 @@
 // Note: #![deny(unsafe_code)] is intentionally omitted because
 // fs_safety.rs contains unsafe ReplaceFileW for atomic Windows replacements.
 
+pub mod adopt;
 pub mod agent;
 pub mod assets;
 pub mod audit;
+pub mod catalog;
 pub mod commands;
 pub mod config;
+pub mod context;
 pub mod convention;
+pub mod dep_graph;
 pub mod env;
 pub mod error;
+pub mod file_manifest;
 pub mod fs_safety;
 pub mod git;
+pub mod handoff;
 pub mod hooks;
 pub mod install;
 pub mod ipc;
 pub mod license;
+pub mod lockfile;
 pub mod pkg;
+pub mod plan;
 pub mod prereq;
 pub mod process;
+pub mod receipt;
 pub mod recipe;
 pub mod redact;
 pub mod registry;
@@ -43,7 +52,12 @@ pub mod time_tracker;
 pub mod toolchain;
 pub mod workspace;
 
+pub use adopt::{analyze_project, format_adoption_report, AdoptionReport, FrameworkInfo, LanguageInfo};
 pub use agent::*;
+pub use catalog::{
+    build_catalog, export_catalog, resolve_intent, AssetCatalog, AssetCatalogEntry, BootstrapInfo,
+    IntentResolution, ProjectInfo, RecommendedAction,
+};
 pub use assets::{command_names, default_assets, profile_names, recipe_names, template_paths};
 pub use audit::{audit_project, load_metrics, save_metrics, AuditReport};
 pub use commands::{
@@ -51,17 +65,36 @@ pub use commands::{
     LodePackManifest,
 };
 pub use config::{default_config, LodeConfig, SCHEMA_VERSION};
+pub use context::{ContextPack, Decision, QualityGate};
 pub use convention::{check_path, fix_path, normalize_name, ConventionReport, ConventionViolation};
+pub use dep_graph::{
+    builtin_asset_deps, find_asset_by_provides, format_dep_graph_dot, format_dep_resolution_table,
+    AssetDependency, AssetDeps, AssetResolution, DepConflict, DepEdge, DepGraphBuilder,
+    DepGraphNode, DepResolution, DependencyGraph,
+};
 pub use env::*;
 pub use error::{ExitCode, LodeError, Result};
+pub use file_manifest::{
+    add_managed_file, check_file_integrity, file_manifest_path, list_managed_files,
+    load_file_manifest, remove_managed_file, save_file_manifest, format_file_manifest_table,
+    FileCheckResult, FileEntry, FileManifest, ManagedBy,
+};
 pub use fs_safety::ValidatedRoot;
 pub use git::*;
+pub use handoff::{Handoff, HandoffDecision, HandoffFormat};
 pub use hooks::{PluginInstallReceipt, PluginSecurity, *};
+pub use plan::{ApplyReport, Operation, Plan, PlanMetadata, PlanStatus, PlanValidation};
+pub use receipt::{CommandReceipt, NextAction, ReceiptResult, ReceiptStatus, ReceiptStep};
 pub use install::{
-    ensure_global_workspace, global_asset_dir, global_config_path, global_dir, load_global_config,
-    save_global_config, setup_defaults, SetupReport,
+    auto_register_assets, auto_register_global_assets, ensure_global_workspace, global_asset_dir,
+    global_config_path, global_dir, load_global_config, save_global_config, setup_defaults,
+    SetupReport,
 };
 pub use license::*;
+pub use lockfile::{
+    diff_locks, hash_file, load_lock, lockfile_path, new_lock, save_lock, update_lock,
+    verify_lock, LockAssetEntry, LockDiff, LockVerifyReport, LodeLock,
+};
 pub use pkg::*;
 pub use prereq::*;
 pub use process::Process;
@@ -74,8 +107,9 @@ pub use registry::{
 pub use release::*;
 pub use rules::*;
 pub use scaffold::{
-    add_component_to_project, init_project, load_scaffold_lock, scaffold_lock_path, sync_project,
-    AddRequest, InitRequest, ProjectConfig, ScaffoldLock, ScaffoldLockEntry, ScaffoldReport,
+    add_component_to_project, init_project, load_project_config, load_scaffold_lock,
+    scaffold_lock_path, sync_project, AddRequest, InitRequest, ProjectConfig, ProjectDependency,
+    ProjectSection, ScaffoldLock, ScaffoldLockEntry, ScaffoldReport,
 };
 pub use secrets::{scan_content, scan_secrets, SecretFinding, SecretScanReport};
 pub use signature::*;
