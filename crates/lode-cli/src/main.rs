@@ -23,8 +23,8 @@ use crossterm::{
 };
 use lode_core::{
     audit_project, check_file_integrity, check_path, command_names,
-    default_config, default_lodepack_checksum_algorithm, global_asset_dir, global_dir,
-    list_managed_files, load_global_config, load_metrics, load_registry, profile_names,
+    default_config, default_lodepack_checksum_algorithm, file_manifest_path, global_asset_dir,
+    global_dir, list_managed_files, load_global_config, load_metrics, load_registry, profile_names,
     recipe_names, redact, scan_secrets, template_paths, LodeError, LodePack,
     LodePackFile, LodePackManifest, Process, ValidatedRoot,
 };

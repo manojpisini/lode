@@ -144,7 +144,7 @@ fn file_add(
         )));
     }
 
-    let subsystem = match managed_by.as_deref().unwrap_or("cli") {
+    let subsystem = match managed_by.as_deref().unwrap_or("manifest") {
         "scaffold" => ManagedBy::Scaffold,
         "adopt" => ManagedBy::Adopt,
         "sync" => ManagedBy::Sync,
@@ -153,10 +153,11 @@ fn file_add(
         "context" => ManagedBy::Context,
         "handoff" => ManagedBy::Handoff,
         "verify" => ManagedBy::Verify,
+        "manifest" => ManagedBy::Manifest,
         "depgraph" => ManagedBy::DepGraph,
         _ => {
             return Err(LodeError::Message(format!(
-                "unknown subsystem: {}. Valid: scaffold, adopt, sync, agent, init, context, handoff, verify, depgraph",
+                "unknown subsystem: {}. Valid: scaffold, adopt, sync, agent, init, context, handoff, verify, manifest, depgraph",
                 managed_by.as_deref().unwrap_or("")
             )));
         }

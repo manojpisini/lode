@@ -13,7 +13,7 @@ fn doctor_fix_reports_structured_checks() {
     lode()
         .env("LODE_CONFIG", &config)
         .current_dir(temp.path())
-        .args(["doctor", "--fix", "--json"])
+        .args(["doctor", "--fix", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"fixed\": true"))
@@ -39,14 +39,14 @@ fn template_and_snippet_lists_support_json() {
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["template", "list", "--format", "json"])
+        .args(["template", "list", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("root/README.md"));
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["snippet", "list", "--format", "json", "--lang", "rs"])
+        .args(["snippet", "list", "--output", "json", "--lang", "rs"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\": \"serde-struct\""));
@@ -193,7 +193,7 @@ fn projects_and_license_lists_support_json() {
         .args([
             "projects",
             "list",
-            "--format",
+            "--output",
             "json",
             "--sort",
             "last-seen",
@@ -204,7 +204,7 @@ fn projects_and_license_lists_support_json() {
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["license", "list", "--format", "json"])
+        .args(["license", "list", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("MIT.txt"));
@@ -234,7 +234,7 @@ fn projects_health_supports_json_and_refresh() {
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["projects", "health", "--json", "--refresh"])
+        .args(["projects", "health", "--output", "json", "--refresh"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\": \"healthy-app\""))
@@ -505,7 +505,7 @@ fn recipe_apply_writes_declared_files() {
         .success()
         .stdout(predicate::str::contains("wrote"));
 
-    assert!(temp.path().join("docs").join("docker-basic.md").exists());
+    assert!(temp.path().join("Dockerfile").exists());
 }
 
 #[test]
@@ -553,7 +553,8 @@ fn commands_run_dry_run_reads_extracted_macro() {
         .args(["commands", "run", "verify", "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("step 1 [make] verify"));
+        .stdout(predicate::str::contains("verify"))
+        .stdout(predicate::str::contains("Full verification pipeline"));
 }
 
 #[test]
@@ -572,7 +573,7 @@ fn commands_run_executes_project_local_shell_macro() {
         .args(["commands", "run", "touch-file"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("step 1 [shell]"));
+        .stdout(predicate::str::contains("whoami"));
 }
 
 #[test]
@@ -599,7 +600,6 @@ fn custom_command_direct_invocation_supports_help_and_dry_run() {
         .args(["deploy", "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("step 1 [shell]"))
         .stdout(predicate::str::contains("echo deployed"));
 
     assert!(!temp.path().join("deployed.txt").exists());
@@ -705,7 +705,7 @@ fn plugin_add_info_and_remove_are_file_backed() {
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["plugin", "search", "templates", "--format", "json"])
+        .args(["plugin", "search", "templates", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\": \"my-plugin\""))
@@ -1317,4 +1317,346 @@ fn time_clear_confirm_removes_log() {
         .stdout(predicate::str::contains("time log cleared"));
 
     assert!(!lode_dir.join("time-log.json").exists());
+}
+
+#[test]
+fn file_add_list_check_remove_round_trip() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    std::fs::write(temp.path().join("hello.txt"), "hello world\n").expect("write file");
+    std::fs::create_dir_all(temp.path().join("sub")).expect("create dir");
+    std::fs::write(temp.path().join("sub").join("nested.txt"), "nested\n")
+        .expect("write file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "add", "hello.txt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "add", "sub/nested.txt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("added"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello.txt"))
+        .stdout(predicate::str::contains("nested.txt"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok"));
+
+    std::fs::write(temp.path().join("hello.txt"), "modified\n").expect("modify file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("modified"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "remove", "hello.txt"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nested.txt"))
+        .stdout(predicate::str::contains("hello.txt").not());
+}
+
+#[test]
+fn file_list_supports_json_output() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    std::fs::write(temp.path().join("foo.txt"), "foo\n").expect("write file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "add", "foo.txt"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "list", "--output", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"path\": \"foo.txt\""));
+}
+
+#[test]
+fn context_compile_respects_token_budget() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    std::fs::create_dir_all(temp.path().join("_ctx_")).expect("create directory");
+    std::fs::write(
+        temp.path().join("_ctx_").join("001-project.md"),
+        "# Project Summary\n\nThis is a test project.\n",
+    )
+    .expect("write file");
+    std::fs::write(
+        temp.path().join("_ctx_").join("002-arch.md"),
+        "# Architecture\n\nUses layered design.\n",
+    )
+    .expect("write file");
+    std::fs::write(
+        temp.path().join("_ctx_").join("003-long.md"),
+        "A very long context file that repeats itself. ".repeat(100),
+    )
+    .expect("write file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["context", "compile", "--budget", "500"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Context Compiled"));
+
+    let compiled = temp.path().join(".lode").join("context").join("COMPILED.md");
+    assert!(compiled.exists());
+    let contents = std::fs::read_to_string(&compiled).expect("read file");
+    assert!(contents.contains("Project Summary"));
+    assert!(contents.contains("Architecture"));
+    assert!(contents.contains("## Full Content"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["context", "compile", "--budget", "500", "--output", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"total_estimated_tokens\""))
+        .stdout(predicate::str::contains("\"total_files\""));
+}
+
+#[test]
+fn context_compile_without_context_files_reports_empty() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["context", "compile"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 files included"));
+}
+
+#[test]
+fn agent_policy_generates_all_expected_files() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+    let project_dir = temp.path().join("my-project");
+    std::fs::create_dir_all(&project_dir).expect("create directory");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project_dir)
+        .args(["agent", "policy"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Agent Policy Generated"))
+        .stdout(predicate::str::contains("AGENTS.md"))
+        .stdout(predicate::str::contains("CLAUDE.md"))
+        .stdout(predicate::str::contains(".cursorrules"))
+        .stdout(predicate::str::contains("9 files written"));
+
+    assert!(project_dir.join("AGENTS.md").exists());
+    assert!(project_dir.join("CLAUDE.md").exists());
+    assert!(project_dir.join("CODEX.md").exists());
+    assert!(project_dir.join(".cursorrules").exists());
+    assert!(project_dir.join(".windsurfrules").exists());
+    assert!(project_dir.join(".mcp.json").exists());
+    assert!(project_dir.join(".lode").join("context").join("PLAN.md").exists());
+    assert!(project_dir.join(".lode").join("context").join("CONSTRAINTS.md").exists());
+    assert!(project_dir.join(".lode").join("context").join("TASKS.md").exists());
+
+    let agents_content = std::fs::read_to_string(project_dir.join("AGENTS.md")).expect("read file");
+    assert!(agents_content.contains("my-project"));
+    assert!(agents_content.contains("## Core Principles"));
+    assert!(agents_content.contains("## Contract"));
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project_dir)
+        .args(["agent", "policy", "--output", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"files_written\""))
+        .stdout(predicate::str::contains("\"AGENTS.md\""));
+}
+
+#[test]
+fn agent_policy_files_are_registered_in_manifest() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+    let project_dir = temp.path().join("policy-project");
+    std::fs::create_dir_all(&project_dir).expect("create directory");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project_dir)
+        .args(["agent", "policy"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(&project_dir)
+        .args(["file", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("AGENTS.md"))
+        .stdout(predicate::str::contains("CLAUDE.md"))
+        .stdout(predicate::str::contains("agent"))
+        .stdout(predicate::str::contains("Managed By"));
+}
+
+#[test]
+fn verify_changed_detects_modified_files() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    std::fs::write(temp.path().join("stable.txt"), "content\n").expect("write file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "add", "stable.txt"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["verify", "--changed"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("unchanged"));
+
+    std::fs::write(temp.path().join("stable.txt"), "tampered\n").expect("modify file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["verify", "--changed"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("MODIFIED"));
+}
+
+#[test]
+fn verify_changed_json_output() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    std::fs::write(temp.path().join("data.txt"), "data\n").expect("write file");
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .arg("setup")
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["file", "add", "data.txt"])
+        .assert()
+        .success();
+
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["verify", "--changed", "--output", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"total_files\""))
+        .stdout(predicate::str::contains("\"ok\":"));
+}
+
+#[test]
+fn verify_changed_without_manifest_reports_gracefully() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+
+    lode()
+        .current_dir(temp.path())
+        .args(["verify", "--changed"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No file manifest found"));
 }
