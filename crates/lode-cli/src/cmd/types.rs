@@ -951,6 +951,11 @@ pub(crate) enum AgentCommand {
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
         output: OutputFormat,
     },
+    /// Generate canonical agent policy files (AGENTS.md, CLAUDE.md, CODEX.md, .cursorrules, .mcp.json)
+    Policy {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]

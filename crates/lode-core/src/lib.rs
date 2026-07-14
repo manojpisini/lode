@@ -53,7 +53,10 @@ pub mod toolchain;
 pub mod workspace;
 
 pub use adopt::{analyze_project, format_adoption_report, AdoptionReport, FrameworkInfo, LanguageInfo};
-pub use agent::*;
+pub use agent::{
+    agent_sync, generate_agent_policy, load_agent_plan, save_agent_plan, AgentConfig, AgentPlan,
+    AgentTask, PolicyReport, SyncReport,
+};
 pub use catalog::{
     build_catalog, export_catalog, resolve_intent, AssetCatalog, AssetCatalogEntry, BootstrapInfo,
     IntentResolution, ProjectInfo, RecommendedAction,
