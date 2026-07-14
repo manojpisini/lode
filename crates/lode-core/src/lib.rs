@@ -65,7 +65,10 @@ pub use commands::{
     LodePackManifest,
 };
 pub use config::{default_config, LodeConfig, SCHEMA_VERSION};
-pub use context::{ContextPack, Decision, QualityGate};
+pub use context::{
+    compile_context, estimate_token_count, CompileEntry, CompileReport, ContextPack, Decision,
+    QualityGate,
+};
 pub use convention::{check_path, fix_path, normalize_name, ConventionReport, ConventionViolation};
 pub use dep_graph::{
     builtin_asset_deps, find_asset_by_provides, format_dep_graph_dot, format_dep_resolution_table,

@@ -589,6 +589,13 @@ pub(crate) enum ContextCommand {
     Diff,
     /// Verify context files exist
     Verify,
+    /// Compile context with token budget enforcement
+    Compile {
+        #[arg(long, help = "Token budget override (default: from config preferences.agents.context_budget_tokens, 6000)")]
+        budget: Option<usize>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]
