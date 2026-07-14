@@ -703,6 +703,15 @@ pub(crate) enum AssetsCommand {
         #[arg(long, help = "Output file path")]
         out: Option<Utf8PathBuf>,
     },
+    /// Build or show status of the local search index
+    Index {
+        #[arg(long, help = "Rebuild the search index")]
+        rebuild: bool,
+        #[arg(long, help = "Show index statistics")]
+        stats: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]

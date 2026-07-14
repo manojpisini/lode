@@ -41,6 +41,7 @@ pub mod registry;
 pub mod release;
 pub mod rules;
 pub mod scaffold;
+pub mod search_index;
 pub mod secrets;
 pub mod signature;
 pub mod snippet;
@@ -52,17 +53,19 @@ pub mod time_tracker;
 pub mod toolchain;
 pub mod workspace;
 
-pub use adopt::{analyze_project, format_adoption_report, AdoptionReport, FrameworkInfo, LanguageInfo};
+pub use adopt::{
+    analyze_project, format_adoption_report, AdoptionReport, FrameworkInfo, LanguageInfo,
+};
 pub use agent::{
     agent_sync, generate_agent_policy, load_agent_plan, save_agent_plan, AgentConfig, AgentPlan,
     AgentTask, PolicyReport, SyncReport,
 };
+pub use assets::{command_names, default_assets, profile_names, recipe_names, template_paths};
+pub use audit::{audit_project, load_metrics, save_metrics, AuditReport};
 pub use catalog::{
     build_catalog, export_catalog, resolve_intent, AssetCatalog, AssetCatalogEntry, BootstrapInfo,
     IntentResolution, ProjectInfo, RecommendedAction,
 };
-pub use assets::{command_names, default_assets, profile_names, recipe_names, template_paths};
-pub use audit::{audit_project, load_metrics, save_metrics, AuditReport};
 pub use commands::{
     default_lodepack_checksum_algorithm, export_lodepack, import_lodepack, LodePack, LodePackFile,
     LodePackManifest,
@@ -81,16 +84,14 @@ pub use dep_graph::{
 pub use env::*;
 pub use error::{ExitCode, LodeError, Result};
 pub use file_manifest::{
-    add_managed_file, check_file_integrity, file_manifest_path, list_managed_files,
-    load_file_manifest, remove_managed_file, save_file_manifest, format_file_manifest_table,
+    add_managed_file, check_file_integrity, file_manifest_path, format_file_manifest_table,
+    list_managed_files, load_file_manifest, remove_managed_file, save_file_manifest,
     FileCheckResult, FileEntry, FileManifest, ManagedBy,
 };
 pub use fs_safety::ValidatedRoot;
 pub use git::*;
 pub use handoff::{Handoff, HandoffDecision, HandoffFormat};
 pub use hooks::{PluginInstallReceipt, PluginSecurity, *};
-pub use plan::{ApplyReport, Operation, Plan, PlanMetadata, PlanStatus, PlanValidation};
-pub use receipt::{CommandReceipt, NextAction, ReceiptResult, ReceiptStatus, ReceiptStep};
 pub use install::{
     auto_register_assets, auto_register_global_assets, ensure_global_workspace, global_asset_dir,
     global_config_path, global_dir, load_global_config, save_global_config, setup_defaults,
@@ -98,12 +99,14 @@ pub use install::{
 };
 pub use license::*;
 pub use lockfile::{
-    diff_locks, hash_file, load_lock, lockfile_path, new_lock, save_lock, update_lock,
-    verify_lock, LockAssetEntry, LockDiff, LockVerifyReport, LodeLock,
+    diff_locks, hash_file, load_lock, lockfile_path, new_lock, save_lock, update_lock, verify_lock,
+    LockAssetEntry, LockDiff, LockVerifyReport, LodeLock,
 };
 pub use pkg::*;
+pub use plan::{ApplyReport, Operation, Plan, PlanMetadata, PlanStatus, PlanValidation};
 pub use prereq::*;
 pub use process::Process;
+pub use receipt::{CommandReceipt, NextAction, ReceiptResult, ReceiptStatus, ReceiptStep};
 pub use recipe::*;
 pub use redact::{redact, redact_findings};
 pub use registry::{
@@ -116,6 +119,10 @@ pub use scaffold::{
     add_component_to_project, init_project, load_project_config, load_scaffold_lock,
     scaffold_lock_path, sync_project, AddRequest, InitRequest, ProjectConfig, ProjectDependency,
     ProjectSection, ScaffoldLock, ScaffoldLockEntry, ScaffoldReport,
+};
+pub use search_index::{
+    build_search_index, load_search_index, save_search_index, search_index, IndexedEntry,
+    SearchIndex, SearchQuery, SearchResult,
 };
 pub use secrets::{scan_content, scan_secrets, SecretFinding, SecretScanReport};
 pub use signature::*;
