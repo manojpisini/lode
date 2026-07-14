@@ -6,7 +6,7 @@ use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
-use crate::{package_command, package_dependencies, now_timestamp};
+use crate::{now_timestamp, package_command, package_dependencies};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -59,7 +59,10 @@ pub(crate) enum Command {
         dry_run: bool,
         #[arg(long, help = "Overwrite existing files")]
         force: bool,
-        #[arg(long, help = "Only sync a specific section (config, templates, agent, metrics)")]
+        #[arg(
+            long,
+            help = "Only sync a specific section (config, templates, agent, metrics)"
+        )]
         section: Option<String>,
     },
     /// Show project information and metadata
@@ -146,9 +149,7 @@ pub(crate) enum Command {
     /// Check project convention compliance
     Check(CheckArgs),
     /// Auto-fix convention violations
-    Fix {
-        path: Option<Utf8PathBuf>,
-    },
+    Fix { path: Option<Utf8PathBuf> },
     /// Rename a file or directory
     Rename {
         path: Utf8PathBuf,
@@ -373,13 +374,9 @@ pub(crate) enum Command {
         theme: String,
     },
     /// Run Minecraft-related commands
-    Mc {
-        command: String,
-    },
+    Mc { command: String },
     /// Run Tauri-related commands
-    Tauri {
-        command: String,
-    },
+    Tauri { command: String },
     /// Manage GitHub Actions workflows
     Gha {
         command: String,
@@ -547,7 +544,10 @@ pub(crate) enum FileCommand {
     Add {
         #[arg(help = "Path to the file to manage")]
         path: camino::Utf8PathBuf,
-        #[arg(long, help = "Subsystem that manages this file (scaffold, adopt, sync, agent, init, context, handoff, verify, depgraph)")]
+        #[arg(
+            long,
+            help = "Subsystem that manages this file (scaffold, adopt, sync, agent, init, context, handoff, verify, depgraph)"
+        )]
         managed_by: Option<String>,
         #[arg(long, help = "Description of why this file is managed")]
         desc: Option<String>,
@@ -573,9 +573,7 @@ pub(crate) enum ReceiptCommand {
         output: OutputFormat,
     },
     /// Resume from a receipt
-    Resume {
-        receipt_id: String,
-    },
+    Resume { receipt_id: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -596,7 +594,10 @@ pub(crate) enum ContextCommand {
     Verify,
     /// Compile context with token budget enforcement
     Compile {
-        #[arg(long, help = "Token budget override (default: from config preferences.agents.context_budget_tokens, 6000)")]
+        #[arg(
+            long,
+            help = "Token budget override (default: from config preferences.agents.context_budget_tokens, 6000)"
+        )]
         budget: Option<usize>,
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
         output: OutputFormat,
@@ -638,7 +639,11 @@ pub(crate) enum HandoffCommand {
     Create {
         #[arg(long, help = "Task description")]
         task: String,
-        #[arg(long, default_value = "pidgin", help = "Format (pidgin, markdown, json)")]
+        #[arg(
+            long,
+            default_value = "pidgin",
+            help = "Format (pidgin, markdown, json)"
+        )]
         format: String,
         #[arg(long, help = "Next action")]
         next: String,
@@ -652,13 +657,9 @@ pub(crate) enum HandoffCommand {
         output: OutputFormat,
     },
     /// Verify a handoff
-    Verify {
-        handoff_id: String,
-    },
+    Verify { handoff_id: String },
     /// Resume from a handoff
-    Resume {
-        handoff_id: String,
-    },
+    Resume { handoff_id: String },
     /// List all handoffs
     List {
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
@@ -671,8 +672,18 @@ pub(crate) enum AssetsCommand {
     /// Search assets by intent or keyword
     Search {
         query: String,
-        #[arg(long, help = "Filter by asset kind (profile, template, recipe, command, snippet, license)")]
+        #[arg(
+            long,
+            help = "Filter by asset kind (profile, template, recipe, command, snippet, license)"
+        )]
         kind: Option<String>,
+        #[arg(
+            long,
+            help = "Filter by lifecycle status (experimental, preview, stable, deprecated, retired)"
+        )]
+        status: Option<String>,
+        #[arg(long, help = "Minimum quality score (0-100)")]
+        min_quality: Option<u32>,
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
         output: OutputFormat,
     },
@@ -702,7 +713,11 @@ pub(crate) struct InitArgs {
     pub(crate) path: Option<Utf8PathBuf>,
     #[arg(long, help = "Profile to use (e.g. core/bare)")]
     pub(crate) profile: Option<String>,
-    #[arg(long = "with", value_delimiter = ',', help = "Components to include (testing, ci, docs, etc.)")]
+    #[arg(
+        long = "with",
+        value_delimiter = ',',
+        help = "Components to include (testing, ci, docs, etc.)"
+    )]
     pub(crate) components: Vec<String>,
     #[arg(long, help = "Show what would be created without writing")]
     pub(crate) dry_run: bool,
@@ -710,7 +725,10 @@ pub(crate) struct InitArgs {
     pub(crate) overwrite: bool,
     #[arg(long, help = "Skip git repository initialization")]
     pub(crate) no_git: bool,
-    #[arg(long, help = "Assimilate existing project (detect git remote, files, etc.)")]
+    #[arg(
+        long,
+        help = "Assimilate existing project (detect git remote, files, etc.)"
+    )]
     pub(crate) assimilate: bool,
     #[arg(long, help = "Programming language (rust, python, node, etc.)")]
     pub(crate) lang: Option<String>,
@@ -718,7 +736,11 @@ pub(crate) struct InitArgs {
     pub(crate) preset: Option<String>,
     #[arg(long, help = "License to apply")]
     pub(crate) license: Option<String>,
-    #[arg(long = "extra", value_delimiter = '=', help = "Extra template variables (key=value)")]
+    #[arg(
+        long = "extra",
+        value_delimiter = '=',
+        help = "Extra template variables (key=value)"
+    )]
     pub(crate) extra: Vec<String>,
     #[arg(long, help = "Skip post-init convention check")]
     pub(crate) no_check: bool,
@@ -848,13 +870,9 @@ pub(crate) enum RecipeCommand {
         dry_run: bool,
     },
     /// Compose multiple recipes into one
-    Compose {
-        names: Vec<String>,
-    },
+    Compose { names: Vec<String> },
     /// Create a new recipe
-    New {
-        name: String,
-    },
+    New { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -893,9 +911,7 @@ pub(crate) enum CommandsCommand {
         dry_run: bool,
     },
     /// Edit a command macro in the default editor
-    Edit {
-        name: String,
-    },
+    Edit { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -915,17 +931,11 @@ pub(crate) enum PluginCommand {
         allow_unsafe: bool,
     },
     /// Remove an installed plugin
-    Remove {
-        name: String,
-    },
+    Remove { name: String },
     /// Update one or all plugins
-    Update {
-        name: Option<String>,
-    },
+    Update { name: Option<String> },
     /// Show plugin information
-    Info {
-        name: String,
-    },
+    Info { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -974,9 +984,7 @@ pub(crate) enum AgentPlanCommand {
         branch: Option<String>,
     },
     /// Mark a task as done
-    Done {
-        id: u64,
-    },
+    Done { id: u64 },
     /// Show the current plan
     Show,
     /// Clear all tasks
@@ -999,9 +1007,7 @@ pub(crate) enum SnippetCommand {
         lang: Option<String>,
     },
     /// Search snippets by content
-    Search {
-        query: String,
-    },
+    Search { query: String },
     /// Add a new snippet
     Add {
         name: String,
@@ -1037,9 +1043,7 @@ pub(crate) enum SnippetCommand {
         out: Option<Utf8PathBuf>,
     },
     /// Edit a snippet in the default editor
-    Edit {
-        name: String,
-    },
+    Edit { name: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1075,10 +1079,7 @@ pub(crate) enum RulesCommand {
 #[derive(Debug, Subcommand)]
 pub(crate) enum GitCommand {
     /// Create a standardized branch name
-    Branch {
-        kind: String,
-        description: String,
-    },
+    Branch { kind: String, description: String },
     /// Create a conventional commit
     Commit {
         message: Option<String>,
@@ -1107,7 +1108,11 @@ pub(crate) enum GitCommand {
         since: Option<String>,
         #[arg(long, help = "Output file path")]
         out: Option<Utf8PathBuf>,
-        #[arg(long, default_value = "markdown", help = "Output format (markdown, json)")]
+        #[arg(
+            long,
+            default_value = "markdown",
+            help = "Output format (markdown, json)"
+        )]
         format: String,
     },
     /// Install git hooks managed by lode
@@ -1136,9 +1141,7 @@ pub(crate) enum HooksCommand {
     /// Show hook execution status
     Status,
     /// Test a hook by event name
-    Test {
-        event: String,
-    },
+    Test { event: String },
     /// Run a hook for a specific event
     Run {
         event: String,
@@ -1164,9 +1167,7 @@ pub(crate) enum EnvCommand {
     /// Sync env files with the lockfile
     Sync,
     /// Switch to a different profile's environment
-    Use {
-        profile: String,
-    },
+    Use { profile: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1177,13 +1178,9 @@ pub(crate) enum LicenseCommand {
         output: OutputFormat,
     },
     /// Show a license's full text
-    Show {
-        id: String,
-    },
+    Show { id: String },
     /// Show license metadata
-    Info {
-        id: String,
-    },
+    Info { id: String },
     /// Add a custom license
     Add {
         id: String,
@@ -1193,13 +1190,9 @@ pub(crate) enum LicenseCommand {
         text: Option<String>,
     },
     /// Remove a custom license
-    Remove {
-        id: String,
-    },
+    Remove { id: String },
     /// Set the project license
-    Set {
-        id: String,
-    },
+    Set { id: String },
     /// Check license compliance
     Check {
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
@@ -1222,17 +1215,11 @@ pub(crate) enum ProjectsCommand {
         sort: String,
     },
     /// Print the path of a registered project
-    Cd {
-        name: String,
-    },
+    Cd { name: String },
     /// Register a directory as a lode project
-    Register {
-        path: Option<Utf8PathBuf>,
-    },
+    Register { path: Option<Utf8PathBuf> },
     /// Unregister a project
-    Remove {
-        name: String,
-    },
+    Remove { name: String },
     /// Run health checks on registered projects
     Health {
         #[arg(long, help = "Show only stale projects")]
@@ -1255,20 +1242,11 @@ pub(crate) enum ToolchainCommand {
     /// Run toolchain diagnostics
     Doctor,
     /// Install a toolchain version
-    Add {
-        runtime: String,
-        version: String,
-    },
+    Add { runtime: String, version: String },
     /// Remove a toolchain version
-    Remove {
-        runtime: String,
-        version: String,
-    },
+    Remove { runtime: String, version: String },
     /// Activate a toolchain version
-    Use {
-        runtime: String,
-        version: String,
-    },
+    Use { runtime: String, version: String },
     /// Pin a toolchain version for the project
     Pin {
         runtime: Option<String>,
@@ -1336,7 +1314,11 @@ pub(crate) enum PkgCommand {
     },
     /// Visualize the dependency graph
     Graph {
-        #[arg(long, default_value = "ascii", help = "Output format (ascii, dot, json)")]
+        #[arg(
+            long,
+            default_value = "ascii",
+            help = "Output format (ascii, dot, json)"
+        )]
         format: String,
     },
     /// Clean dependency caches
@@ -1366,7 +1348,11 @@ pub(crate) enum TimeCommand {
     Report {
         #[arg(long, help = "Start date (YYYY-MM-DD)")]
         since: Option<String>,
-        #[arg(long, default_value = "markdown", help = "Output format (markdown, json)")]
+        #[arg(
+            long,
+            default_value = "markdown",
+            help = "Output format (markdown, json)"
+        )]
         format: String,
         #[arg(long, help = "Output file path")]
         out: Option<Utf8PathBuf>,
@@ -1405,9 +1391,7 @@ pub(crate) enum WorkspaceCommand {
         format: String,
     },
     /// Add a new member crate
-    Add {
-        name: String,
-    },
+    Add { name: String },
     /// Remove a member crate
     Remove {
         name: String,
@@ -1428,7 +1412,11 @@ pub(crate) enum WorkspaceCommand {
     },
     /// Visualize the workspace dependency graph
     Graph {
-        #[arg(long, default_value = "ascii", help = "Output format (ascii, dot, json)")]
+        #[arg(
+            long,
+            default_value = "ascii",
+            help = "Output format (ascii, dot, json)"
+        )]
         format: String,
     },
 }

@@ -19,6 +19,29 @@ pub struct AssetCatalogEntry {
     pub conflicts: Vec<String>,
     pub verification: Vec<String>,
     pub tags: Vec<String>,
+    /// Lifecycle: experimental, preview, stable, deprecated, retired
+    #[serde(default = "default_status")]
+    pub status: String,
+    #[serde(default)]
+    pub quality_score: Option<u32>,
+    #[serde(default)]
+    pub last_verified: Option<String>,
+    #[serde(default)]
+    pub verification_tests: Option<u32>,
+    #[serde(default)]
+    pub verification_fixtures: Option<u32>,
+    #[serde(default)]
+    pub verification_last_result: Option<String>,
+    #[serde(default)]
+    pub deprecation_replacement: Option<String>,
+    #[serde(default)]
+    pub deprecation_remove_after: Option<String>,
+    #[serde(default)]
+    pub deprecation_migration: Option<String>,
+}
+
+fn default_status() -> String {
+    "stable".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,13 +69,50 @@ fn detect_maturity(path: &str) -> &'static str {
     }
 }
 
+fn detect_status(path: &str, summary: &str) -> &'static str {
+    let p = path.to_lowercase();
+    let s = summary.to_lowercase();
+    if p.contains("deprecated") || s.contains("deprecated") {
+        "deprecated"
+    } else if p.contains("experimental") || p.contains("alpha") || p.contains("preview-") {
+        "experimental"
+    } else if p.starts_with("core/") || p.starts_with("systems/") {
+        "stable"
+    } else if p.starts_with("frontend/") || p.starts_with("backend/") {
+        "preview"
+    } else {
+        "stable"
+    }
+}
+
+fn compute_quality_score(path: &str, kind: &str, maturity: &str) -> Option<u32> {
+    let mut score: u32 = 85;
+    if kind == "profile" || kind == "template" {
+        score = score.saturating_add(5);
+    }
+    if maturity == "production" {
+        score = score.saturating_add(10);
+    } else if maturity == "beta" {
+        score = score.saturating_sub(10);
+    }
+    if path.starts_with("core/") {
+        score = score.saturating_add(5);
+    }
+    Some(score.min(100))
+}
+
 fn detect_languages(kind: &str, path: &str) -> Vec<String> {
     let p = path.to_lowercase();
     if p.contains("rust") || p.contains("cargo") {
         vec!["rust".to_string()]
     } else if p.contains("python") || p.contains("django") || p.contains("fastapi") {
         vec!["python".to_string()]
-    } else if p.contains("node") || p.contains("typescript") || p.contains("javascript") || p.contains("ts") || p.contains("js") {
+    } else if p.contains("node")
+        || p.contains("typescript")
+        || p.contains("javascript")
+        || p.contains("ts")
+        || p.contains("js")
+    {
         vec!["typescript".to_string(), "javascript".to_string()]
     } else if p.contains("go") {
         vec!["go".to_string()]
@@ -62,12 +122,21 @@ fn detect_languages(kind: &str, path: &str) -> Vec<String> {
         vec!["cpp".to_string()]
     } else if p.contains("zig") {
         vec!["zig".to_string()]
-    } else if p.contains("java") || p.contains("gradle") || p.contains("maven") || p.contains("minecraft") {
+    } else if p.contains("java")
+        || p.contains("gradle")
+        || p.contains("maven")
+        || p.contains("minecraft")
+    {
         vec!["java".to_string()]
     } else if p.contains("tauri") {
         vec!["rust".to_string(), "typescript".to_string()]
     } else if p.contains("competitive") {
-        vec!["cpp".to_string(), "rust".to_string(), "python".to_string(), "java".to_string()]
+        vec![
+            "cpp".to_string(),
+            "rust".to_string(),
+            "python".to_string(),
+            "java".to_string(),
+        ]
     } else if kind == "profile" {
         vec!["*".to_string()]
     } else {
@@ -85,15 +154,32 @@ fn detect_project_types(path: &str) -> Vec<String> {
         vec!["library".to_string()]
     } else if p.contains("app") || p.contains("application") {
         vec!["application".to_string()]
-    } else if p.contains("web") || p.contains("frontend") || p.contains("react") || p.contains("vue") || p.contains("svelte") || p.contains("next") || p.contains("astro") {
+    } else if p.contains("web")
+        || p.contains("frontend")
+        || p.contains("react")
+        || p.contains("vue")
+        || p.contains("svelte")
+        || p.contains("next")
+        || p.contains("astro")
+    {
         vec!["web-app".to_string()]
-    } else if p.contains("backend") || p.contains("express") || p.contains("fastify") || p.contains("nest") || p.contains("django") {
+    } else if p.contains("backend")
+        || p.contains("express")
+        || p.contains("fastify")
+        || p.contains("nest")
+        || p.contains("django")
+    {
         vec!["api".to_string(), "web-app".to_string()]
     } else if p.contains("workspace") {
         vec!["workspace".to_string()]
     } else if p.contains("competitive") || p.contains("cp") || p.contains("challenge") {
         vec!["competitive".to_string()]
-    } else if p.contains("minecraft") || p.contains("fabric") || p.contains("forge") || p.contains("papermc") || p.contains("paper") {
+    } else if p.contains("minecraft")
+        || p.contains("fabric")
+        || p.contains("forge")
+        || p.contains("papermc")
+        || p.contains("paper")
+    {
         vec!["minecraft-plugin".to_string()]
     } else if p.contains("tauri") || p.contains("desktop") {
         vec!["desktop".to_string()]
@@ -174,9 +260,7 @@ fn profile_tags(path: &str) -> Vec<String> {
 
 fn template_summary(path: &str) -> String {
     let name = path.split('/').last().unwrap_or(path);
-    let readable = name
-        .replace('-', " ")
-        .replace('_', " ");
+    let readable = name.replace('-', " ").replace('_', " ");
     format!("{readable} template")
 }
 
@@ -191,17 +275,13 @@ fn template_tags(kind: &str, path: &str) -> Vec<String> {
 
 fn command_summary(path: &str) -> String {
     let name = path.split('/').last().unwrap_or(path);
-    let readable = name
-        .replace('-', " ")
-        .replace('_', " ");
+    let readable = name.replace('-', " ").replace('_', " ");
     format!("{readable} command")
 }
 
 fn recipe_summary(path: &str) -> String {
     let name = path.split('/').last().unwrap_or(path);
-    let readable = name
-        .replace('-', " ")
-        .replace('_', " ");
+    let readable = name.replace('-', " ").replace('_', " ");
     format!("{readable} recipe")
 }
 
@@ -219,6 +299,8 @@ fn build_catalog_entry(kind: &str, id: &str, path: &str, summary: &str) -> Asset
     let languages = detect_languages(kind, path);
     let project_types = detect_project_types(path);
     let maturity = detect_maturity(path);
+    let status = detect_status(path, summary);
+    let quality_score = compute_quality_score(path, kind, maturity);
     let tags = match kind {
         "profile" => profile_tags(path),
         "template" => template_tags(kind, path),
@@ -238,6 +320,15 @@ fn build_catalog_entry(kind: &str, id: &str, path: &str, summary: &str) -> Asset
         conflicts: Vec::new(),
         verification: Vec::new(),
         tags,
+        status: status.to_string(),
+        quality_score,
+        last_verified: None,
+        verification_tests: None,
+        verification_fixtures: None,
+        verification_last_result: None,
+        deprecation_replacement: None,
+        deprecation_remove_after: None,
+        deprecation_migration: None,
     }
 }
 
@@ -298,7 +389,13 @@ pub fn build_catalog(_config: &LodeConfig) -> AssetCatalog {
     }
 
     let licenses = [
-        "MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "GPL-3.0-only", "MPL-2.0", "Unlicense",
+        "MIT",
+        "Apache-2.0",
+        "BSD-3-Clause",
+        "ISC",
+        "GPL-3.0-only",
+        "MPL-2.0",
+        "Unlicense",
     ];
     for lic in &licenses {
         let summary = license_summary(lic);
@@ -341,14 +438,20 @@ fn builtin_snippet_map() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
         ("any", vec!["todo", "fixme", "note", "invariant", "example"]),
         ("md", vec!["adr", "risk", "task-list", "release-notes"]),
-        ("rs", vec!["main", "error-enum", "result-alias", "serde-struct", "test"]),
+        (
+            "rs",
+            vec!["main", "error-enum", "result-alias", "serde-struct", "test"],
+        ),
         ("go", vec!["main", "handler", "table-test"]),
         ("ts", vec!["fn", "async-fn", "interface", "test"]),
         ("py", vec!["main-guard", "dataclass", "pytest-test"]),
         ("sh", vec!["strict-header", "die", "parse-args"]),
         ("yaml", vec!["github-job", "docker-compose-service"]),
         ("toml", vec!["table", "lode-command", "lode-profile"]),
-        ("cp", vec!["fast-io-cpp", "dijkstra", "union-find", "segment-tree"]),
+        (
+            "cp",
+            vec!["fast-io-cpp", "dijkstra", "union-find", "segment-tree"],
+        ),
     ]
 }
 
@@ -393,7 +496,10 @@ impl BootstrapInfo {
             assets::command_names().len(),
             assets::recipe_names().len(),
             assets::template_paths().len(),
-            builtin_snippet_map().iter().map(|(_, v)| v.len()).sum::<usize>(),
+            builtin_snippet_map()
+                .iter()
+                .map(|(_, v)| v.len())
+                .sum::<usize>(),
             7usize,
         );
 
@@ -505,9 +611,10 @@ pub fn resolve_intent(
         .filter(|(s, _)| *s > 0.0)
         .collect();
 
-    let profile = top.iter().find(|(_, e)| e.kind == "profile").map(|(_, e)| {
-        e.id.trim_start_matches("profile://").to_string()
-    });
+    let profile = top
+        .iter()
+        .find(|(_, e)| e.kind == "profile")
+        .map(|(_, e)| e.id.trim_start_matches("profile://").to_string());
 
     let recipes: Vec<String> = top
         .iter()
@@ -531,7 +638,10 @@ pub fn resolve_intent(
         .collect();
 
     let warnings = Vec::new();
-    let estimated_files = top.iter().map(|(_, e)| if e.kind == "template" { 1 } else { 0 }).sum();
+    let estimated_files = top
+        .iter()
+        .map(|(_, e)| if e.kind == "template" { 1 } else { 0 })
+        .sum();
 
     IntentResolution {
         profile,
@@ -553,8 +663,8 @@ fn rand_seed() -> u64 {
 
 pub fn export_catalog(config: &LodeConfig, path: &camino::Utf8Path) -> Result<()> {
     let catalog = build_catalog(config);
-    let json = serde_json::to_string_pretty(&catalog)
-        .map_err(|e| LodeError::Message(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(&catalog).map_err(|e| LodeError::Message(e.to_string()))?;
     crate::fs_safety::ValidatedRoot::new(
         path.parent()
             .ok_or_else(|| LodeError::Message("no parent directory".to_string()))?,
@@ -568,5 +678,7 @@ pub fn export_catalog(config: &LodeConfig, path: &camino::Utf8Path) -> Result<()
 }
 
 pub fn catalog_path() -> Result<Utf8PathBuf> {
-    Ok(global_asset_dir("templates")?.join(".lode").join("asset-catalog.json"))
+    Ok(global_asset_dir("templates")?
+        .join(".lode")
+        .join("asset-catalog.json"))
 }

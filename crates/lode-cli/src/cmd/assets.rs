@@ -10,15 +10,29 @@ pub(crate) fn assets_command(command: AssetsCommand) -> lode_core::Result<()> {
         AssetsCommand::Search {
             query,
             kind,
+            status,
+            min_quality,
             output,
-        } => search_assets(&query, kind.as_deref(), output),
+        } => search_assets(
+            &query,
+            kind.as_deref(),
+            status.as_deref(),
+            min_quality,
+            output,
+        ),
         AssetsCommand::Show { id, output } => show_asset(&id, output),
         AssetsCommand::List { output } => list_assets(output),
         AssetsCommand::Catalog { out } => export_catalog_file(out),
     }
 }
 
-fn search_assets(query: &str, kind_filter: Option<&str>, output: OutputFormat) -> lode_core::Result<()> {
+fn search_assets(
+    query: &str,
+    kind_filter: Option<&str>,
+    status_filter: Option<&str>,
+    min_quality: Option<u32>,
+    output: OutputFormat,
+) -> lode_core::Result<()> {
     let config = default_config();
     let catalog = build_catalog(&config);
 
@@ -30,6 +44,16 @@ fn search_assets(query: &str, kind_filter: Option<&str>, output: OutputFormat) -
         .filter(|entry| {
             if let Some(k) = kind_filter {
                 if entry.kind != k {
+                    return false;
+                }
+            }
+            if let Some(s) = status_filter {
+                if entry.status != s {
+                    return false;
+                }
+            }
+            if let Some(mq) = min_quality {
+                if entry.quality_score.unwrap_or(0) < mq {
                     return false;
                 }
             }
@@ -46,7 +70,9 @@ fn search_assets(query: &str, kind_filter: Option<&str>, output: OutputFormat) -
     results.sort_by(|a, b| {
         let a_score = relevance_score(a, query_lower.as_str());
         let b_score = relevance_score(b, query_lower.as_str());
-        b_score.partial_cmp(&a_score).unwrap_or(std::cmp::Ordering::Equal)
+        b_score
+            .partial_cmp(&a_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     results.truncate(30);
@@ -64,7 +90,17 @@ fn search_assets(query: &str, kind_filter: Option<&str>, output: OutputFormat) -
         }
         println!("Found {} matching assets:\n", results.len());
         for entry in &results {
-            println!("  {}  {}", entry.id, entry.summary);
+            let status_tag = match entry.status.as_str() {
+                "experimental" => " [exp]",
+                "preview" => " [pre]",
+                "deprecated" => " [dep]",
+                "retired" => " [ret]",
+                _ => "",
+            };
+            println!("  {}{}  {}", entry.id, status_tag, entry.summary);
+            if let Some(qs) = entry.quality_score {
+                println!("       Quality: {}/100", qs);
+            }
             if !entry.languages.is_empty() && entry.languages != ["*"] {
                 println!("       Languages: {}", entry.languages.join(", "));
             }
@@ -117,10 +153,20 @@ fn show_asset(id: &str, output: OutputFormat) -> lode_core::Result<()> {
                         .map_err(|err| lode_core::LodeError::Message(err.to_string()))?
                 );
             } else {
-                println!("ID:       {}", e.id);
-                println!("Kind:     {}", e.kind);
-                println!("Summary:  {}", e.summary);
-                println!("Maturity: {}", e.maturity);
+                println!("ID:           {}", e.id);
+                println!("Kind:         {}", e.kind);
+                println!("Summary:      {}", e.summary);
+                println!("Status:       {}", e.status);
+                println!("Maturity:     {}", e.maturity);
+                if let Some(qs) = e.quality_score {
+                    println!("Quality:      {}/100", qs);
+                }
+                if let Some(lv) = &e.last_verified {
+                    println!("Last Verified: {}", lv);
+                }
+                if let Some(vr) = &e.verification_last_result {
+                    println!("Verification:  {}", vr);
+                }
                 if !e.languages.is_empty() && e.languages != ["*"] {
                     println!("Languages: {}", e.languages.join(", "));
                 }
@@ -138,6 +184,17 @@ fn show_asset(id: &str, output: OutputFormat) -> lode_core::Result<()> {
                 }
                 if !e.recommends.is_empty() {
                     println!("Recommends: {}", e.recommends.join(", "));
+                }
+                if e.status == "deprecated" {
+                    if let Some(r) = &e.deprecation_replacement {
+                        println!("Replacement:  {}", r);
+                    }
+                    if let Some(r) = &e.deprecation_remove_after {
+                        println!("Remove After: {}", r);
+                    }
+                    if let Some(m) = &e.deprecation_migration {
+                        println!("Migration:    {}", m);
+                    }
                 }
                 if !e.verification.is_empty() {
                     println!("Verification:");
@@ -166,7 +223,10 @@ fn list_assets(output: OutputFormat) -> lode_core::Result<()> {
                 .map_err(|e| lode_core::LodeError::Message(e.to_string()))?
         );
     } else {
-        println!("LODE Asset Catalog ({} total entries)\n", catalog.entries.len());
+        println!(
+            "LODE Asset Catalog ({} total entries)\n",
+            catalog.entries.len()
+        );
 
         let mut by_kind: std::collections::BTreeMap<&str, Vec<&AssetCatalogEntry>> =
             std::collections::BTreeMap::new();
