@@ -303,6 +303,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: PkgCommand,
     },
+    /// Generate or check self-documenting asset docs from catalog metadata
+    Docs {
+        #[command(subcommand)]
+        command: DocsCommand,
+    },
     /// Track time spent on projects
     Time {
         #[command(subcommand)]
@@ -709,6 +714,15 @@ pub(crate) enum AssetsCommand {
         rebuild: bool,
         #[arg(long, help = "Show index statistics")]
         stats: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Test assets against contract expectations
+    Test {
+        #[arg(help = "Asset ID to test (omit to test all)")]
+        id: Option<String>,
+        #[arg(long, help = "Test only changed assets")]
+        changed: bool,
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
         output: OutputFormat,
     },
@@ -1156,6 +1170,26 @@ pub(crate) enum HooksCommand {
         event: String,
         #[arg(long, help = "Show what would be done without doing it")]
         dry_run: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DocsCommand {
+    /// Generate markdown documentation from the asset catalog
+    Generate {
+        #[arg(long, help = "Output directory (default: docs/)")]
+        out: Option<Utf8PathBuf>,
+        #[arg(long, help = "Regenerate all documentation")]
+        force: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Check documentation completeness against the catalog
+    Check {
+        #[arg(long, help = "Documentation directory to check (default: docs/)")]
+        dir: Option<Utf8PathBuf>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
     },
 }
 

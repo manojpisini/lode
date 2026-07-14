@@ -2,7 +2,7 @@
 
 use lode_core::{
     build_catalog, build_search_index, default_config, export_catalog, load_search_index,
-    save_search_index, AssetCatalogEntry,
+    save_search_index, test_assets, AssetCatalogEntry,
 };
 
 use crate::output;
@@ -11,6 +11,61 @@ use crate::OutputFormat;
 
 pub(crate) fn assets_command(command: AssetsCommand) -> lode_core::Result<()> {
     match command {
+        AssetsCommand::Test {
+            id,
+            changed: _,
+            output,
+        } => {
+            let config = default_config();
+            let report = test_assets(&config, id.as_deref())?;
+            if output.should_use_json() {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report)
+                        .map_err(|e| lode_core::LodeError::Message(e.to_string()))?
+                );
+            } else {
+                println!("{}  Asset Contract Tests", output::bold("Asset Tests"));
+                if report.total == 0 {
+                    println!("  {}  No assets to test", output::dim("~"));
+                    return Ok(());
+                }
+                for result in &report.results {
+                    if result.passed {
+                        println!(
+                            "  {}  {}  {}",
+                            output::green("✔"),
+                            result.id,
+                            output::dim("pass")
+                        );
+                    } else {
+                        println!(
+                            "  {}  {}  {}",
+                            output::red("✘"),
+                            result.id,
+                            output::red("FAIL")
+                        );
+                        for f in &result.failures {
+                            println!("       {}", f);
+                        }
+                    }
+                    for w in &result.warnings {
+                        println!("       {}  {}", output::yellow("⚠"), w);
+                    }
+                }
+                println!(
+                    "\n  {}  {}/{} passed",
+                    if report.failed == 0 {
+                        output::green("✔")
+                    } else {
+                        output::red("✘")
+                    },
+                    report.passed,
+                    report.total,
+                );
+            }
+            Ok(())
+        }
         AssetsCommand::Search {
             query,
             kind,

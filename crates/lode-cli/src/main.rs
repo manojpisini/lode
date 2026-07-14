@@ -22,18 +22,19 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use lode_core::{
-    audit_project, check_file_integrity, check_path, command_names,
-    default_config, default_lodepack_checksum_algorithm, file_manifest_path, global_asset_dir,
-    global_dir, list_managed_files, load_global_config, load_metrics, load_registry, profile_names,
-    recipe_names, redact, scan_secrets, template_paths, LodeError, LodePack,
-    LodePackFile, LodePackManifest, Process, ValidatedRoot,
+    audit_project, check_file_integrity, check_path, command_names, default_config,
+    default_lodepack_checksum_algorithm, file_manifest_path, global_asset_dir, global_dir,
+    list_managed_files, load_global_config, load_metrics, load_registry, profile_names,
+    recipe_names, redact, scan_secrets, template_paths, LodeError, LodePack, LodePackFile,
+    LodePackManifest, Process, ValidatedRoot,
 };
 use serde_json::{json, Value};
 
 /// Default port for MCP HTTP mode (unused in this build).
 pub(crate) const MCP_HTTP_PORT: u16 = 3333;
 
-pub(crate) use cmd::types::*;fn main() -> ExitCode {
+pub(crate) use cmd::types::*;
+fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::from(lode_core::ExitCode::Ok as u8),
         Err(error) => {
@@ -48,11 +49,17 @@ fn run() -> lode_core::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Setup { defaults: _, output } => cmd::setup::setup_with_output(output)?,
+        Command::Setup {
+            defaults: _,
+            output,
+        } => cmd::setup::setup_with_output(output)?,
         Command::Init(args) => cmd::init::init(args)?,
-        Command::Adopt { path, apply, dry_run, output } => {
-            cmd::adopt::adopt_command(path, apply, dry_run, output)?
-        }
+        Command::Adopt {
+            path,
+            apply,
+            dry_run,
+            output,
+        } => cmd::adopt::adopt_command(path, apply, dry_run, output)?,
         Command::Add {
             component,
             dry_run,
@@ -99,6 +106,7 @@ fn run() -> lode_core::Result<()> {
         Command::Receipts { command } => cmd::receipts::receipt_command(command)?,
         Command::Context { command } => cmd::context::context_command(command)?,
         Command::Handoff { command } => cmd::handoff::handoff_command(command)?,
+        Command::Docs { command } => cmd::docs::docs_command(command)?,
         Command::DepGraph { command } => cmd::depgraph::depgraph_command(command)?,
         Command::Fix { path } => cmd::fix::convention_fix(path)?,
         Command::Rename { path, to } => cmd::rename::rename_path(path, to)?,
@@ -131,7 +139,9 @@ fn run() -> lode_core::Result<()> {
             dry_run,
             rollback,
         } => cmd::release::release(version, bump, dry_run, rollback)?,
-        Command::Health { output } | Command::Audit { output } => cmd::audit::health_with_output(output)?,
+        Command::Health { output } | Command::Audit { output } => {
+            cmd::audit::health_with_output(output)?
+        }
         Command::Explain => explain(),
         Command::Doctor { fix, output } => cmd::doctor::doctor_with_output(fix, output)?,
         Command::Scan { command } => cmd::scan::scan(command)?,
@@ -209,8 +219,6 @@ fn run() -> lode_core::Result<()> {
     Ok(())
 }
 
-
-
 pub(crate) fn init_git_project(
     project_dir: &Utf8PathBuf,
     git: &lode_core::config::GitConfig,
@@ -273,7 +281,10 @@ pub(crate) fn init_git_project(
     Ok(())
 }
 
-pub(crate) fn run_git_in<const N: usize>(project_dir: &Utf8PathBuf, args: [&str; N]) -> lode_core::Result<()> {
+pub(crate) fn run_git_in<const N: usize>(
+    project_dir: &Utf8PathBuf,
+    args: [&str; N],
+) -> lode_core::Result<()> {
     let args = args
         .iter()
         .map(|arg| (*arg).to_string())
@@ -935,7 +946,10 @@ pub(crate) fn agent_sync() -> lode_core::Result<()> {
     Ok(())
 }
 
-pub(crate) fn collect_context_index(path: &Utf8PathBuf, output: &mut String) -> lode_core::Result<()> {
+pub(crate) fn collect_context_index(
+    path: &Utf8PathBuf,
+    output: &mut String,
+) -> lode_core::Result<()> {
     if path.is_dir() {
         for entry in fs::read_dir(path).map_err(|source| LodeError::Io {
             path: path.as_str().into(),
@@ -1252,13 +1266,24 @@ pub(crate) fn run_command_macro_loaded(
         if let Some(condition) = skip_if.strip_prefix("if_exists:") {
             if Utf8PathBuf::from(condition).exists() {
                 if !dry_run {
-                    println!("  {} {} [skip] {}", output::dim("−"), output::dim(&format!("{}.", index + 1)), output::dim(&run));
+                    println!(
+                        "  {} {} [skip] {}",
+                        output::dim("−"),
+                        output::dim(&format!("{}.", index + 1)),
+                        output::dim(&run)
+                    );
                 }
                 continue;
             }
         }
 
-        println!("  {} {} [{}] {}", output::cyan("▶"), output::dim(&format!("{}.", index + 1)), output::cyan(kind), run);
+        println!(
+            "  {} {} [{}] {}",
+            output::cyan("▶"),
+            output::dim(&format!("{}.", index + 1)),
+            output::cyan(kind),
+            run
+        );
         if dry_run {
             continue;
         }
@@ -1266,7 +1291,8 @@ pub(crate) fn run_command_macro_loaded(
         let result = match kind {
             "make" => run_make(&run),
             "lode" => run_lode_step(&run),
-            "shell" | "npm" | "pnpm" | "cargo" | "python3" | "python" | "node" | "just" | "docker" => {
+            "shell" | "npm" | "pnpm" | "cargo" | "python3" | "python" | "node" | "just"
+            | "docker" => {
                 let mut parts = shell_split(&run)
                     .ok_or_else(|| LodeError::Message(format!("unable to parse command: {run}")))?;
                 if parts.is_empty() {
@@ -1283,12 +1309,27 @@ pub(crate) fn run_command_macro_loaded(
                     run_process_status(&parts[0], &parts[1..], None)?.success()
                 };
                 if step_ok {
-                    println!("  {} {} [{}] {}", output::green("✔"), output::dim(&format!("{}.", index + 1)), output::cyan(kind), output::dim("done"));
+                    println!(
+                        "  {} {} [{}] {}",
+                        output::green("✔"),
+                        output::dim(&format!("{}.", index + 1)),
+                        output::cyan(kind),
+                        output::dim("done")
+                    );
                 } else {
                     if continue_on_error {
-                        eprintln!("  {} {} [{}] {}", output::yellow("⚠"), output::dim(&format!("{}.", index + 1)), output::cyan(kind), output::dim("failed"));
+                        eprintln!(
+                            "  {} {} [{}] {}",
+                            output::yellow("⚠"),
+                            output::dim(&format!("{}.", index + 1)),
+                            output::cyan(kind),
+                            output::dim("failed")
+                        );
                     } else {
-                        return Err(LodeError::Message(format!("step {} failed: {run}", index + 1)));
+                        return Err(LodeError::Message(format!(
+                            "step {} failed: {run}",
+                            index + 1
+                        )));
                     }
                 }
                 Ok(())
@@ -1673,7 +1714,12 @@ fn comment_prefix(path: &Utf8PathBuf) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn conventional_message(kind: &str, scope: Option<&str>, subject: &str, breaking: bool) -> String {
+pub(crate) fn conventional_message(
+    kind: &str,
+    scope: Option<&str>,
+    subject: &str,
+    breaking: bool,
+) -> String {
     let bang = if breaking { "!" } else { "" };
     if let Some(scope) = scope {
         format!("{kind}({scope}){bang}: {subject}")
@@ -1824,7 +1870,11 @@ pub(crate) fn uninstall_git_hooks() -> lode_core::Result<()> {
     Ok(())
 }
 
-pub(crate) fn add_license(id: &str, file: Option<Utf8PathBuf>, text: Option<&str>) -> lode_core::Result<()> {
+pub(crate) fn add_license(
+    id: &str,
+    file: Option<Utf8PathBuf>,
+    text: Option<&str>,
+) -> lode_core::Result<()> {
     let asset_dir = global_asset_dir("licenses")?;
     let root = ValidatedRoot::new(&asset_dir)?;
     let relative = safe_relative_path(&format!("{id}.txt"))?;
@@ -1940,8 +1990,6 @@ pub(crate) fn pin_runtime(runtime: &str, version: &str) -> lode_core::Result<()>
     }
     Ok(())
 }
-
-
 
 fn package_manifest_inventory() -> Vec<PackageManifest> {
     let root = Utf8PathBuf::from(".");
@@ -2314,7 +2362,10 @@ pub(crate) fn package_outdated_args(manager: &str) -> lode_core::Result<Vec<Stri
     }
 }
 
-pub(crate) fn package_update_args(manager: &str, name: Option<&str>) -> lode_core::Result<Vec<String>> {
+pub(crate) fn package_update_args(
+    manager: &str,
+    name: Option<&str>,
+) -> lode_core::Result<Vec<String>> {
     let mut args = match manager {
         "cargo" => vec!["update".to_string()],
         "npm" => vec!["update".to_string()],
@@ -2352,7 +2403,10 @@ pub(crate) fn package_update_args(manager: &str, name: Option<&str>) -> lode_cor
     Ok(args)
 }
 
-pub(crate) fn package_audit_args(manager: &str, fail_on: Option<&str>) -> lode_core::Result<Vec<String>> {
+pub(crate) fn package_audit_args(
+    manager: &str,
+    fail_on: Option<&str>,
+) -> lode_core::Result<Vec<String>> {
     let fail_on = fail_on.map(validate_package_severity).transpose()?;
     match manager {
         "cargo" => {
@@ -2459,7 +2513,10 @@ pub(crate) fn save_time_log(log: &TimeLog) -> lode_core::Result<()> {
     root.write_atomic(".lode/time-log.json", raw).map(|_| ())
 }
 
-pub(crate) fn filter_time_sessions(sessions: Vec<TimeSession>, since: Option<&str>) -> Vec<TimeSession> {
+pub(crate) fn filter_time_sessions(
+    sessions: Vec<TimeSession>,
+    since: Option<&str>,
+) -> Vec<TimeSession> {
     let Some(since) = since else {
         return sessions;
     };
@@ -2519,7 +2576,11 @@ pub(crate) fn print_time_sessions(
     Ok(())
 }
 
-pub(crate) fn print_time_summary(sessions: &[TimeSession], by: &str, format: &str) -> lode_core::Result<()> {
+pub(crate) fn print_time_summary(
+    sessions: &[TimeSession],
+    by: &str,
+    format: &str,
+) -> lode_core::Result<()> {
     let mut groups = std::collections::BTreeMap::<String, u64>::new();
     for session in sessions {
         let key = match by {
@@ -2575,7 +2636,10 @@ pub(crate) fn print_time_summary(sessions: &[TimeSession], by: &str, format: &st
     Ok(())
 }
 
-pub(crate) fn render_time_report(sessions: &[TimeSession], format: &str) -> lode_core::Result<String> {
+pub(crate) fn render_time_report(
+    sessions: &[TimeSession],
+    format: &str,
+) -> lode_core::Result<String> {
     match format {
         "json" => serde_json::to_string_pretty(&sessions)
             .map_err(|error| LodeError::Message(error.to_string())),
@@ -2767,8 +2831,6 @@ pub(crate) fn command_version(command: &str) -> Option<String> {
     Some(text.lines().next().unwrap_or("installed").to_string())
 }
 
-
-
 pub(crate) fn collect_pack_files(
     root: &Utf8PathBuf,
     path: &Utf8PathBuf,
@@ -2809,8 +2871,6 @@ pub(crate) fn collect_pack_files(
     Ok(())
 }
 
-
-
 pub(crate) fn metrics_baseline_path(root: &Utf8PathBuf) -> Utf8PathBuf {
     root.join(".lode").join("metrics-baseline.json")
 }
@@ -2828,7 +2888,9 @@ pub(crate) fn save_metrics_baseline(
         .map(|_| ())
 }
 
-pub(crate) fn load_metrics_baseline(root: &Utf8PathBuf) -> lode_core::Result<lode_core::AuditReport> {
+pub(crate) fn load_metrics_baseline(
+    root: &Utf8PathBuf,
+) -> lode_core::Result<lode_core::AuditReport> {
     let path = metrics_baseline_path(root);
     let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
@@ -3022,7 +3084,11 @@ pub(crate) fn follow_daemon_log(path: &Utf8PathBuf, mut offset: usize) -> lode_c
     Ok(())
 }
 
-pub(crate) fn run_foreground_daemon(rename: bool, sign: bool, stamp: bool) -> lode_core::Result<()> {
+pub(crate) fn run_foreground_daemon(
+    rename: bool,
+    sign: bool,
+    stamp: bool,
+) -> lode_core::Result<()> {
     let root = current_dir()?;
     let mut snapshot = snapshot_project(&root)?;
     write_project_daemon_snapshot(&root, &snapshot)?;
@@ -3173,7 +3239,10 @@ pub(crate) fn daemon_changes(
     changes
 }
 
-pub(crate) fn record_daemon_activity(root: &Utf8PathBuf, changes: &DaemonChangeSet) -> lode_core::Result<()> {
+pub(crate) fn record_daemon_activity(
+    root: &Utf8PathBuf,
+    changes: &DaemonChangeSet,
+) -> lode_core::Result<()> {
     let paths = changes.paths();
     append_daemon_event(
         "fs.batch",
@@ -3195,7 +3264,6 @@ pub(crate) fn record_daemon_activity(root: &Utf8PathBuf, changes: &DaemonChangeS
     });
     save_time_log(&log)
 }
-
 
 pub(crate) fn write_project_daemon_snapshot(
     root: &Utf8PathBuf,
@@ -3237,10 +3305,6 @@ pub(crate) fn content_hash_bytes(contents: &[u8]) -> String {
     format!("{:064x}", hasher.finalize())
 }
 
-
-
-
-
 pub(crate) fn count_dir_entries(path: &Utf8PathBuf) -> lode_core::Result<usize> {
     if !path.exists() {
         return Ok(0);
@@ -3271,7 +3335,6 @@ pub(crate) fn self_clean_targets() -> lode_core::Result<Vec<Utf8PathBuf>> {
         logs.join("daemon.log.3"),
     ])
 }
-
 
 pub(crate) fn default_upgrade_manifest_path() -> Utf8PathBuf {
     global_dir()
@@ -3474,7 +3537,10 @@ pub(crate) fn completion_source_line(shell: &str, path: &Utf8PathBuf) -> lode_co
     Ok(source)
 }
 
-pub(crate) fn completion_install_hint(shell: &str, path: &Utf8PathBuf) -> lode_core::Result<String> {
+pub(crate) fn completion_install_hint(
+    shell: &str,
+    path: &Utf8PathBuf,
+) -> lode_core::Result<String> {
     let hint = match shell {
         "bash" => format!("add to ~/.bashrc: source \"{path}\""),
         "zsh" => format!("copy or link into your fpath, or add to ~/.zshrc: source \"{path}\""),
@@ -3491,7 +3557,10 @@ pub(crate) fn completion_install_hint(shell: &str, path: &Utf8PathBuf) -> lode_c
     Ok(hint)
 }
 
-pub(crate) fn write_validated_output(path: &Utf8PathBuf, contents: impl AsRef<[u8]>) -> lode_core::Result<()> {
+pub(crate) fn write_validated_output(
+    path: &Utf8PathBuf,
+    contents: impl AsRef<[u8]>,
+) -> lode_core::Result<()> {
     let path = if path.is_absolute() {
         path.clone()
     } else {
@@ -3558,7 +3627,6 @@ pub(crate) fn daemon_global_root() -> lode_core::Result<lode_core::ValidatedRoot
     lode_core::ValidatedRoot::new(global_dir()?)
 }
 
-
 pub(crate) fn write_daemon_state(state: &str) -> lode_core::Result<()> {
     write_daemon_state_text(state)?;
     write_daemon_runtime_state(&runtime_state_from_text(state)?)
@@ -3574,7 +3642,11 @@ pub(crate) fn append_daemon_log(line: &str) -> lode_core::Result<()> {
     append_daemon_event("lifecycle", line, Vec::new())
 }
 
-pub(crate) fn append_daemon_event(kind: &str, message: &str, files: Vec<String>) -> lode_core::Result<()> {
+pub(crate) fn append_daemon_event(
+    kind: &str,
+    message: &str,
+    files: Vec<String>,
+) -> lode_core::Result<()> {
     let root = daemon_global_root()?;
     let path = root.resolve("logs/daemon.log")?;
     let mut log = fs::OpenOptions::new()
@@ -3939,7 +4011,12 @@ fn verify_changed(output: OutputFormat) -> lode_core::Result<()> {
     let manifest_path = lode_core::file_manifest_path(&dir);
 
     if !manifest_path.exists() {
-        println!("{}", output::dim("No file manifest found. Run `lode file add` or `lode agent policy` first."));
+        println!(
+            "{}",
+            output::dim(
+                "No file manifest found. Run `lode file add` or `lode agent policy` first."
+            )
+        );
         return Ok(());
     }
 
@@ -3963,16 +4040,11 @@ fn verify_changed(output: OutputFormat) -> lode_core::Result<()> {
         });
         println!(
             "{}",
-            serde_json::to_string_pretty(&report)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&report).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         println!("{}", output::bold("Change-Aware Verification"));
-        println!(
-            "  {} {} managed files",
-            output::cyan("ℹ"),
-            files.len()
-        );
+        println!("  {} {} managed files", output::cyan("ℹ"), files.len());
 
         if results.is_empty() {
             println!("\n  {} No files to check.", output::dim("~"));
@@ -3983,18 +4055,38 @@ fn verify_changed(output: OutputFormat) -> lode_core::Result<()> {
         for result in &results {
             match result.status.as_str() {
                 "ok" => {
-                    println!("  {}  {}  {}", output::green("✔"), result.path, output::dim("unchanged"));
+                    println!(
+                        "  {}  {}  {}",
+                        output::green("✔"),
+                        result.path,
+                        output::dim("unchanged")
+                    );
                 }
                 "modified" => {
                     has_issues = true;
-                    println!("  {}  {}  {}", output::yellow("⚠"), result.path, output::yellow("MODIFIED"));
+                    println!(
+                        "  {}  {}  {}",
+                        output::yellow("⚠"),
+                        result.path,
+                        output::yellow("MODIFIED")
+                    );
                 }
                 "missing" => {
                     has_issues = true;
-                    println!("  {}  {}  {}", output::red("✘"), result.path, output::red("MISSING"));
+                    println!(
+                        "  {}  {}  {}",
+                        output::red("✘"),
+                        result.path,
+                        output::red("MISSING")
+                    );
                 }
                 "not_tracked" => {
-                    println!("  {}  {}  {}", output::cyan("ℹ"), result.path, output::dim("(not tracked)"));
+                    println!(
+                        "  {}  {}  {}",
+                        output::cyan("ℹ"),
+                        result.path,
+                        output::dim("(not tracked)")
+                    );
                 }
                 _ => {
                     has_issues = true;
@@ -4057,7 +4149,10 @@ pub(crate) fn list_dir(path: Utf8PathBuf) -> lode_core::Result<()> {
     Ok(())
 }
 
-pub(crate) fn collect_file_names(path: &Utf8PathBuf, items: &mut Vec<String>) -> lode_core::Result<()> {
+pub(crate) fn collect_file_names(
+    path: &Utf8PathBuf,
+    items: &mut Vec<String>,
+) -> lode_core::Result<()> {
     if !path.exists() {
         return Ok(());
     }

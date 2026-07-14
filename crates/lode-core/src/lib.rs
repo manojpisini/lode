@@ -17,6 +17,7 @@ pub mod catalog;
 pub mod commands;
 pub mod config;
 pub mod context;
+pub mod contract;
 pub mod convention;
 pub mod dep_graph;
 pub mod env;
@@ -75,6 +76,7 @@ pub use context::{
     compile_context, estimate_token_count, CompileEntry, CompileReport, ContextPack, Decision,
     QualityGate,
 };
+pub use contract::{test_assets, AssetTestReport, AssetTestResult};
 pub use convention::{check_path, fix_path, normalize_name, ConventionReport, ConventionViolation};
 pub use dep_graph::{
     builtin_asset_deps, find_asset_by_provides, format_dep_graph_dot, format_dep_resolution_table,
