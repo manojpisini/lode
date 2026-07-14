@@ -22,10 +22,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use lode_core::{
-    audit_project, check_path, command_names, default_config,
-    default_lodepack_checksum_algorithm, global_asset_dir, global_dir,
-    load_global_config, load_metrics, load_registry, profile_names, recipe_names,
-    redact, scan_secrets, template_paths, LodeError, LodePack,
+    audit_project, check_file_integrity, check_path, command_names,
+    default_config, default_lodepack_checksum_algorithm, global_asset_dir, global_dir,
+    list_managed_files, load_global_config, load_metrics, load_registry, profile_names,
+    recipe_names, redact, scan_secrets, template_paths, LodeError, LodePack,
     LodePackFile, LodePackManifest, Process, ValidatedRoot,
 };
 use serde_json::{json, Value};
@@ -115,7 +115,7 @@ fn run() -> lode_core::Result<()> {
             license,
             dry_run,
         } => cmd::stamp::stamp_path(path, ext, license, dry_run)?,
-        Command::Verify => run_make("verify")?,
+        Command::Verify { changed, output } => verify_command(changed, output)?,
         Command::Clean => run_make("clean")?,
         Command::Fresh => {
             run_make("clean")?;
@@ -3925,6 +3925,104 @@ fn cp_template(ext: &str) -> &'static str {
         "java" => "class Main {\n    public static void main(String[] args) {}\n}\n",
         _ => "#include <bits/stdc++.h>\nusing namespace std;\nint main(){ios::sync_with_stdio(false);cin.tie(nullptr);}\n",
     }
+}
+
+pub(crate) fn verify_command(changed: bool, output: OutputFormat) -> lode_core::Result<()> {
+    if changed {
+        return verify_changed(output);
+    }
+    run_make("verify")
+}
+
+fn verify_changed(output: OutputFormat) -> lode_core::Result<()> {
+    let dir = current_dir()?;
+    let manifest_path = lode_core::file_manifest_path(&dir);
+
+    if !manifest_path.exists() {
+        println!("{}", output::dim("No file manifest found. Run `lode file add` or `lode agent policy` first."));
+        return Ok(());
+    }
+
+    let results = check_file_integrity(&dir)?;
+    let files = list_managed_files(&dir)?;
+
+    let ok_count = results.iter().filter(|r| r.status == "ok").count();
+    let modified_count = results.iter().filter(|r| r.status == "modified").count();
+    let missing_count = results.iter().filter(|r| r.status == "missing").count();
+    let untracked_count = results.iter().filter(|r| r.status == "not_tracked").count();
+    let total = results.len();
+
+    if output.should_use_json() {
+        let report = serde_json::json!({
+            "total_files": total,
+            "ok": ok_count,
+            "modified": modified_count,
+            "missing": missing_count,
+            "not_tracked": untracked_count,
+            "results": results,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report)
+                .map_err(|e| LodeError::Message(e.to_string()))?
+        );
+    } else {
+        println!("{}", output::bold("Change-Aware Verification"));
+        println!(
+            "  {} {} managed files",
+            output::cyan("ℹ"),
+            files.len()
+        );
+
+        if results.is_empty() {
+            println!("\n  {} No files to check.", output::dim("~"));
+            return Ok(());
+        }
+
+        let mut has_issues = false;
+        for result in &results {
+            match result.status.as_str() {
+                "ok" => {
+                    println!("  {}  {}  {}", output::green("✔"), result.path, output::dim("unchanged"));
+                }
+                "modified" => {
+                    has_issues = true;
+                    println!("  {}  {}  {}", output::yellow("⚠"), result.path, output::yellow("MODIFIED"));
+                }
+                "missing" => {
+                    has_issues = true;
+                    println!("  {}  {}  {}", output::red("✘"), result.path, output::red("MISSING"));
+                }
+                "not_tracked" => {
+                    println!("  {}  {}  {}", output::cyan("ℹ"), result.path, output::dim("(not tracked)"));
+                }
+                _ => {
+                    has_issues = true;
+                    println!("  {}  {}  {}", output::red("?"), result.path, result.status);
+                }
+            }
+        }
+
+        println!();
+        println!("  {}  {} ok", output::green("✔"), ok_count);
+        if modified_count > 0 {
+            println!("  {}  {} modified", output::yellow("⚠"), modified_count);
+        }
+        if missing_count > 0 {
+            println!("  {}  {} missing", output::red("✘"), missing_count);
+        }
+        if untracked_count > 0 {
+            println!("  {}  {} not tracked", output::cyan("ℹ"), untracked_count);
+        }
+
+        if has_issues {
+            println!(
+                "\n  {} Use `lode file check` for detailed integrity checks",
+                output::dim("→")
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn run_make(target: &str) -> lode_core::Result<()> {

@@ -181,7 +181,12 @@ pub(crate) enum Command {
         dry_run: bool,
     },
     /// Run project verification checks
-    Verify,
+    Verify {
+        #[arg(long, help = "Check file manifest for externally modified files")]
+        changed: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
     /// Clean build artifacts
     Clean,
     /// Clean and perform a full rebuild
