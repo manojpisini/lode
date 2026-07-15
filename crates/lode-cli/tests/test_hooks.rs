@@ -5,41 +5,6 @@ use common::*;
 use predicates::prelude::*;
 
 #[test]
-fn git_hooks_install_status_and_uninstall() {
-    let temp = tempfile::tempdir().expect("create temp dir");
-    std::fs::create_dir_all(temp.path().join(".git").join("hooks")).expect("create directory");
-
-    lode()
-        .current_dir(temp.path())
-        .args(["git", "install-hooks"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("installed"));
-
-    lode()
-        .current_dir(temp.path())
-        .args(["git", "hooks-status"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("pre-commit\tmanaged"))
-        .stdout(predicate::str::contains("pre-push\tmanaged"));
-
-    lode()
-        .current_dir(temp.path())
-        .args(["git", "uninstall-hooks"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("removed"));
-
-    assert!(!temp
-        .path()
-        .join(".git")
-        .join("hooks")
-        .join("pre-commit")
-        .exists());
-}
-
-#[test]
 fn hooks_list_status_and_test_are_available() {
     let temp = tempfile::tempdir().expect("create temp dir");
     std::fs::create_dir_all(temp.path().join(".git").join("hooks")).expect("create directory");

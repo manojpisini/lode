@@ -5,7 +5,7 @@ use std::fs;
 use camino::Utf8PathBuf;
 use lode_core::{global_asset_dir, template_paths, LodeError, ValidatedRoot};
 
-use crate::LibraryCommand;
+use crate::{LibraryCommand, OutputFormat};
 
 pub(crate) fn library_command(
     root: &str,
@@ -13,8 +13,8 @@ pub(crate) fn library_command(
     embedded: &[&str],
 ) -> lode_core::Result<()> {
     match command {
-        LibraryCommand::List { format } => {
-            if format == "json" {
+        LibraryCommand::List { output } => {
+            if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(embedded)
@@ -27,9 +27,10 @@ pub(crate) fn library_command(
             }
         }
         LibraryCommand::Show { name, raw: _ } => {
-            let mut path = global_asset_dir(root)?.join(&name);
+            let relative = crate::safe_relative_path(&name)?;
+            let mut path = global_asset_dir(root)?.join(&relative);
             if !path.exists() && matches!(root, "profiles" | "commands" | "recipes") {
-                path = global_asset_dir(root)?.join(format!("{name}.toml"));
+                path = global_asset_dir(root)?.join(format!("{}.toml", relative));
             }
             if path.exists() {
                 print!(
@@ -84,10 +85,11 @@ pub(crate) fn library_command(
             }
         }
         LibraryCommand::Edit { name } => {
+            let relative = crate::safe_relative_path(&name)?;
             let asset_dir = global_asset_dir(root)?;
-            let path = asset_dir.join(&name);
+            let path = asset_dir.join(&relative);
             if !path.exists() && matches!(root, "profiles" | "commands" | "recipes") {
-                let path_with_ext = asset_dir.join(format!("{name}.toml"));
+                let path_with_ext = asset_dir.join(format!("{relative}.toml"));
                 if path_with_ext.exists() {
                     crate::open_editor(&path_with_ext)?;
                 } else {

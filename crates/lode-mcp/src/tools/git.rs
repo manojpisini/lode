@@ -73,10 +73,10 @@ pub fn lode_git_commit(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: message")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
 
     if !lode_core::is_git_repo(root) {
         return Err("Not a git repository".to_string());
@@ -97,10 +97,10 @@ pub fn lode_git_changelog(args: &Value) -> Result<Value, String> {
         .ok_or("Missing required argument: path")?;
     let from_tag = args["from_tag"].as_str();
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
 
     if !lode_core::is_git_repo(root) {
         return Err("Not a git repository".to_string());
@@ -109,7 +109,7 @@ pub fn lode_git_changelog(args: &Value) -> Result<Value, String> {
     let changelog = lode_core::git_changelog(root, from_tag).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "changelog": changelog,
     }))
 }
@@ -123,10 +123,10 @@ pub fn lode_git_tag(args: &Value) -> Result<Value, String> {
         .ok_or("Missing required argument: tag")?;
     let message = args["message"].as_str();
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
 
     if !lode_core::is_git_repo(root) {
         return Err("Not a git repository".to_string());

@@ -56,6 +56,7 @@ pub struct DaemonWatcher {
     watcher: RecommendedWatcher,
     rx: std::sync::mpsc::Receiver<Result<Event, notify::Error>>,
     project_dir: Utf8PathBuf,
+    watched_dirs: Vec<Utf8PathBuf>,
     config: WatcherConfig,
     running: bool,
 }
@@ -76,6 +77,7 @@ impl DaemonWatcher {
             watcher,
             rx,
             project_dir,
+            watched_dirs: Vec::new(),
             config,
             running: false,
         })
@@ -89,26 +91,46 @@ impl DaemonWatcher {
         self.watcher
             .watch(self.project_dir.as_std_path(), RecursiveMode::Recursive)
             .map_err(|e| WatcherError::InitFailed(e.to_string()))?;
+        self.watched_dirs.push(self.project_dir.clone());
 
         self.running = true;
         Ok(())
+    }
+
+    pub fn watch_global(&mut self) {
+        let asset_kinds = [
+            "templates",
+            "profiles",
+            "snippets",
+            "commands",
+            "recipes",
+            "licenses",
+        ];
+        for kind in &asset_kinds {
+            if let Ok(dir) = lode_core::global_asset_dir(kind) {
+                if dir.exists() && !self.watched_dirs.contains(&dir) {
+                    if self
+                        .watcher
+                        .watch(dir.as_std_path(), RecursiveMode::Recursive)
+                        .is_ok()
+                    {
+                        self.watched_dirs.push(dir);
+                    }
+                }
+            }
+        }
     }
 
     pub fn stop(&mut self) -> Result<(), WatcherError> {
         if !self.running {
             return Err(WatcherError::NotRunning);
         }
-
-        self.watcher
-            .unwatch(self.project_dir.as_std_path())
-            .map_err(|e| WatcherError::InitFailed(e.to_string()))?;
-
+        for dir in &self.watched_dirs {
+            let _ = self.watcher.unwatch(dir.as_std_path());
+        }
+        self.watched_dirs.clear();
         self.running = false;
         Ok(())
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.running
     }
 
     pub fn receive_event(&self) -> Option<WatchEvent> {
@@ -139,5 +161,13 @@ impl DaemonWatcher {
             EventKind::Remove(_) => event.paths.first().map(|p| WatchEvent::Delete(p.clone())),
             _ => None,
         }
+    }
+
+    pub fn is_global_event(&self, event: &WatchEvent) -> bool {
+        let event_path = event.path();
+        self.watched_dirs.iter().any(|d| {
+            d.as_std_path() != self.project_dir.as_std_path()
+                && event_path.starts_with(d.as_std_path())
+        })
     }
 }

@@ -2,8 +2,8 @@
 
 use lode_core::{CommandReceipt, LodeError};
 
-use crate::ReceiptCommand;
 use crate::OutputFormat;
+use crate::ReceiptCommand;
 
 pub(crate) fn receipt_command(command: ReceiptCommand) -> lode_core::Result<()> {
     match command {
@@ -14,12 +14,10 @@ pub(crate) fn receipt_command(command: ReceiptCommand) -> lode_core::Result<()> 
 }
 
 fn receipts_dir() -> lode_core::Result<camino::Utf8PathBuf> {
-    let cwd = std::env::current_dir().map_err(|e| {
-        LodeError::Message(format!("cannot get current dir: {e}"))
-    })?;
-    let dir = camino::Utf8PathBuf::from_path_buf(cwd).map_err(|_| {
-        LodeError::Message("non-UTF-8 path".to_string())
-    })?;
+    let cwd = std::env::current_dir()
+        .map_err(|e| LodeError::Message(format!("cannot get current dir: {e}")))?;
+    let dir = camino::Utf8PathBuf::from_path_buf(cwd)
+        .map_err(|_| LodeError::Message("non-UTF-8 path".to_string()))?;
     Ok(dir.join(".lode").join("state").join("receipts"))
 }
 
@@ -92,7 +90,10 @@ fn receipt_show(receipt_id: &str, output: OutputFormat) -> lode_core::Result<()>
         if !receipt.result.next_actions.is_empty() {
             println!("\nNext actions:");
             for a in &receipt.result.next_actions {
-                println!("  {}  {}  required={}", a.command, a.description, a.required);
+                println!(
+                    "  {}  {}  required={}",
+                    a.command, a.description, a.required
+                );
             }
         }
     }

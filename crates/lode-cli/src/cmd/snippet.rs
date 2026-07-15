@@ -5,13 +5,16 @@ use std::fs;
 use camino::Utf8PathBuf;
 use lode_core::{global_asset_dir, LodeError, ValidatedRoot};
 
-use crate::{safe_relative_path, list_dir, open_editor, write_validated_output, SnippetAsset, SnippetCommand};
+use crate::{
+    list_dir, open_editor, safe_relative_path, write_validated_output, OutputFormat, SnippetAsset,
+    SnippetCommand,
+};
 
 pub(crate) fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {
     match command {
-        SnippetCommand::List { lang, format } => {
+        SnippetCommand::List { lang, output } => {
             let root = global_asset_dir("snippets")?;
-            if format == "json" {
+            if output.should_use_json() {
                 let mut snippets = Vec::new();
                 if let Some(lang) = lang {
                     collect_snippet_assets(&root.join(lang), &mut snippets)?;
@@ -161,7 +164,10 @@ fn insert_text_at_line(existing: &str, snippet: &str, line: usize) -> String {
     output
 }
 
-pub(crate) fn resolve_snippet_path(name: &str, lang: Option<&str>) -> lode_core::Result<Utf8PathBuf> {
+pub(crate) fn resolve_snippet_path(
+    name: &str,
+    lang: Option<&str>,
+) -> lode_core::Result<Utf8PathBuf> {
     let root = global_asset_dir("snippets")?;
     if let Some(lang) = lang {
         let relative = safe_relative_path(&format!("{lang}/{name}.snippet"))?;

@@ -2,7 +2,10 @@ use std::{env, fs, path::PathBuf};
 
 use camino::Utf8PathBuf;
 
-use crate::{assets, config, fs_safety::ValidatedRoot, template::RenderContext, LodeError, Result};
+use crate::{
+    assets, assets::AssetKind, config, fs_safety::ValidatedRoot, template::RenderContext,
+    LodeError, Result,
+};
 
 const GLOBAL_DIRS: &[&str] = &[
     "profiles",
@@ -14,6 +17,58 @@ const GLOBAL_DIRS: &[&str] = &[
     "cache",
     "logs",
     "commands",
+    "agents",
+];
+
+const GLOBAL_AGENT_FILES: &[(&str, &str)] = &[
+    (
+        "AGENTS.md",
+        "# LODE Agent Bootstrap Contract\n\n## What Is LODE\n\nLODE is a local-first personal development control plane.\nIt converts personal development preferences and proven engineering patterns\ninto reusable capabilities that agents can discover and execute.\n\n## First Command\n\nRun this to discover what LODE already knows about this project:\n\n```\nlode agent bootstrap --json\n```\n\n## Core Principles\n\n1. **Discover before create** — Always ask LODE first if a profile, template,\n   recipe, snippet, or command already covers the task.\n2. **Reuse before compose** — Prefer composing existing recipes over writing\n   new ones from scratch.\n3. **Compose before customize** — Use recipe composition to combine\n   capabilities before modifying them.\n4. **Create only when necessary** — If no asset matches, create the minimum\n   needed and consider promoting it back to LODE.\n\n## Contract\n\n- LODE owns: project scaffolding, templates, profiles, recipes, snippets,\n  commands, licenses, git hooks, env management, secret scanning,\n  convention checking, metrics, time tracking, releases\n- Agent owns: implementation logic, business code, testing strategy,\n  architecture decisions within the scaffold\n- Both own: agent context files (_ctx_/*.md), build configuration,\n  CI workflows, documentation\n\n## Protocol\n\nSee `LODE_AGENT_PROTOCOL.md` for the full operating protocol.\n\n## Quick Start\n\n```\nlode agent bootstrap --json      # Discover project state\nlode assets search \"database\"    # Find relevant assets\nlode agent resolve --intent \"...\" --json  # Resolve intent to capabilities\nlode config show                 # View merged configuration\nlode plan create --intent \"...\"  # Create an execution plan\n```\n",
+    ),
+    (
+        "LODE_AGENT_PROTOCOL.md",
+        "# LODE Agent Operating Protocol\n\n## 1. Bootstrap\n\n```\nlode agent bootstrap [--json]\n```\n\nReturns LODE version, active profile, project type, available assets,\ncontext files, and recommended next action.\n\n## 2. Inspect Project Context\n\n```\nls .lode/          # Project config and state\nls _ctx_/          # AI agent context files (if synced)\nls AGENTS.md       # This bootstrap contract\n```\n\n## 3. Resolve Capabilities\n\n```\nlode agent resolve --intent \"<natural language intent>\" [--json]\n```\n\nReturns matched profile, recipes, commands, templates, warnings,\nand estimated file count. Deterministic matching first, LLM only for\nambiguous intent translation.\n\n## 4. Search Assets\n\n```\nlode assets search <query> [--kind profile|template|recipe|command|snippet|license] [--format json|table]\nlode assets show <asset-id> [--json]\nlode assets list [--format json|table]\n```\n\n## 5. Discover Through JSON\n\nEvery operation that can output JSON accepts `--json` or `--format json`.\n\n```\nlode profile show <name> --json\nlode recipe show <name> --json\nlode commands show <name> --json\nlode config show --json\n```\n\n## 6. Apply Assets\n\nProfiles define project scaffolding. Recipes compose files and steps.\nCommands execute workflow macros. Templates render files from variables.\n\n```\nlode profile use <name>\nlode recipe apply <name> [--dry-run]\nlode commands run <name> [--dry-run]\nlode sync\n```\n\n## 7. Execute Workflows\n\n```\nlode verify          # Dynamic quality gates per active profile\nlode build           # Build the project\nlode test            # Run tests\nlode fmt             # Format code\nlode lint            # Lint code\nlode check           # Convention compliance\nlode commit          # Stage and commit with conventional message\n```\n\n## 8. Verify Quality Gates\n\n```\nlode check           # Naming conventions\nlode scan secrets    # Secret leakage\nlode scan foreign    # Foreign project detection\nlode doctor          # System diagnostics\nlode health          # Project health audit\nlode sign            # Content hash verification\n```\n\n## 9. Record Decisions and Provenance\n\n```\nlode agent plan init\nlode agent plan add --task \"description\"\nlode agent plan done --id <n>\nlode agent plan show\n```\n\nThe agent plan persists across sessions in `.lode/agent_plan.json`.\n\n## 10. Compact Handoff\n\nWhen handing off to another agent:\n\n1. Run `lode agent plan show` to capture task state\n2. Record key decisions in `_ctx_/ACTIVE_DECISIONS.md`\n3. Summarize verification results\n4. List remaining risks and next action\n5. Reference stable IDs (plan IDs, decision records, paths)\n\n---\n\n## Schema Versions\n\n- Config schema: 3\n- Asset API: 1\n- Plan schema: 1\n\n## Safety Modes\n\nConsult `config show --section agents` for permission boundaries.\nFuture: `safe` (require confirm for writes), `power` (autonomous within\nproject), `locked` (read-only diagnostics).\n\n## Preference Hierarchy\n\n1. Locked global policy\n2. Personal preferences (`~/.lode/preferences.toml`)\n3. Project preferences (`.lode/preferences.toml`)\n4. Session decisions (not persisted)\n\n## Context Files\n\n```\n_ctx_/CURRENT_STATE.md      # Current task and status\n_ctx_/QUALITY_GATES.md      # Pass/fail gates\n_ctx_/ARCHITECTURE_MAP.md   # Module boundaries\n_ctx_/ACTIVE_DECISIONS.md   # Key decisions with rationale\n_ctx_/OPEN_RISKS.md         # Identified risks\n_ctx_/RECENT_CHANGES.md     # Recent file changes\n```\n",
+    ),
+    (
+        "CLAUDE.md",
+        "# Claude Context\n\n# Place Claude-specific instructions, preferences, and behavioral guidelines here.\n",
+    ),
+    (
+        "CODEX.md",
+        "# Codex Context\n\n# Place Codex-specific instructions, focused patterns, and code generation preferences here.\n",
+    ),
+    (
+        ".cursorrules",
+        "# Cursor Rules\n\n# Define cursor-specific editing rules and code generation preferences here.\n",
+    ),
+    (
+        ".windsurfrules",
+        "# Windsurf Rules\n\n# Define Windsurf-specific AI editing rules here.\n",
+    ),
+    (
+        ".mcp.json",
+        "{\n  \"servers\": {}\n}\n",
+    ),
+    (
+        "PLAN.md",
+        "# Plan\n\n# Outline implementation plans, milestones, and task breakdowns here.\n",
+    ),
+    (
+        "CONSTRAINTS.md",
+        "# Constraints\n\n# Document project constraints, boundaries, and non-negotiables here.\n",
+    ),
+    (
+        "REVIEW.md",
+        "# Review Notes\n\n# Record code review findings, suggestions, and follow-up items here.\n",
+    ),
+    (
+        "TASKS.md",
+        "# Tasks\n\n# Track actionable tasks, their status, and ownership here.\n",
+    ),
+    (
+        "MEMORY.md",
+        "# Memory\n\n# Capture durable project notes, decisions, and cross-session context here.\n",
+    ),
 ];
 
 fn global_dir_env(child: &str) -> Option<&'static str> {
@@ -148,6 +203,27 @@ pub fn setup_defaults(overwrite: bool) -> Result<SetupReport> {
         }
     }
 
+    let agent_dir = global_asset_dir("agents")?;
+    let agent_root = trusted_root(&agent_dir)?;
+    for (name, contents) in GLOBAL_AGENT_FILES {
+        let dest = agent_dir.join(name);
+        if overwrite || !dest.exists() {
+            agent_root.write_atomic(name, contents)?;
+        }
+    }
+    for subdir in &["skills", "prompts", "plans"] {
+        let path = agent_dir.join(subdir);
+        if !path.exists() {
+            agent_root.create_dir_all(subdir)?;
+        }
+    }
+
+    if let Ok(mut config) = load_global_config() {
+        if config.assets.auto_register {
+            let _ = auto_register_assets(&mut config);
+        }
+    }
+
     Ok(SetupReport {
         global_dir: dir,
         config_path,
@@ -172,6 +248,136 @@ pub fn load_global_config() -> Result<config::LodeConfig> {
         })?;
     config::validate_schema(&config)?;
     Ok(config)
+}
+
+fn scan_asset_directory(
+    dir: &camino::Utf8Path,
+    kind: &str,
+) -> Vec<(String, config::assets::AssetEntry)> {
+    let path = dir.as_std_path();
+    if !path.exists() || !path.is_dir() {
+        return Vec::new();
+    }
+    let mut entries = Vec::new();
+    let _ = walk_dir(path, kind, "", &mut entries);
+    entries
+}
+
+fn walk_dir(
+    dir: &std::path::Path,
+    _kind: &str,
+    prefix: &str,
+    entries: &mut Vec<(String, config::assets::AssetEntry)>,
+) -> Result<()> {
+    for entry in std::fs::read_dir(dir).map_err(|e| LodeError::Io {
+        path: dir.to_path_buf(),
+        source: e,
+    })? {
+        let entry = entry.map_err(|e| LodeError::Io {
+            path: dir.to_path_buf(),
+            source: e,
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|e| LodeError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+        if file_type.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let sub_prefix = if prefix.is_empty() {
+                name.to_string()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            walk_dir(&path, _kind, &sub_prefix, entries)?;
+        } else if file_type.is_file() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let asset_path = if prefix.is_empty() {
+                name.to_string()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            entries.push((asset_path, config::assets::AssetEntry::default()));
+        }
+    }
+    Ok(())
+}
+
+pub fn auto_register_assets(config: &mut config::LodeConfig) -> Result<usize> {
+    let mut total = 0usize;
+    let asset_kinds: &[(AssetKind, &str)] = &[
+        (AssetKind::Template, "templates"),
+        (AssetKind::Profile, "profiles"),
+        (AssetKind::Snippet, "snippets"),
+        (AssetKind::Command, "commands"),
+        (AssetKind::Recipe, "recipes"),
+        (AssetKind::License, "licenses"),
+    ];
+    for &(akind, kind) in asset_kinds {
+        let dir = match global_asset_dir(kind) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let disk_files: Vec<(String, config::assets::AssetEntry)> =
+            scan_asset_directory(&dir, kind);
+        let known_builtins: std::collections::HashSet<String> =
+            crate::assets::known_asset_paths_by_kind(akind)
+                .into_iter()
+                .collect();
+        for (path, entry) in &disk_files {
+            if known_builtins.contains(path.as_str()) {
+                continue;
+            }
+            let already_registered = match kind {
+                "templates" => config.assets.templates.contains_key(path.as_str()),
+                "profiles" => config.assets.profiles.contains_key(path.as_str()),
+                "snippets" => config.assets.snippets.contains_key(path.as_str()),
+                "commands" => config.assets.commands.contains_key(path.as_str()),
+                "recipes" => config.assets.recipes.contains_key(path.as_str()),
+                "licenses" => config.assets.licenses.contains_key(path.as_str()),
+                _ => true,
+            };
+            if !already_registered {
+                match kind {
+                    "templates" => {
+                        config.assets.templates.insert(path.clone(), entry.clone());
+                    }
+                    "profiles" => {
+                        config.assets.profiles.insert(path.clone(), entry.clone());
+                    }
+                    "snippets" => {
+                        config.assets.snippets.insert(path.clone(), entry.clone());
+                    }
+                    "commands" => {
+                        config.assets.commands.insert(path.clone(), entry.clone());
+                    }
+                    "recipes" => {
+                        config.assets.recipes.insert(path.clone(), entry.clone());
+                    }
+                    "licenses" => {
+                        config.assets.licenses.insert(path.clone(), entry.clone());
+                    }
+                    _ => {}
+                }
+                total += 1;
+            }
+        }
+    }
+    if total > 0 {
+        save_global_config(config)?;
+    }
+    Ok(total)
+}
+
+pub fn auto_register_global_assets() -> Result<usize> {
+    let mut config = load_global_config()?;
+    let count = auto_register_assets(&mut config)?;
+    if count > 0 {
+        save_global_config(&config)?;
+    }
+    Ok(count)
 }
 
 pub fn save_global_config(config: &config::LodeConfig) -> Result<()> {

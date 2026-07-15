@@ -1,9 +1,26 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use lode_core::ipc::{port_path, socket_port};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
+
+pub struct DaemonControl {
+    pub shutdown_tx: mpsc::Sender<()>,
+    pub paused: Arc<AtomicBool>,
+}
+
+impl DaemonControl {
+    pub fn new(shutdown_tx: mpsc::Sender<()>) -> Self {
+        Self {
+            shutdown_tx,
+            paused: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum IpcError {
@@ -126,14 +143,6 @@ impl IpcServer {
         self.running = false;
         Ok(())
     }
-
-    pub fn is_running(&self) -> bool {
-        self.running
-    }
-
-    pub fn socket_path(&self) -> &PathBuf {
-        &self.socket_path
-    }
 }
 
 fn generate_token() -> String {
@@ -178,14 +187,25 @@ fn authenticate(token: &str, expected: &str) -> Result<(), IpcError> {
     }
 }
 
-pub fn handle_command(command: &IpcCommand) -> IpcResponse {
+pub fn handle_command(command: &IpcCommand, control: &DaemonControl) -> IpcResponse {
     match command {
         IpcCommand::Status => {
-            IpcResponse::ok("Daemon is running").with_data(serde_json::json!({"status": "running"}))
+            let paused = control.paused.load(Ordering::SeqCst);
+            IpcResponse::ok("Daemon is running")
+                .with_data(serde_json::json!({"status": if paused { "paused" } else { "running" }}))
         }
-        IpcCommand::Stop => IpcResponse::ok("Stop requested"),
-        IpcCommand::Pause => IpcResponse::ok("Paused"),
-        IpcCommand::Resume => IpcResponse::ok("Resumed"),
+        IpcCommand::Stop => {
+            let _ = control.shutdown_tx.try_send(());
+            IpcResponse::ok("Stop requested")
+        }
+        IpcCommand::Pause => {
+            control.paused.store(true, Ordering::SeqCst);
+            IpcResponse::ok("Paused")
+        }
+        IpcCommand::Resume => {
+            control.paused.store(false, Ordering::SeqCst);
+            IpcResponse::ok("Resumed")
+        }
         IpcCommand::ListWatchers => {
             IpcResponse::ok("Watchers listed").with_data(serde_json::json!({"watchers": []}))
         }
@@ -194,9 +214,8 @@ pub fn handle_command(command: &IpcCommand) -> IpcResponse {
 }
 
 pub fn parse_json_request(input: &str) -> Result<IpcRequest, IpcError> {
-    serde_json::from_str::<IpcRequest>(input).map_err(|e| {
-        IpcError::ParseError(format!("Invalid JSON request: {e}"))
-    })
+    serde_json::from_str::<IpcRequest>(input)
+        .map_err(|e| IpcError::ParseError(format!("Invalid JSON request: {e}")))
 }
 
 pub fn parse_command(input: &str) -> Result<IpcCommand, IpcError> {
@@ -211,7 +230,7 @@ pub fn parse_command(input: &str) -> Result<IpcCommand, IpcError> {
     }
 }
 
-fn process_ipc_line(line: &str, auth_token: &str) -> Option<IpcResponse> {
+fn process_ipc_line(line: &str, auth_token: &str, control: &DaemonControl) -> Option<IpcResponse> {
     let line = line.trim();
     if line.is_empty() {
         return None;
@@ -223,23 +242,28 @@ fn process_ipc_line(line: &str, auth_token: &str) -> Option<IpcResponse> {
             Err(_) => return Some(IpcResponse::error("Invalid JSON request format")),
         }
     } else {
-        (line.to_string(), String::new())
+        let mut parts = line.splitn(2, ' ');
+        let cmd = parts.next().unwrap_or("").to_string();
+        let tok = parts.next().unwrap_or("").to_string();
+        (cmd, tok)
     };
 
-    if !token_str.is_empty() {
-        if let Err(_) = authenticate(&token_str, auth_token) {
-            return Some(IpcResponse::error("Authentication failed: invalid token"));
-        }
+    if let Err(_) = authenticate(&token_str, auth_token) {
+        return Some(IpcResponse::error("Authentication failed: invalid token"));
     }
 
     match parse_command(&command_str) {
-        Ok(command) => Some(handle_command(&command)),
+        Ok(command) => Some(handle_command(&command, control)),
         Err(e) => Some(IpcResponse::error(&e.to_string())),
     }
 }
 
 #[cfg(unix)]
-pub async fn run_ipc_listener(socket_path: PathBuf, auth_token: String) -> Result<(), IpcError> {
+pub async fn run_ipc_listener(
+    socket_path: PathBuf,
+    auth_token: String,
+    control: DaemonControl,
+) -> Result<(), IpcError> {
     if socket_path.exists() {
         tokio::fs::remove_file(&socket_path).await?;
     }
@@ -254,6 +278,10 @@ pub async fn run_ipc_listener(socket_path: PathBuf, auth_token: String) -> Resul
             }
         };
         let token = auth_token.clone();
+        let ctrl = DaemonControl {
+            shutdown_tx: control.shutdown_tx.clone(),
+            paused: Arc::clone(&control.paused),
+        };
         tokio::spawn(async move {
             let mut reader = BufReader::new(stream);
             let mut line = String::new();
@@ -262,7 +290,7 @@ pub async fn run_ipc_listener(socket_path: PathBuf, auth_token: String) -> Resul
                 match reader.read_line(&mut line).await {
                     Ok(0) => break,
                     Ok(_) => {
-                        if let Some(response) = process_ipc_line(&line, &token) {
+                        if let Some(response) = process_ipc_line(&line, &token, &ctrl) {
                             if let Ok(json) = serde_json::to_string(&response) {
                                 let mut inner = reader.get_mut();
                                 if let Err(e) = inner.write_all(json.as_bytes()).await {
@@ -290,7 +318,11 @@ fn try_claim_lock(lock_path: &Path) -> Result<std::fs::File, IpcError> {
 }
 
 #[cfg(not(unix))]
-pub async fn run_ipc_listener(socket_path: PathBuf, auth_token: String) -> Result<(), IpcError> {
+pub async fn run_ipc_listener(
+    socket_path: PathBuf,
+    auth_token: String,
+    control: DaemonControl,
+) -> Result<(), IpcError> {
     use tokio::net::TcpListener;
 
     // Claim lock atomically before bind to prevent TOCTOU race
@@ -327,6 +359,10 @@ pub async fn run_ipc_listener(socket_path: PathBuf, auth_token: String) -> Resul
             }
         };
         let token = auth_token.clone();
+        let ctrl = DaemonControl {
+            shutdown_tx: control.shutdown_tx.clone(),
+            paused: Arc::clone(&control.paused),
+        };
         tokio::spawn(async move {
             let mut reader = BufReader::new(stream);
             let mut line = String::new();
@@ -335,7 +371,7 @@ pub async fn run_ipc_listener(socket_path: PathBuf, auth_token: String) -> Resul
                 match reader.read_line(&mut line).await {
                     Ok(0) => break,
                     Ok(_) => {
-                        if let Some(response) = process_ipc_line(&line, &token) {
+                        if let Some(response) = process_ipc_line(&line, &token, &ctrl) {
                             if let Ok(json) = serde_json::to_string(&response) {
                                 let inner = reader.get_mut();
                                 if let Err(e) = inner.write_all(json.as_bytes()).await {
@@ -370,7 +406,9 @@ mod daemon_ipc_tests {
 
     #[test]
     fn status_response_contains_running_state() {
-        let response = handle_command(&IpcCommand::Status);
+        let (tx, _rx) = mpsc::channel(1);
+        let control = DaemonControl::new(tx);
+        let response = handle_command(&IpcCommand::Status, &control);
         assert!(response.success);
         assert_eq!(response.data.unwrap()["status"], "running");
     }
@@ -427,6 +465,8 @@ mod daemon_ipc_tests {
 
     #[test]
     fn handle_all_commands_return_success() {
+        let (tx, _rx) = mpsc::channel(1);
+        let control = DaemonControl::new(tx);
         for cmd in &[
             IpcCommand::Status,
             IpcCommand::Stop,
@@ -435,7 +475,7 @@ mod daemon_ipc_tests {
             IpcCommand::ListWatchers,
             IpcCommand::Reload,
         ] {
-            let response = handle_command(cmd);
+            let response = handle_command(cmd, &control);
             assert!(response.success, "command {cmd:?} should succeed");
         }
     }
@@ -472,26 +512,42 @@ mod daemon_ipc_tests {
 
     #[test]
     fn process_ipc_line_with_json_and_token() {
+        let (tx, _rx) = mpsc::channel(1);
+        let control = DaemonControl::new(tx);
         let token = "test-token-123";
         let line = r#"{"command":"status","token":"test-token-123"}"#;
-        let response = process_ipc_line(line, token).unwrap();
+        let response = process_ipc_line(line, token, &control).unwrap();
         assert!(response.success);
     }
 
     #[test]
-    fn process_ipc_line_without_token_fails_gracefully() {
+    fn process_ipc_line_without_token_fails() {
+        let (tx, _rx) = mpsc::channel(1);
+        let control = DaemonControl::new(tx);
         let token = "server-token";
         let line = "status";
-        let response = process_ipc_line(line, token).unwrap();
-        // Backward compat: plain text commands still work (no token required for existing clients)
+        let response = process_ipc_line(line, token, &control).unwrap();
+        assert!(!response.success);
+        assert!(response.message.contains("Authentication failed"));
+    }
+
+    #[test]
+    fn process_ipc_line_with_plain_text_token_succeeds() {
+        let (tx, _rx) = mpsc::channel(1);
+        let control = DaemonControl::new(tx);
+        let token = "server-token";
+        let line = "status server-token";
+        let response = process_ipc_line(line, token, &control).unwrap();
         assert!(response.success);
     }
 
     #[test]
     fn process_ipc_line_with_wrong_token_fails() {
+        let (tx, _rx) = mpsc::channel(1);
+        let control = DaemonControl::new(tx);
         let token = "server-token";
         let line = r#"{"command":"stop","token":"wrong-token"}"#;
-        let response = process_ipc_line(line, token).unwrap();
+        let response = process_ipc_line(line, token, &control).unwrap();
         assert!(!response.success);
         assert!(response.message.contains("Authentication failed"));
     }

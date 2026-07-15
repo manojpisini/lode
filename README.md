@@ -6,7 +6,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **LODE** — an all-in-one local developer tool for Rust projects.  
-Manage projects, track time, scan secrets, enforce conventions, run daemons, serve MCP/LSP protocols, manage plugins and packages, automate git workflows, and export/import portable LodePacks.
+Manage projects, track time, scan secrets, enforce conventions, run daemons, serve MCP/LSP protocols, manage plugins and packages, automate git workflows, manage template bundles, and export/import portable LodePacks.
 
 ## Crates.io packages
 
@@ -15,7 +15,7 @@ Manage projects, track time, scan secrets, enforce conventions, run daemons, ser
 | [lode-cli](https://crates.io/crates/lode-cli) | [![crates.io](https://img.shields.io/crates/v/lode-cli.svg)](https://crates.io/crates/lode-cli) | CLI binary — the main entry point |
 | [lode-core](https://crates.io/crates/lode-core) | [![crates.io](https://img.shields.io/crates/v/lode-core.svg)](https://crates.io/crates/lode-core) | Core library: config, rules, secrets, scaffold, git |
 | [lode-daemon](https://crates.io/crates/lode-daemon) | [![crates.io](https://img.shields.io/crates/v/lode-daemon.svg)](https://crates.io/crates/lode-daemon) | Background file watcher with IPC |
-| [lode-mcp](https://crates.io/crates/lode-mcp) | [![crates.io](https://img.shields.io/crates/v/lode-mcp.svg)](https://crates.io/crates/lode-mcp) | MCP server: 38+ tools, 8 resources, 3 prompts |
+| [lode-mcp](https://crates.io/crates/lode-mcp) | [![crates.io](https://img.shields.io/crates/v/lode-mcp.svg)](https://crates.io/crates/lode-mcp) | MCP server: 44 tools, 9 resources, 3 prompts |
 | [lode-tui](https://crates.io/crates/lode-tui) | [![crates.io](https://img.shields.io/crates/v/lode-tui.svg)](https://crates.io/crates/lode-tui) | Terminal UI with 7 panes |
 | [lode-lsp](https://crates.io/crates/lode-lsp) | [![crates.io](https://img.shields.io/crates/v/lode-lsp.svg)](https://crates.io/crates/lode-lsp) | LSP server over JSON-RPC |
 
@@ -94,205 +94,74 @@ MIT
 
 ## CLI Command Reference
 
-| Command | Description | Key Flags |
+| Command | Description | Key Subcommands |
 |---|---|---|
 | `setup` | Initialize lode defaults | `--defaults` |
-| `init` (`new`) | Create a new project | `-p/--path`, `--profile`, `--with`, `--dry-run`, `--overwrite`, `--no-git`, `--lang`, `--preset`, `--license`, `--extra`, `--no-check`, `-y/--yes` |
-| `add` | Add a component to the project | `--dry-run`, `--overwrite` |
-| `sync` | Sync config/templates/agent/metrics | `--dry-run`, `--force`, `--section` |
-| `info` | Show project information | `--json` |
-| `config` | Configuration management | `show`, `validate`, `diff`, `set`, `reset`, `edit` |
-| `template` | Template library management | `list`, `show`, `diff`, `reset`, `validate`, `edit` |
-| `profile` | Profile management | `list`, `show`, `use`, `new`, `delete` |
-| `recipe` | Recipe management | `list`, `show`, `apply`, `compose`, `new` |
-| `commands` | Custom command macros | `list`, `show`, `add`, `remove`, `export`, `run`, `edit` |
-| `plugin` | Plugin system | `list`, `search`, `add`, `remove`, `update`, `info` |
-| `mcp` | MCP protocol server | `--http`, `--port`, `--list-tools`, `--list-resources`, `--list-prompts` |
-| `lsp` | LSP protocol server | `--stdio`, `--capabilities` |
-| `agent` | AI agent file generation | `sync`, `status`, `export`, `plan` |
-| `snippet` | Code snippet management | `list`, `show`, `search`, `add`, `remove`, `insert`, `export`, `edit` |
-| `task` | Track current work task | `target`, `--no-store` |
-| `dev` | Run dev workflow | — |
-| `build` | Run build workflow | — |
-| `test` | Run test workflow | — |
-| `fmt` | Run code formatter | — |
-| `lint` | Run linter | — |
-| `check` | Convention compliance check | `path`, `--json`, `--fix` |
+| `init` / `new` | Create a new project | `--profile`, `--with`, `--dry-run`, `--lang` |
+| `add` | Add a component | `--dry-run`, `--overwrite` |
+| `sync` | Sync scaffold/agent/metrics | `--dry-run`, `--force`, `--section` |
+| `info` | Show project info | `--json` |
+| `config` | Configuration | `show`, `validate`, `diff`, `set`, `reset`, `edit` |
+| `template` | Templates | `list`, `show`, `reset`, `validate`, `edit` |
+| `template-bundle` | Template bundles | `capture`, `apply`, `validate`, `verify`, `show`, `preview` |
+| `profile` | Profiles | `list`, `show`, `use`, `new`, `delete` |
+| `recipe` | Recipes | `list`, `show`, `apply`, `compose`, `new` |
+| `commands` | Custom command macros | `list`, `show`, `add`, `remove`, `run`, `edit` |
+| `plugin` | Plugins | `list`, `search`, `add`, `remove`, `update`, `info` |
+| `mcp` | MCP server | `--list-tools`, `--list-resources`, `--list-prompts` |
+| `lsp` | LSP server | `--stdio`, `--capabilities` |
+| `agent` | AI agents | `sync`, `status`, `export`, `plan`, `policy` |
+| `agent-sim` | Agent simulation | `run` |
+| `snippet` | Code snippets | `list`, `show`, `search`, `add`, `remove`, `export`, `edit` |
+| `task` | Current task | `target`, `--no-store` |
+| `dev` / `build` / `test` / `fmt` / `lint` | Workflow runners | — |
+| `check` | Convention check | `path`, `--json`, `--fix` |
 | `fix` | Auto-fix conventions | `path` |
-| `rename` | Rename files/folders | `path`, `--to` |
-| `rules` | Convention rules management | `list`, `check`, `validate` |
-| `sign` | Insert/update file signatures | `path`, `--ext`, `--force`, `--dry-run` |
-| `stamp` | Insert/update license headers | `path`, `--ext`, `--license`, `--dry-run` |
-| `verify` | Run project verification | — |
-| `clean` | Clean build artifacts | — |
-| `fresh` | Clean and full rebuild | — |
-| `ship` | Verify and release | — |
-| `release` | Version release management | `version`, `--bump`, `--dry-run`, `--rollback` |
-| `health` / `audit` | Project health audit | — |
-| `explain` | Explain a concept | — |
-| `doctor` | System diagnostics | `--fix`, `--json` |
-| `scan` | Scan for secrets/foreign code | `secrets`, `foreign` |
-| `git` | Git workflow automation | `branch`, `commit`, `tag`, `changelog`, `install-hooks`, `uninstall-hooks`, `hooks-status`, `sign-setup`, `remote-setup` |
-| `hooks` | Git hooks management | `list`, `status`, `test`, `run` |
-| `env` | Environment variable management | `check`, `add`, `sync`, `use` |
-| `license` | License management | `list`, `show`, `info`, `add`, `remove`, `set`, `check`, `apply` |
-| `projects` | Project registry | `list`, `cd`, `register`, `remove`, `health`, `prune` |
-| `toolchain` | Runtime toolchain management | `list`, `status`, `doctor`, `add`, `remove`, `use`, `pin`, `update` |
-| `pkg` | Package management | `list`, `outdated`, `update`, `audit`, `why`, `info`, `lock`, `graph`, `clean` |
+| `rename` | Rename files | `path`, `--to` |
+| `rules` | Convention rules | `list`, `check`, `validate` |
+| `sign` | File signatures | `path`, `--ext`, `--force` |
+| `stamp` | License headers | `path`, `--ext`, `--license` |
+| `verify` | File verification | `--changed` |
+| `clean` / `fresh` / `ship` | Build helpers | — |
+| `release` | Version release | `version`, `--bump`, `--dry-run`, `--rollback` |
+| `health` / `audit` | Project audit | — |
+| `explain` / `doctor` | Helpers | `--fix`, `--json` |
+| `scan` | Secret/code scanning | `secrets`, `foreign` |
+| `git` | Git automation | `branch`, `commit`, `tag`, `changelog` |
+| `hooks` | Git hooks | `list`, `status`, `test`, `run` |
+| `env` | Env variables | `check`, `add`, `sync`, `use` |
+| `license` | Licenses | `list`, `show`, `add`, `remove`, `set`, `check` |
+| `projects` | Project registry | `list`, `cd`, `register`, `remove`, `health` |
+| `toolchain` | Runtime toolchains | `list`, `status`, `add`, `remove`, `use`, `pin` |
+| `pkg` | Package management | `list`, `outdated`, `update`, `audit`, `graph` |
 | `time` | Time tracking | `today`, `show`, `report`, `clear` |
-| `metrics` | Project metrics | `show`, `trend`, `baseline`, `diff-baseline` |
-| `workspace` | Multi-crate workspace management | `init`, `list`, `add`, `remove`, `run`, `graph` |
-| `daemon` | Background file watcher daemon | `start`, `stop`, `restart`, `pause`, `resume`, `list-watchers`, `status`, `log` |
+| `metrics` | Project metrics | `show`, `trend`, `baseline` |
+| `file` | Managed files | `add`, `list`, `check`, `remove` |
+| `context` | Context compilation | `compile`, `check` |
+| `handoff` | Agent handoff | `generate` |
+| `diagnose` | Error diagnosis | `check`, `list` |
+| `docs` | Documentation | `open` |
+| `dep-graph` | Dependency graph | `resolve`, `dot` |
+| `cache` | Cache management | `stats`, `clear` |
+| `env-snapshot` | Env snapshots | `list`, `diff` |
+| `assets` | Asset catalog | `list`, `show`, `search` |
+| `pack` / `plan` / `policy` | Project planning | `create`, `apply` |
+| `project` | Project config | `init`, `show` |
+| `lock` / `receipts` | State tracking | `list`, `verify` |
+| `archetype` | Archetype resolution | `list`, `resolve` |
+| `sandbox` | Sandboxed execution | `create`, `run`, `clean` |
+| `secret-vault` | Secret management | `list`, `get`, `set`, `grant` |
+| `migration` | Schema migrations | `check`, `run` |
+| `workspace` | Workspace management | `init`, `list`, `add`, `graph` |
+| `daemon` | Background daemon | `start`, `stop`, `status`, `log` |
 | `log` | Log management | `init`, `daemon`, `clear` |
-| `export` | Export project as LodePack | `--out`, `--no-plugins`, `--no-templates`, `--no-snippets`, `--no-licenses`, `--no-recipes`, `--no-commands`, `--include-metrics` |
-| `import` | Import LodePack | `path`, `--no-merge`, `--force` |
-| `serve` | TUI dashboard mode | `--no-color`, `--no-live`, `--pane`, `--refresh`, `--theme` |
-| `self` | Self-management | `info`, `clean`, `uninstall` |
-| `upgrade` | Self-upgrade | `--check`, `--manifest`, `--dry-run`, `--rollback` |
-| `completions` | Generate shell completions | `shell`, `--install`, `--dry-run`, `--out` |
+| `export` / `import` | LodePack transfer | `--out`, `--force` |
+| `serve` | TUI dashboard | `--pane`, `--no-color` |
+| `self` / `upgrade` | Self-management | `info`, `clean`, `--check` |
+| `completions` | Shell completions | `shell`, `--install` |
 | `version` | Show version | — |
+| `mc` / `tauri` / `gha` / `cp` | Domain helpers | — |
 
-## Configuration Reference
+## Configuration
 
-Configuration is stored at `~/.lode/config.toml` and merged with project-level `.lode/project.toml`. The config file contains these sections:
-
-```toml
-schema_version = 3
-active_profile = "core/bare"       # Active profile name
-
-[identity]                         # Author identity
-author = "Your Name"
-name = ""
-email = "you@example.com"
-org = ""
-url = ""
-license = "MIT OR Apache-2.0"
-
-[convention]                       # Naming and file conventions
-folder_case = "snake_case"
-file_case = "snake_case"
-default_case = "snake_case"
-enforce = false
-exclude = []
-protected_prefixes = []
-prefix_map = {}
-
-[signature]                        # File signature blocks
-enabled = true
-auto_insert = true
-auto_update_date = true
-include_path = true
-include_hash = false
-include_license = true
-separator_char = "="
-section_markers.start = " --- "
-section_markers.end = " --- "
-comment_styles.rust = "//"
-comment_styles.python = "#"
-comment_styles.javascript = "//"
-comment_styles.typescript = "//"
-
-[scaffold]                         # Project scaffolding layout
-always_dirs = ["src", "tests", "docs"]
-always_files = []
-optional = []
-
-[git]                              # Git integration
-auto_init = true
-initial_branch = "main"
-initial_commit = true
-initial_commit_msg = "feat: initial commit"
-branch_strategy = "trunk"
-commit_convention = "conventional"
-commit_signing = false
-hooks.pre_commit = true
-hooks.pre_push = true
-hooks.commit_msg = true
-
-[env]                              # Environment variables
-auto_create = true
-runtime_lock = true
-validation.required = []
-validation.warn_missing = []
-
-[build]                            # Build configuration
-generate_makefile = true
-task_runner = "just"
-targets = []
-
-[daemon]                           # File watcher daemon
-enabled = true
-idle_timeout_s = 300
-debounce_ms = 150
-watch_rename = true
-watch_headers = true
-watch_path_sync = true
-watch_env_drift = true
-watch_license = true
-
-[stack]                            # Language stack
-languages = ["rust"]
-indent = "4 (spaces)"
-line_width = 100
-comment_style = "//"
-
-[mcp]                              # MCP protocol server
-enabled = false
-default_transport = "stdio"
-http_port = 8080
-http_host = "127.0.0.1"
-
-[agent]                            # AI agent integration
-auto_sync = true
-generate_claude = true
-generate_agents = true
-generate_cursor = false
-generate_windsurf = false
-generate_mcp_json = false
-
-[metrics]                          # Project metrics
-enabled = true
-auto_snapshot = true
-snapshot_history = 10
-
-[serve]                            # TUI serve mode
-refresh_ms = 1000
-default_pane = "status"
-theme = "dark"
-show_registry = true
-border_style = "rounded"
-
-[toolchain]                        # Rust toolchain settings
-rust_version = ""
-clippy_lints = ""
-rustfmt_edition = ""
-target = ""
-
-[pkg]                              # Package metadata
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[license]                          # License configuration
-kind = "MIT"
-auto_insert = true
-file_header = true
-
-[snippets]                         # Code snippets
-enabled = true
-
-[workspace]                        # Workspace settings
-shared_deps = true
-shared_toolchain = true
-
-[recipe]                           # Task recipes
-recipes = []
-
-[time]                             # Time tracking
-date_format = "%Y-%m-%d"
-time_format = "%H:%M:%S"
-timestamp_format = "%Y-%m-%dT%H:%M:%S%.3fZ"
-
-[prereq]                           # Prerequisite checks
-auto_install = false
-```
+See [docs/reference/config.md](docs/reference/config.md) for the full configuration reference with all 30+ sections.

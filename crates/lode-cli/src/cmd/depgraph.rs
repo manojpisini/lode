@@ -190,7 +190,9 @@ fn depgraph_check(roots: &[String], output: OutputFormat) -> lode_core::Result<(
 
     // Return error exit code if there are issues
     if !resolution.errors.is_empty() || !resolution.conflicts.is_empty() {
-        Err(LodeError::Message("dependency graph has issues".to_string()))
+        Err(LodeError::Message(
+            "dependency graph has issues".to_string(),
+        ))
     } else {
         Ok(())
     }

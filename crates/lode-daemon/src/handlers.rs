@@ -13,8 +13,6 @@ use crate::watcher::WatcherConfig;
 
 #[derive(Error, Debug)]
 pub enum HandlerError {
-    #[error("Handler failed: {0}")]
-    Failed(String),
     #[error("Path error: {0}")]
     PathError(String),
     #[error("IO error: {0}")]
@@ -88,11 +86,7 @@ pub fn handle_modify(path: &PathBuf, config: &WatcherConfig) -> Result<Vec<Strin
     Ok(actions)
 }
 
-pub fn handle_rename(
-    from: &Path,
-    to: &Path,
-    _config: &WatcherConfig,
-) -> Result<Vec<String>, HandlerError> {
+pub fn handle_rename(from: &Path, to: &Path) -> Result<Vec<String>, HandlerError> {
     let mut actions = Vec::new();
 
     let utf8_from = Utf8PathBuf::try_from(from.to_path_buf())
@@ -112,7 +106,7 @@ pub fn handle_rename(
     Ok(actions)
 }
 
-pub fn handle_delete(path: &Path, _config: &WatcherConfig) -> Result<Vec<String>, HandlerError> {
+pub fn handle_delete(path: &Path) -> Result<Vec<String>, HandlerError> {
     let mut actions = Vec::new();
 
     let utf8_path = Utf8PathBuf::try_from(path.to_path_buf())
@@ -191,8 +185,7 @@ mod daemon_handler_tests {
         let file_path = dir.path().join("gone.rs");
         std::fs::write(&file_path, "content").unwrap();
 
-        let config = WatcherConfig::default();
-        let result = handle_delete(file_path.as_path(), &config).unwrap();
+        let result = handle_delete(file_path.as_path()).unwrap();
         assert!(result.iter().any(|a| a.starts_with("File deleted")));
     }
 }

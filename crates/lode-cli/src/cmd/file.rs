@@ -2,13 +2,13 @@
 
 use camino::Utf8PathBuf;
 use lode_core::{
-    add_managed_file, check_file_integrity, file_manifest_path, list_managed_files,
-    remove_managed_file, format_file_manifest_table, LodeError, ManagedBy,
+    add_managed_file, check_file_integrity, file_manifest_path, format_file_manifest_table,
+    list_managed_files, remove_managed_file, LodeError, ManagedBy,
 };
 
+use crate::output;
 use crate::FileCommand;
 use crate::OutputFormat;
-use crate::output;
 
 pub(crate) fn file_command(command: FileCommand) -> lode_core::Result<()> {
     match command {
@@ -26,8 +26,7 @@ pub(crate) fn file_command(command: FileCommand) -> lode_core::Result<()> {
 fn project_dir() -> lode_core::Result<Utf8PathBuf> {
     let cwd = std::env::current_dir()
         .map_err(|e| LodeError::Message(format!("cannot get current dir: {e}")))?;
-    Utf8PathBuf::from_path_buf(cwd)
-        .map_err(|_| LodeError::Message("non-UTF-8 path".to_string()))
+    Utf8PathBuf::from_path_buf(cwd).map_err(|_| LodeError::Message("non-UTF-8 path".to_string()))
 }
 
 fn file_list(output: OutputFormat) -> lode_core::Result<()> {
@@ -61,7 +60,10 @@ fn file_check(output: OutputFormat) -> lode_core::Result<()> {
     let manifest_path = file_manifest_path(&root);
 
     if !manifest_path.exists() {
-        println!("{}", output::dim("No file manifest found. Run `lode file add` first."));
+        println!(
+            "{}",
+            output::dim("No file manifest found. Run `lode file add` first.")
+        );
         return Ok(());
     }
 
@@ -92,15 +94,30 @@ fn file_check(output: OutputFormat) -> lode_core::Result<()> {
                 }
                 "modified" => {
                     modified_count += 1;
-                    println!("  {}  {}  {} changed", output::yellow("⚠"), result.path, output::red("HASH"));
+                    println!(
+                        "  {}  {}  {} changed",
+                        output::yellow("⚠"),
+                        result.path,
+                        output::red("HASH")
+                    );
                 }
                 "missing" => {
                     missing_count += 1;
-                    println!("  {}  {}  {}", output::red("✘"), result.path, output::red("MISSING"));
+                    println!(
+                        "  {}  {}  {}",
+                        output::red("✘"),
+                        result.path,
+                        output::red("MISSING")
+                    );
                 }
                 "not_tracked" => {
                     untracked_count += 1;
-                    println!("  {}  {}  {}", output::cyan("ℹ"), result.path, output::dim("(hash not tracked)"));
+                    println!(
+                        "  {}  {}  {}",
+                        output::cyan("ℹ"),
+                        result.path,
+                        output::dim("(hash not tracked)")
+                    );
                 }
                 _ => {
                     println!("  {}  {}  {}", output::red("?"), result.path, result.status);
@@ -113,13 +130,25 @@ fn file_check(output: OutputFormat) -> lode_core::Result<()> {
             println!("  {} {}", output::green("✔"), format!("{} ok", ok_count));
         }
         if modified_count > 0 {
-            println!("  {} {}", output::yellow("⚠"), format!("{} modified", modified_count));
+            println!(
+                "  {} {}",
+                output::yellow("⚠"),
+                format!("{} modified", modified_count)
+            );
         }
         if missing_count > 0 {
-            println!("  {} {}", output::red("✘"), format!("{} missing", missing_count));
+            println!(
+                "  {} {}",
+                output::red("✘"),
+                format!("{} missing", missing_count)
+            );
         }
         if untracked_count > 0 {
-            println!("  {} {}", output::cyan("ℹ"), format!("{} not tracked", untracked_count));
+            println!(
+                "  {} {}",
+                output::cyan("ℹ"),
+                format!("{} not tracked", untracked_count)
+            );
         }
     }
     Ok(())
@@ -138,10 +167,7 @@ fn file_add(
     };
 
     if !full_path.exists() {
-        return Err(LodeError::Message(format!(
-            "file not found: {}",
-            full_path
-        )));
+        return Err(LodeError::Message(format!("file not found: {}", full_path)));
     }
 
     let subsystem = match managed_by.as_deref().unwrap_or("manifest") {
@@ -171,7 +197,15 @@ fn file_add(
         output::green("✔"),
         output::bold("added"),
         entry.path,
-        output::dim(&format!("({})", entry.managed_by.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(", ")))
+        output::dim(&format!(
+            "({})",
+            entry
+                .managed_by
+                .iter()
+                .map(|m| m.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
     );
     Ok(())
 }
@@ -194,7 +228,12 @@ fn file_remove(path: Utf8PathBuf) -> lode_core::Result<()> {
         } else {
             full_path.clone()
         };
-        println!("{} {} {}", output::green("✔"), output::bold("removed"), display);
+        println!(
+            "{} {} {}",
+            output::green("✔"),
+            output::bold("removed"),
+            display
+        );
     } else {
         println!("{} {} not found in manifest", output::yellow("⚠"), path);
     }

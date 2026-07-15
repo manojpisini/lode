@@ -1,5 +1,7 @@
 #![deny(unsafe_code)]
 
+use crate::cmd::output as out;
+use crate::OutputFormat;
 use crate::ScanCommand;
 use lode_core::scan_secrets;
 
@@ -8,26 +10,33 @@ pub(crate) fn scan(command: ScanCommand) -> lode_core::Result<()> {
         ScanCommand::Secrets {
             path,
             staged,
-            json,
+            output,
             quiet,
         } => {
             let path = path.unwrap_or(crate::current_dir()?);
             if staged {
-                println!("scanning staged-compatible project path: {path}");
+                println!("  {} {}", out::info("staged"), out::dim(path.as_str()));
             }
             let report = scan_secrets(&path)?;
-            if json {
+            if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&report)
                         .map_err(|error| lode_core::LodeError::Message(error.to_string()))?
                 );
             } else if !quiet {
+                println!("{}", out::section("Secret Scan"));
                 if report.findings.is_empty() {
-                    println!("no obvious secrets found in {path}");
+                    println!("  {} {}", out::ok("clean"), out::dim(path.as_str()));
                 } else {
                     for finding in &report.findings {
-                        println!("{}:{} {}", finding.path, finding.line, finding.kind);
+                        println!(
+                            "  {} {}:{} [{}]",
+                            out::fail(""),
+                            finding.path,
+                            finding.line,
+                            out::yellow(&finding.kind)
+                        );
                     }
                 }
             }
@@ -37,27 +46,46 @@ pub(crate) fn scan(command: ScanCommand) -> lode_core::Result<()> {
                 });
             }
         }
-        ScanCommand::Foreign { path, json } => {
+        ScanCommand::Foreign { path, output } => {
             let path = path.unwrap_or(crate::current_dir()?);
             let report = crate::scan_foreign_project(&path)?;
-            if json {
+            if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&report)
                         .map_err(|error| lode_core::LodeError::Message(error.to_string()))?
                 );
             } else {
-                println!("foreign project scan: {}", report.path);
-                println!("lode_project\t{}", crate::status_bool(report.lode_project));
-                println!(
-                    "package_manager\t{}",
-                    report.package_manager.as_deref().unwrap_or("none")
-                );
-                println!("manifests\t{}", report.manifests.join(","));
-                println!("convention_violations\t{}", report.convention_violations);
-                println!("secret_findings\t{}", report.secret_findings);
+                println!("{}", out::section("Foreign Project Scan"));
+                let lode_badge = if report.lode_project {
+                    out::green("yes")
+                } else {
+                    out::red("no")
+                };
+                let rows = vec![
+                    vec!["path".to_string(), report.path.to_string()],
+                    vec!["lode project".to_string(), lode_badge],
+                    vec![
+                        "package manager".to_string(),
+                        report
+                            .package_manager
+                            .as_deref()
+                            .unwrap_or("none")
+                            .to_string(),
+                    ],
+                    vec!["manifests".to_string(), report.manifests.join(", ")],
+                    vec![
+                        "convention violations".to_string(),
+                        report.convention_violations.to_string(),
+                    ],
+                    vec![
+                        "secret findings".to_string(),
+                        report.secret_findings.to_string(),
+                    ],
+                ];
+                print!("{}", out::table(&["field", "value"], &rows));
                 for action in &report.migration_actions {
-                    println!("action\t{action}");
+                    println!("  {} {}", out::info("action"), action);
                 }
             }
         }
@@ -75,14 +103,19 @@ mod tests {
         let command = ScanCommand::Secrets {
             path: None,
             staged: false,
-            json: false,
+            output: OutputFormat::Table,
             quiet: false,
         };
         match command {
-            ScanCommand::Secrets { path, staged, json, quiet } => {
+            ScanCommand::Secrets {
+                path,
+                staged,
+                output,
+                quiet,
+            } => {
                 assert!(path.is_none());
                 assert!(!staged);
-                assert!(!json);
+                assert!(!output.should_use_json());
                 assert!(!quiet);
             }
             _ => panic!("expected Secrets variant"),
@@ -93,12 +126,12 @@ mod tests {
     fn test_scan_command_foreign() {
         let command = ScanCommand::Foreign {
             path: None,
-            json: false,
+            output: OutputFormat::Table,
         };
         match command {
-            ScanCommand::Foreign { path, json } => {
+            ScanCommand::Foreign { path, output } => {
                 assert!(path.is_none());
-                assert!(!json);
+                assert!(!output.should_use_json());
             }
             _ => panic!("expected Foreign variant"),
         }

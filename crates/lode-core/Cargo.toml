@@ -19,6 +19,8 @@ thiserror.workspace = true
 toml.workspace = true
 regex.workspace = true
 sha2.workspace = true
+aes-gcm.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -77,7 +77,10 @@ pub fn upgrade(
 
     if dry_run {
         println!("would verify staged upgrade {}", state.version);
-        println!("would record upgrade state at {}", crate::upgrade_state_path()?);
+        println!(
+            "would record upgrade state at {}",
+            crate::upgrade_state_path()?
+        );
         println!("candidate\t{}", state.candidate);
         println!("current_executable\t{}", state.current_executable);
         return Ok(());

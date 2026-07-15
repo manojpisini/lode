@@ -38,7 +38,9 @@ pub struct HandoffDecision {
 
 fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("T{}", d.as_secs())
 }
 
@@ -72,7 +74,7 @@ impl Handoff {
     }
 
     pub fn add_decision(&mut self, id: &str, desc: &str, rationale: &str, alternatives: &[String]) {
-    let _ = alternatives;
+        let _ = alternatives;
         self.decisions.push(HandoffDecision {
             id: id.to_string(),
             description: desc.to_string(),
@@ -91,7 +93,10 @@ impl Handoff {
         if !self.decisions.is_empty() {
             p.push_str("DECISIONS:\n");
             for d in &self.decisions {
-                p.push_str(&format!("  {}: {}  # {}\n", d.id, d.description, d.rationale));
+                p.push_str(&format!(
+                    "  {}: {}  # {}\n",
+                    d.id, d.description, d.rationale
+                ));
             }
             p.push('\n');
         }
@@ -101,7 +106,10 @@ impl Handoff {
         }
 
         if !self.verification_performed.is_empty() {
-            p.push_str(&format!("VERIFIED: {}\n\n", self.verification_performed.join(" ")));
+            p.push_str(&format!(
+                "VERIFIED: {}\n\n",
+                self.verification_performed.join(" ")
+            ));
         }
 
         if !self.remaining_risks.is_empty() {
@@ -192,12 +200,13 @@ impl Handoff {
         root.create_dir_all(".lode/handoffs")?;
         let path = Utf8PathBuf::from(".lode/handoffs").join(format!("{}.json", self.handoff_id));
 
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| LodeError::Message(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| LodeError::Message(e.to_string()))?;
         root.write_atomic(&path, json)?;
 
         let md = self.render_markdown();
-        let md_path = Utf8PathBuf::from("_ctx_").join(format!("HANDOFF_{}.md", &self.handoff_id[..8]));
+        let md_path =
+            Utf8PathBuf::from("_ctx_").join(format!("HANDOFF_{}.md", &self.handoff_id[..8]));
         root.write_atomic(&md_path, md)?;
 
         Ok(project_dir.join(&path))

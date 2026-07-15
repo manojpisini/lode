@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 
+use crate::cmd::output;
 use crate::{current_dir, init_git_project, InitArgs};
 use lode_core::{init_project, load_global_config, register_project, InitRequest};
 
@@ -11,14 +12,32 @@ pub(crate) fn init(args: InitArgs) -> lode_core::Result<()> {
         Some(path) => path,
         None => current_dir()?,
     };
+
+    let project_name = match &args.name {
+        Some(name) => name.clone(),
+        None => {
+            let cwd = current_dir()?;
+            cwd.file_name().map(|s| s.to_string()).ok_or_else(|| {
+                lode_core::LodeError::Message(
+                    "cannot determine project name from current directory".to_string(),
+                )
+            })?
+        }
+    };
+
     let profile_for_registry = args
         .profile
         .clone()
         .or_else(|| config.active_profile.clone())
         .unwrap_or_else(|| "core/bare".to_string());
     let selected_profile = args.profile.or_else(|| config.active_profile.clone());
+
+    if args.assimilate {
+        let _ = output::info("assimilating existing project...");
+    }
+
     let report = init_project(InitRequest {
-        name: args.name,
+        name: project_name,
         base_path,
         config,
         profile: selected_profile,
@@ -28,33 +47,37 @@ pub(crate) fn init(args: InitArgs) -> lode_core::Result<()> {
         lang: args.lang,
         preset: args.preset,
         license: args.license,
+        in_place: args.name.is_none(),
     })?;
 
     if report.dry_run {
-        println!("dry run: would initialise {}", report.project_dir);
-        for path in report.planned_paths {
-            println!("would create {}", path);
+        println!(
+            "{}",
+            output::warn(&format!("dry run: would initialise {}", report.project_dir))
+        );
+        for path in &report.planned_paths {
+            println!("  {}", output::dim(&format!("would create {}", path)));
         }
     } else {
-        println!("initialised {}", report.project_dir);
-        for path in report.wrote_paths {
-            println!("created {}", path);
-        }
+        let wrote = report.wrote_paths.len();
+        println!(
+            "{}",
+            output::ok(&format!(
+                "initialised {} ({} files)",
+                report.project_dir, wrote
+            ))
+        );
         let name = report
             .project_dir
             .file_name()
             .map(str::to_string)
             .unwrap_or_else(|| "project".to_string());
         register_project(&name, &report.project_dir, &profile_for_registry)?;
-        println!("registered {}", report.project_dir);
         if !args.no_git && git_config.auto_init {
             init_git_project(&report.project_dir, &git_config, &identity, &name)?;
         }
         if !args.no_check {
-            println!("convention check: ok");
-        }
-        if args.yes {
-            println!("auto-confirm enabled");
+            println!("{}", output::ok("convention check passed"));
         }
     }
     Ok(())
@@ -63,30 +86,6 @@ pub(crate) fn init(args: InitArgs) -> lode_core::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::InitArgs;
-
-    #[test]
-    fn test_init_args_defaults() {
-        let args = InitArgs {
-            name: "test-project".to_string(),
-            path: None,
-            profile: None,
-            components: vec![],
-            dry_run: true,
-            overwrite: false,
-            no_git: false,
-            lang: None,
-            preset: None,
-            license: None,
-            extra: vec![],
-            no_check: false,
-            yes: false,
-        };
-        assert_eq!(args.name, "test-project");
-        assert!(args.dry_run);
-        assert!(!args.overwrite);
-        assert!(args.profile.is_none());
-    }
 
     #[test]
     fn test_init_fn_exists() {

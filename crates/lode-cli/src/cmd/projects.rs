@@ -5,11 +5,11 @@ use lode_core::{
     save_registry, LodeError,
 };
 
-use crate::{current_dir, ProjectsCommand};
+use crate::{current_dir, OutputFormat, ProjectsCommand};
 
 pub(crate) fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
     match command {
-        ProjectsCommand::List { format, sort } => {
+        ProjectsCommand::List { output, sort } => {
             let mut registry = load_registry()?;
             match sort.as_str() {
                 "name" => registry
@@ -17,9 +17,7 @@ pub(crate) fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
                     .sort_by(|left, right| left.name.cmp(&right.name)),
                 "health" => registry
                     .projects
-                    .sort_by(|left, right| {
-                        left.path.exists().cmp(&right.path.exists()).reverse()
-                    }),
+                    .sort_by(|left, right| left.path.exists().cmp(&right.path.exists()).reverse()),
                 "last-seen" => registry
                     .projects
                     .sort_by(|left, right| right.last_seen.cmp(&left.last_seen)),
@@ -31,7 +29,7 @@ pub(crate) fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
             }
             if registry.projects.is_empty() {
                 println!("no registered projects");
-            } else if format == "json" {
+            } else if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&registry.projects)
@@ -77,7 +75,7 @@ pub(crate) fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
         }
         ProjectsCommand::Health {
             stale_only,
-            json,
+            output,
             refresh,
         } => {
             let registry = load_registry()?;
@@ -105,7 +103,7 @@ pub(crate) fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
                     "score": score,
                 }));
             }
-            if json {
+            if output.should_use_json() {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&rows)

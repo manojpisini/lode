@@ -5,7 +5,9 @@ use std::fs;
 use camino::Utf8PathBuf;
 use lode_core::{LodeError, ValidatedRoot};
 
-use crate::{current_dir, json_pretty, run_make, run_process_status, safe_relative_path, WorkspaceCommand};
+use crate::{
+    current_dir, json_pretty, run_make, run_process_status, safe_relative_path, WorkspaceCommand,
+};
 
 pub(crate) fn workspace(command: WorkspaceCommand) -> lode_core::Result<()> {
     match command {

@@ -63,7 +63,8 @@ pub fn analyze_project(path: &Utf8PathBuf) -> AdoptionReport {
 
     let mut missing_recommendations = Vec::new();
     if !path.join(".editorconfig").exists() {
-        missing_recommendations.push("add .editorconfig for consistent editor settings".to_string());
+        missing_recommendations
+            .push("add .editorconfig for consistent editor settings".to_string());
     }
     if !path.join(".gitignore").exists() {
         missing_recommendations.push("add .gitignore for version control hygiene".to_string());
@@ -79,7 +80,12 @@ pub fn analyze_project(path: &Utf8PathBuf) -> AdoptionReport {
     }
 
     let mut action_plan = Vec::new();
-    action_plan.push(format!("lode init {project_name} --path {} --profile {recommended_profile}", path.parent().map(|p| p.to_string()).unwrap_or_else(|| ".".to_string())));
+    action_plan.push(format!(
+        "lode init {project_name} --path {} --profile {recommended_profile}",
+        path.parent()
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| ".".to_string())
+    ));
     if !recommended_components.is_empty() {
         action_plan.push(format!("  --with {}", recommended_components.join(",")));
     }
@@ -90,7 +96,8 @@ pub fn analyze_project(path: &Utf8PathBuf) -> AdoptionReport {
         action_plan.push(rec.clone());
     }
     if !has_git {
-        action_plan.push("initialize git repository (lode init does this automatically)".to_string());
+        action_plan
+            .push("initialize git repository (lode init does this automatically)".to_string());
     }
     if !has_git_remote && has_git {
         action_plan.push("set up a git remote for version control collaboration".to_string());
@@ -122,9 +129,18 @@ pub fn analyze_project(path: &Utf8PathBuf) -> AdoptionReport {
 
 fn detect_manifests(path: &Utf8PathBuf) -> Vec<String> {
     let candidates = [
-        "Cargo.toml", "package.json", "pyproject.toml", "requirements.txt",
-        "go.mod", "build.gradle", "settings.gradle", "pom.xml", "Gemfile",
-        "CMakeLists.txt", "build.zig", "Cargo.lock",
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "requirements.txt",
+        "go.mod",
+        "build.gradle",
+        "settings.gradle",
+        "pom.xml",
+        "Gemfile",
+        "CMakeLists.txt",
+        "build.zig",
+        "Cargo.lock",
     ];
     let mut found: Vec<String> = candidates
         .iter()
@@ -133,10 +149,7 @@ fn detect_manifests(path: &Utf8PathBuf) -> Vec<String> {
         .collect();
 
     // Also check some well-known subdirectory manifests
-    let subdir_manifests = [
-        "src-tauri/Cargo.toml",
-        "fabric/build.gradle",
-    ];
+    let subdir_manifests = ["src-tauri/Cargo.toml", "fabric/build.gradle"];
     for m in &subdir_manifests {
         if path.join(m).exists() && !found.iter().any(|f| f == m) {
             found.push(m.to_string());
@@ -148,12 +161,23 @@ fn detect_manifests(path: &Utf8PathBuf) -> Vec<String> {
 
 fn detect_config_files(path: &Utf8PathBuf) -> Vec<String> {
     let candidates = [
-        "rust-toolchain.toml", ".nvmrc", ".python-version",
-        "tsconfig.json", ".editorconfig", ".gitignore",
-        "Dockerfile", "docker-compose.yml", "compose.yml",
-        ".github/workflows/ci.yml", "Makefile", "Justfile",
-        "manage.py", "vite.config.ts", "next.config.js",
-        "svelte.config.js", "astro.config.mjs",
+        "rust-toolchain.toml",
+        ".nvmrc",
+        ".python-version",
+        "tsconfig.json",
+        ".editorconfig",
+        ".gitignore",
+        "Dockerfile",
+        "docker-compose.yml",
+        "compose.yml",
+        ".github/workflows/ci.yml",
+        "Makefile",
+        "Justfile",
+        "manage.py",
+        "vite.config.ts",
+        "next.config.js",
+        "svelte.config.js",
+        "astro.config.mjs",
     ];
     candidates
         .iter()
@@ -287,7 +311,11 @@ fn detect_languages(
             indicators,
         })
         .collect();
-    result.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    result.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     result
 }
 
@@ -444,7 +472,11 @@ fn detect_frameworks(
         }
     }
 
-    frameworks.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    frameworks.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     frameworks
 }
 
@@ -493,7 +525,10 @@ fn recommend_profile_and_components(
         return ("tauri".to_string(), recommend_rust_components(frameworks));
     }
     if frameworks.iter().any(|f| f.name == "Django") {
-        return ("django".to_string(), recommend_python_components(frameworks));
+        return (
+            "django".to_string(),
+            recommend_python_components(frameworks),
+        );
     }
 
     let has_ts_src = manifests.iter().any(|m| m == "tsconfig.json");
@@ -510,18 +545,32 @@ fn recommend_profile_and_components(
             }
             "python" => {
                 if frameworks.iter().any(|f| f.name == "Django") {
-                    return ("django".to_string(), recommend_python_components(frameworks));
+                    return (
+                        "django".to_string(),
+                        recommend_python_components(frameworks),
+                    );
                 }
-                return ("python".to_string(), recommend_python_components(frameworks));
+                return (
+                    "python".to_string(),
+                    recommend_python_components(frameworks),
+                );
             }
             "typescript" | "javascript" => {
                 if has_package_json {
                     for fw in frameworks {
                         match fw.name.as_str() {
-                            "Next.js" => return ("next".to_string(), recommend_js_components(frameworks)),
-                            "Svelte" => return ("svelte".to_string(), recommend_js_components(frameworks)),
-                            "Astro" => return ("astro".to_string(), recommend_js_components(frameworks)),
-                            "React" if has_ts_src => return ("react".to_string(), recommend_js_components(frameworks)),
+                            "Next.js" => {
+                                return ("next".to_string(), recommend_js_components(frameworks))
+                            }
+                            "Svelte" => {
+                                return ("svelte".to_string(), recommend_js_components(frameworks))
+                            }
+                            "Astro" => {
+                                return ("astro".to_string(), recommend_js_components(frameworks))
+                            }
+                            "React" if has_ts_src => {
+                                return ("react".to_string(), recommend_js_components(frameworks))
+                            }
                             _ => {}
                         }
                     }
@@ -555,7 +604,8 @@ fn recommend_python_components(_frameworks: &[FrameworkInfo]) -> Vec<String> {
 
 fn recommend_js_components(frameworks: &[FrameworkInfo]) -> Vec<String> {
     let mut components = vec!["ci".to_string(), "vscode".to_string()];
-    if frameworks.iter().any(|f| f.name == "Docker") || std::path::Path::new("Dockerfile").exists() {
+    if frameworks.iter().any(|f| f.name == "Docker") || std::path::Path::new("Dockerfile").exists()
+    {
         components.push("docker".to_string());
     }
     components
@@ -564,7 +614,9 @@ fn recommend_js_components(frameworks: &[FrameworkInfo]) -> Vec<String> {
 fn build_toolchains(languages: &[LanguageInfo], manifests: &[String]) -> Vec<String> {
     let mut toolchains = Vec::new();
 
-    let has_cargo_lock = manifests.iter().any(|m| m == "Cargo.lock" || m == "Cargo.toml");
+    let has_cargo_lock = manifests
+        .iter()
+        .any(|m| m == "Cargo.lock" || m == "Cargo.toml");
     let has_package_lock = manifests.iter().any(|m| m == "package.json");
 
     for lang in languages {
@@ -654,7 +706,11 @@ pub fn format_adoption_report(report: &AdoptionReport) -> String {
     } else {
         for lang in &report.languages {
             let pct = (lang.confidence * 100.0) as u32;
-            lines.push(format!("  {pct:>3}%  {}  [{}]", lang.name, lang.indicators.join(", ")));
+            lines.push(format!(
+                "  {pct:>3}%  {}  [{}]",
+                lang.name,
+                lang.indicators.join(", ")
+            ));
         }
     }
     lines.push(String::new());
@@ -664,14 +720,25 @@ pub fn format_adoption_report(report: &AdoptionReport) -> String {
         lines.push("Frameworks:".to_string());
         for fw in &report.frameworks {
             let pct = (fw.confidence * 100.0) as u32;
-            lines.push(format!("  {pct:>3}%  {} ({})  [{}]", fw.name, fw.language, fw.indicators.join(", ")));
+            lines.push(format!(
+                "  {pct:>3}%  {} ({})  [{}]",
+                fw.name,
+                fw.language,
+                fw.indicators.join(", ")
+            ));
         }
         lines.push(String::new());
     }
 
     // Package manager
     lines.push("Package Manager:".to_string());
-    lines.push(format!("  {}", report.package_manager.as_deref().unwrap_or("(none detected)")));
+    lines.push(format!(
+        "  {}",
+        report
+            .package_manager
+            .as_deref()
+            .unwrap_or("(none detected)")
+    ));
     lines.push(String::new());
 
     // Toolchains
@@ -705,7 +772,10 @@ pub fn format_adoption_report(report: &AdoptionReport) -> String {
     lines.push("Recommended Profile:".to_string());
     lines.push(format!("  {}", report.recommended_profile));
     if !report.recommended_components.is_empty() {
-        lines.push(format!("  Components: {}", report.recommended_components.join(", ")));
+        lines.push(format!(
+            "  Components: {}",
+            report.recommended_components.join(", ")
+        ));
     }
     lines.push(String::new());
 
@@ -824,7 +894,11 @@ mod tests {
         let path = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
         let git_dir = path.join(".git");
         fs::create_dir_all(&git_dir).unwrap();
-        fs::write(git_dir.join("config"), "[core]\n\trepositoryformatversion = 0\n").unwrap();
+        fs::write(
+            git_dir.join("config"),
+            "[core]\n\trepositoryformatversion = 0\n",
+        )
+        .unwrap();
         let report = analyze_project(&path);
         assert!(report.has_git);
         assert!(!report.has_git_remote);
@@ -899,8 +973,10 @@ mod tests {
         .unwrap();
         fs::write(path.join("package.json"), r#"{"dependencies":{}}"#).unwrap();
         let report = analyze_project(&path);
-        assert!(report.frameworks.iter().any(|f| f.name == "Tauri"),
-            "Tauri should be detected from src-tauri/Cargo.toml");
+        assert!(
+            report.frameworks.iter().any(|f| f.name == "Tauri"),
+            "Tauri should be detected from src-tauri/Cargo.toml"
+        );
         assert_eq!(report.recommended_profile, "tauri");
     }
 
@@ -910,7 +986,13 @@ mod tests {
         let path = Utf8PathBuf::from_path_buf(dir.path().to_path_buf()).unwrap();
         let report = analyze_project(&path);
         assert!(!report.missing_recommendations.is_empty());
-        assert!(report.missing_recommendations.iter().any(|r| r.contains(".editorconfig")));
-        assert!(report.missing_recommendations.iter().any(|r| r.contains(".gitignore")));
+        assert!(report
+            .missing_recommendations
+            .iter()
+            .any(|r| r.contains(".editorconfig")));
+        assert!(report
+            .missing_recommendations
+            .iter()
+            .any(|r| r.contains(".gitignore")));
     }
 }

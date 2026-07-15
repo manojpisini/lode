@@ -62,7 +62,7 @@ pub fn test_assets(config: &LodeConfig, id_filter: Option<&str>) -> Result<Asset
     })
 }
 
-fn test_single_asset(config: &LodeConfig, entry: &AssetCatalogEntry) -> AssetTestResult {
+fn test_single_asset(_config: &LodeConfig, entry: &AssetCatalogEntry) -> AssetTestResult {
     let mut failures = Vec::new();
     let mut warnings = Vec::new();
 

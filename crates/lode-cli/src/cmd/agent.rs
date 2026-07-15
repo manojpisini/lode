@@ -54,7 +54,8 @@ fn agent_bootstrap(output: OutputFormat) -> lode_core::Result<()> {
         println!();
         if let Some(ref project) = info.project {
             println!("Project:     {}", project.name);
-            println!("Language:    {}",
+            println!(
+                "Language:    {}",
                 project.language.as_deref().unwrap_or("(detecting)")
             );
         } else {
@@ -88,8 +89,7 @@ fn agent_policy(output: OutputFormat) -> lode_core::Result<()> {
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&report).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         println!("{}", output::bold("Agent Policy Generated"));

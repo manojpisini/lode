@@ -32,20 +32,21 @@ pub fn lode_audit(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
 
     if !root.join(".lode").exists() {
-        return Err(format!("No LODE project found at {path}"));
+        return Err(format!("No LODE project found at {}", root));
     }
 
     let config = lode_core::config::default_config();
-    let report = lode_core::audit_project(&root, &config).map_err(|e| e.to_string())?;
+    let report = lode_core::audit_project(root, &config).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "score": report.score,
         "convention_violations": report.convention_violations,
         "secret_findings": report.secret_findings,
@@ -60,15 +61,16 @@ pub fn lode_metrics(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
 
-    let report = lode_core::load_metrics(&root).map_err(|e| e.to_string())?;
+    let report = lode_core::load_metrics(root).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "score": report.score,
         "convention_violations": report.convention_violations,
         "secret_findings": report.secret_findings,

@@ -72,7 +72,22 @@ where
 {
     Process::new("git")?.args(args).current_dir(path).output()
 }
+fn git_validate_arg(value: &str, name: &str) -> Result<()> {
+    if value.starts_with('-') {
+        return Err(LodeError::Message(format!(
+            "git {name} must not start with '-'"
+        )));
+    }
+    if value.contains('\n') || value.contains('\r') {
+        return Err(LodeError::Message(format!(
+            "git {name} must not contain newlines"
+        )));
+    }
+    Ok(())
+}
+
 pub fn git_init(path: &Path, branch: &str) -> Result<()> {
+    git_validate_arg(branch, "branch")?;
     let status = git_status(path, ["init", "-b", branch])?;
 
     if !status.success() {
@@ -91,6 +106,7 @@ pub fn git_add_all(path: &Path) -> Result<()> {
 }
 
 pub fn git_commit(path: &Path, message: &str) -> Result<()> {
+    git_validate_arg(message, "commit message")?;
     let status = git_status(path, ["commit", "-m", message])?;
 
     if !status.success() {
@@ -106,6 +122,8 @@ pub fn git_config_user(path: &Path, name: &str, email: &str) -> Result<()> {
 }
 
 fn git_config_set(path: &Path, key: &str, value: &str) -> Result<()> {
+    git_validate_arg(key, "config key")?;
+    git_validate_arg(value, "config value")?;
     let status = git_status(path, ["config", key, value])?;
 
     if !status.success() {
@@ -117,6 +135,10 @@ fn git_config_set(path: &Path, key: &str, value: &str) -> Result<()> {
 }
 
 pub fn git_tag(path: &Path, tag: &str, message: Option<&str>) -> Result<()> {
+    git_validate_arg(tag, "tag")?;
+    if let Some(msg) = message {
+        git_validate_arg(msg, "tag message")?;
+    }
     let mut args = vec!["tag".to_string()];
     if let Some(msg) = message {
         args.extend([

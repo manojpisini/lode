@@ -11,13 +11,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     assets, config,
+    config::assets::EvaluateContext,
     fs_safety::ValidatedRoot,
-    global_dir,
+    global_asset_dir, global_dir,
     template::{
         render_template, render_template_with_resolver, slug_to_class, slug_to_ident, RenderContext,
     },
     LodeError, Result,
 };
+
+const LODE_PROJECT_SUBDIRS: &[&str] = &["notes", "decisions", "plans"];
+
+const GLOBAL_AGENT_FILES: &[&str] = &[
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CODEX.md",
+    ".cursorrules",
+    ".windsurfrules",
+    ".mcp.json",
+    "PLAN.md",
+    "CONSTRAINTS.md",
+    "REVIEW.md",
+    "TASKS.md",
+    "MEMORY.md",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InitRequest {
@@ -31,6 +48,7 @@ pub struct InitRequest {
     pub lang: Option<String>,
     pub preset: Option<String>,
     pub license: Option<String>,
+    pub in_place: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +82,23 @@ pub struct ProjectSection {
     pub created_at: String,
     pub profile: String,
     pub components: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toolchain: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assets: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<ProjectDependency>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectDependency {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,17 +124,28 @@ struct ManifestItem {
 
 pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
     let base_root = ValidatedRoot::new(&request.base_path)?;
-    let project_dir =
-        Utf8PathBuf::from_path_buf(base_root.resolve(&request.name)?).map_err(|path| {
-            LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
-        })?;
-    let project_config_path = project_dir.join(".lode").join("project.toml");
-
-    if project_config_path.exists() && !request.overwrite {
-        return Err(LodeError::AlreadyInitialised {
-            path: PathBuf::from(project_config_path.as_str()),
-        });
-    }
+    let project_dir = if request.in_place {
+        let dir = request.base_path.clone();
+        let config_path = dir.join(".lode").join("project.toml");
+        if config_path.exists() && !request.overwrite {
+            return Err(LodeError::AlreadyInitialised {
+                path: PathBuf::from(config_path.as_str()),
+            });
+        }
+        dir
+    } else {
+        let dir =
+            Utf8PathBuf::from_path_buf(base_root.resolve(&request.name)?).map_err(|path| {
+                LodeError::Message(format!("path is not valid UTF-8: {}", path.display()))
+            })?;
+        let config_path = dir.join(".lode").join("project.toml");
+        if config_path.exists() && !request.overwrite {
+            return Err(LodeError::AlreadyInitialised {
+                path: PathBuf::from(config_path.as_str()),
+            });
+        }
+        dir
+    };
 
     let profile = request.profile.as_deref().unwrap_or("core/bare");
     let context = RenderContext::new()
@@ -111,7 +157,26 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
         .with("license", &request.config.identity.license)
         .with("year", crate::current_year())
         .with("profile", profile);
-    let manifest = scaffold_manifest(Some(profile), &request.components);
+    let mut manifest = scaffold_manifest(Some(profile), &request.components);
+
+    let mut eval_ctx = EvaluateContext::from_env().with_profile(profile);
+    eval_ctx.features_from_profile(profile);
+    manifest.retain(|item| {
+        let entry = request.config.assets.templates.get(item.template);
+        match entry {
+            Some(e) => {
+                let active = e.is_active(&eval_ctx);
+                if !active {
+                    eprintln!(
+                        "lode: skipping template '{}' (disabled in config)",
+                        item.template
+                    );
+                }
+                active
+            }
+            None => true,
+        }
+    });
 
     let mut planned_paths = Vec::new();
     planned_paths.push(project_dir.clone());
@@ -134,13 +199,24 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
     }
 
     let mut wrote_paths = Vec::new();
-    base_root.create_dir_all(&request.name)?;
+    if !request.in_place {
+        base_root.create_dir_all(&request.name)?;
+    }
     let root = ValidatedRoot::new(&project_dir)?;
     wrote_paths.push(project_dir.clone());
 
     for dir in &request.config.scaffold.always_dirs {
         let path = project_dir.join(dir);
         root.create_dir_all(dir)?;
+        wrote_paths.push(path);
+    }
+
+    let lode_dir = project_dir.join(".lode");
+    for subdir in LODE_PROJECT_SUBDIRS {
+        let path = lode_dir.join(subdir);
+        if !path.exists() {
+            root.create_dir_all(path.strip_prefix(&project_dir).unwrap())?;
+        }
         wrote_paths.push(path);
     }
 
@@ -180,6 +256,42 @@ pub fn init_project(request: InitRequest) -> Result<ScaffoldReport> {
             entries: lock_entries,
         },
     )?;
+
+    if let Ok(agent_dir) = global_asset_dir("agents") {
+        if agent_dir.exists() {
+            let agent_path = agent_dir.as_std_path();
+            for file_name in GLOBAL_AGENT_FILES {
+                let src = agent_path.join(file_name);
+                let dst = project_dir.as_std_path().join(file_name);
+                if src.exists() && (!dst.exists() || request.overwrite) {
+                    if let Ok(contents) = std::fs::read_to_string(&src) {
+                        let _ = root.write_atomic(file_name, &contents);
+                    }
+                }
+            }
+            for subdir in &["skills", "prompts", "plans"] {
+                let agent_sub = agent_path.join(subdir);
+                if agent_sub.exists() {
+                    let dest_dir = project_dir.join(".agents").join(subdir);
+                    let dest_path = dest_dir.as_std_path();
+                    let _ = std::fs::create_dir_all(dest_path);
+                    if let Ok(entries) = std::fs::read_dir(&agent_sub) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() {
+                                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                    let dest_file = dest_path.join(name);
+                                    if !dest_file.exists() || request.overwrite {
+                                        let _ = std::fs::copy(&path, &dest_file);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(ScaffoldReport {
         project_dir,
@@ -376,7 +488,7 @@ fn write_scaffold_lock(root: &ValidatedRoot, mut lock: ScaffoldLock) -> Result<(
     Ok(())
 }
 
-fn load_project_config(project_dir: &Utf8PathBuf) -> Result<ProjectConfig> {
+pub fn load_project_config(project_dir: &Utf8PathBuf) -> Result<ProjectConfig> {
     let path = project_dir.join(".lode").join("project.toml");
     let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
         path: PathBuf::from(path.as_str()),
@@ -652,6 +764,10 @@ fn project_config_toml(name: &str, profile: &str, components: &[String]) -> Resu
             created_at: created_at(),
             profile: profile.to_string(),
             components: components.to_vec(),
+            language: None,
+            toolchain: None,
+            assets: None,
+            dependencies: None,
         },
     };
 
@@ -686,6 +802,7 @@ mod tests {
             lang: None,
             preset: None,
             license: None,
+            in_place: false,
         })
         .unwrap();
 
@@ -711,6 +828,7 @@ mod tests {
             lang: None,
             preset: None,
             license: None,
+            in_place: false,
         })
         .unwrap_err();
 
@@ -739,6 +857,7 @@ mod tests {
             lang: None,
             preset: None,
             license: None,
+            in_place: false,
         })
         .unwrap_err();
 
@@ -769,6 +888,7 @@ mod tests {
             lang: None,
             preset: None,
             license: None,
+            in_place: false,
         })
         .unwrap();
 
@@ -812,6 +932,7 @@ mod tests {
             lang: None,
             preset: None,
             license: None,
+            in_place: false,
         })
         .unwrap();
 
@@ -837,6 +958,7 @@ mod tests {
             lang: None,
             preset: None,
             license: None,
+            in_place: false,
         })
         .unwrap();
 

@@ -99,10 +99,7 @@ fn is_secret_allowlisted_path(path: &Utf8Path) -> bool {
     let Some(name) = path.file_name() else {
         return false;
     };
-    matches!(
-        name,
-        ".env" | ".env.local" | ".env.development" | ".env.production" | ".env.test"
-    )
+    matches!(name, ".env.example" | ".env.dist")
 }
 
 fn classify_secret(line: &str) -> Option<&'static str> {
@@ -191,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn skips_real_env_files_but_scans_examples() {
+    fn scans_env_files_and_skips_examples() {
         let temp = tempfile::tempdir().unwrap();
         let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
         fs::write(root.join(".env"), "API_KEY=real-value\n").unwrap();
@@ -200,6 +197,6 @@ mod tests {
         let report = scan_secrets(&root).unwrap();
 
         assert_eq!(report.findings.len(), 1);
-        assert_eq!(report.findings[0].path.file_name(), Some(".env.example"));
+        assert_eq!(report.findings[0].path.file_name(), Some(".env"));
     }
 }

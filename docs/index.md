@@ -1,48 +1,48 @@
 # LODE Documentation
 
-**LODE** is a local Rust developer tool providing project scaffolding, convention enforcement, secret scanning, daemon automation, TUI dashboard, MCP server, and LSP integration.
+LODE is a local Rust developer tool with filesystem writes, daemon automation, child-process execution, plugins, MCP tools, and secret scanning.
 
-## Quick Links
+## Quick Start
+
+```bash
+cargo install lode-cli
+lode init my-project
+lode check
+```
+
+## Documentation Sections
 
 | Section | Description |
-|---|---|
-| [Architecture](architecture/index.md) | Workspace structure, crate design, data flow |
-| [Guides](guides/index.md) | Getting started, development workflow, extensions |
-| [Reference](reference/index.md) | CLI commands, configuration, MCP tools, LSP protocol |
-| [Operations](operations/index.md) | Daemon, TUI, build, release, troubleshooting |
+|---------|-------------|
+| [Architecture](architecture/index.md) | System design, crate layering, security boundaries |
+| [Guides](guides/index.md) | Task-oriented guides for common workflows |
+| [Reference](reference/index.md) | Configuration, templates, plugins, snippets, recipes, commands |
+| [Operations](operations/index.md) | Daemon, TUI, MCP server, LSP server operations |
+| [User Manual](user_manual/index.md) | Complete user manual |
 
-## Project Overview
-
-- **Language**: Rust (edition 2021)
-- **License**: MIT
-- **Repository**: github.com/lode-rs/lode
-- **Status**: Active development
-- **Platforms**: Linux, macOS, Windows
-
-### What LODE Provides
-
-| Capability | Description |
-|---|---|
-| Scaffolding | Initialize projects, add components, sync templates |
-| Convention Enforcement | File/folder naming rules, custom rule engine |
-| Secret Scanning | Detect API keys, tokens, private keys in source |
-| Background Daemon | File watcher with IPC, idle watchdog, signature auto-stamp |
-| Terminal UI | 7-pane dashboard with widgets (heatmap, score ring, sparklines) |
-| MCP Server | 38 tools, 8 resources, 3 prompts for AI agent integration |
-| LSP Server | Diagnostics, completions, hover, code actions for editors |
-| CLI | 60+ commands covering the full development lifecycle |
-
-## Documentation Map
+## Project Structure
 
 ```
-docs/
-  index.md              -- YOU ARE HERE
-  architecture/
-    index.md            -- Crate architecture, data flow, security model
-  guides/
-    index.md            -- Getting started, development, extension guides
-  reference/
-    index.md            -- CLI reference, config, MCP tools, LSP protocol
-  operations/
-    index.md            -- Daemon, TUI, build, release, troubleshooting
+crates/
+  lode-core/    — Core library (config, rules, secrets, templates)
+  lode-cli/     — CLI binary (40+ commands)
+  lode-daemon/  — Background file watcher
+  lode-mcp/     — MCP server (44 tools)
+  lode-tui/     — Terminal UI (7 panes)
+  lode-lsp/     — LSP server
+extensions/
+  vscode-lode/  — VS Code extension
+  lode.nvim/    — Neovim plugin
+  zed-lode/     — Zed extension
+prompts/         — UPPS v5.2.0 prompt suite
 ```
+
+## Key Features
+
+- **Scaffolding:** `lode init`, `lode add`, templates, recipes, snippets
+- **Validation:** `lode check`, `lode fix`, `lode scan`, `lode audit`
+- **Orchestration:** `lode agent`, `lode context`, `lode plan`
+- **Daemon:** Background file watching, IPC, auto-shutdown
+- **MCP:** 44 tools, 9 resources, 3 prompts
+- **Secrets:** Scanning, redaction, brokering
+- **Template Bundles:** Capture, apply, validate, verify

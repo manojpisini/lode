@@ -136,11 +136,7 @@ pub fn add_managed_file(
     let now = timestamp();
     let relative_path = normalize_path(&relativize_path(root, path));
 
-    if let Some(existing) = manifest
-        .files
-        .iter_mut()
-        .find(|e| e.path == relative_path)
-    {
+    if let Some(existing) = manifest.files.iter_mut().find(|e| e.path == relative_path) {
         if !existing.managed_by.contains(&managed_by) {
             existing.managed_by.push(managed_by);
         }
@@ -232,7 +228,10 @@ pub fn format_file_manifest_table(entries: &[FileEntry]) -> String {
         return "No managed files.".to_string();
     }
 
-    let header = format!(" {:<4} {:<40} {:<20} {:<15} {}", "#", "Path", "Managed By", "Hash", "Description");
+    let header = format!(
+        " {:<4} {:<40} {:<20} {:<15} {}",
+        "#", "Path", "Managed By", "Hash", "Description"
+    );
     let sep = format!("{:-<100}", "");
     let mut lines = vec![header, sep];
 
@@ -360,13 +359,7 @@ mod tests {
         fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         fs::write(&file_path, b"nested content").unwrap();
 
-        let entry = add_managed_file(
-            &root,
-            &file_path,
-            ManagedBy::Adopt,
-            "nested file",
-        )
-        .unwrap();
+        let entry = add_managed_file(&root, &file_path, ManagedBy::Adopt, "nested file").unwrap();
 
         assert_eq!(entry.path.as_str(), "subdir/nested.txt");
     }
@@ -376,10 +369,20 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
 
-        add_managed_file(&root, &Utf8PathBuf::from("a.txt"), ManagedBy::Init, "file a")
-            .unwrap();
-        add_managed_file(&root, &Utf8PathBuf::from("b.txt"), ManagedBy::Init, "file b")
-            .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("a.txt"),
+            ManagedBy::Init,
+            "file a",
+        )
+        .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("b.txt"),
+            ManagedBy::Init,
+            "file b",
+        )
+        .unwrap();
 
         assert_eq!(list_managed_files(&root).unwrap().len(), 2);
 
@@ -406,10 +409,20 @@ mod tests {
         let file_path = root.join("shared.txt");
         fs::write(&file_path, b"shared content").unwrap();
 
-        add_managed_file(&root, &Utf8PathBuf::from("shared.txt"), ManagedBy::Scaffold, "first")
-            .unwrap();
-        add_managed_file(&root, &Utf8PathBuf::from("shared.txt"), ManagedBy::Agent, "second")
-            .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("shared.txt"),
+            ManagedBy::Scaffold,
+            "first",
+        )
+        .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("shared.txt"),
+            ManagedBy::Agent,
+            "second",
+        )
+        .unwrap();
 
         let files = list_managed_files(&root).unwrap();
         assert_eq!(files.len(), 1);
@@ -425,8 +438,13 @@ mod tests {
         let file_path = root.join("tracked.txt");
         fs::write(&file_path, b"original content").unwrap();
 
-        add_managed_file(&root, &Utf8PathBuf::from("tracked.txt"), ManagedBy::Scaffold, "tracked")
-            .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("tracked.txt"),
+            ManagedBy::Scaffold,
+            "tracked",
+        )
+        .unwrap();
 
         // Modify the file
         fs::write(&file_path, b"modified content").unwrap();
@@ -443,8 +461,13 @@ mod tests {
         let file_path = root.join("stable.txt");
         fs::write(&file_path, b"stable content").unwrap();
 
-        add_managed_file(&root, &Utf8PathBuf::from("stable.txt"), ManagedBy::Sync, "stable")
-            .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("stable.txt"),
+            ManagedBy::Sync,
+            "stable",
+        )
+        .unwrap();
 
         let results = check_file_integrity(&root).unwrap();
         assert_eq!(results.len(), 1);
@@ -509,8 +532,13 @@ mod tests {
         let file_path = root.join("cycle.txt");
         fs::write(&file_path, b"cycle content").unwrap();
 
-        add_managed_file(&root, &Utf8PathBuf::from("cycle.txt"), ManagedBy::Scaffold, "cycle test")
-            .unwrap();
+        add_managed_file(
+            &root,
+            &Utf8PathBuf::from("cycle.txt"),
+            ManagedBy::Scaffold,
+            "cycle test",
+        )
+        .unwrap();
 
         let loaded = load_file_manifest(&root).unwrap();
         assert_eq!(loaded.files.len(), 1);

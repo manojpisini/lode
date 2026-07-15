@@ -12,12 +12,6 @@ pub struct McpServer {
     validator: ToolInputValidator,
 }
 
-impl Default for McpServer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl McpServer {
     pub fn new() -> Self {
         let tools = register_all_tools();

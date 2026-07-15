@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
 use crate::TimeCommand;
-use lode_core::{ValidatedRoot, LodeError};
+use lode_core::{LodeError, ValidatedRoot};
 
 pub(crate) fn time_command(command: TimeCommand) -> lode_core::Result<()> {
     match command {

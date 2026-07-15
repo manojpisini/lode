@@ -3,7 +3,9 @@
 use std::fs;
 
 use camino::Utf8PathBuf;
-use lode_core::{default_config, load_global_config, save_global_config, LodeError, SCHEMA_VERSION};
+use lode_core::{
+    default_config, load_global_config, save_global_config, LodeError, SCHEMA_VERSION,
+};
 
 use crate::{ConfigCommand, OutputFormat};
 
@@ -29,7 +31,9 @@ pub(crate) fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
             };
             let value = config_section_value(value, section.as_deref())?;
             match format {
-                OutputFormat::Toml => println!("{}", toml::to_string_pretty(&value)?),
+                OutputFormat::Toml | OutputFormat::Table => {
+                    println!("{}", toml::to_string_pretty(&value)?)
+                }
                 OutputFormat::Json => println!(
                     "{}",
                     serde_json::to_string_pretty(&value)
@@ -87,11 +91,7 @@ pub(crate) fn config_command(command: ConfigCommand) -> lode_core::Result<()> {
                 "git.auto_init" => value.git.auto_init.to_string(),
                 "git.initial_commit" => value.git.initial_commit.to_string(),
                 "git.initial_commit_msg" => value.git.initial_commit_msg,
-                _ => {
-                    return Err(LodeError::Message(format!(
-                        "unsupported config key: {key}"
-                    )))
-                }
+                _ => return Err(LodeError::Message(format!("unsupported config key: {key}"))),
             };
             println!("Current value for {key}: {current}");
             println!("Config file: {global_config_path}");
@@ -226,11 +226,7 @@ fn set_config_value(
         "git.auto_init" => config.git.auto_init = parse_bool(value)?,
         "git.initial_commit" => config.git.initial_commit = parse_bool(value)?,
         "git.initial_commit_msg" => config.git.initial_commit_msg = value.to_string(),
-        _ => {
-            return Err(LodeError::Message(format!(
-                "unsupported config key: {key}"
-            )))
-        }
+        _ => return Err(LodeError::Message(format!("unsupported config key: {key}"))),
     }
     Ok(())
 }

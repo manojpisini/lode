@@ -62,16 +62,16 @@ pub fn lode_pkg_outdated(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
 
     let args = lode_core::package_outdated_args(&pm).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "package_manager": pm,
         "args": args,
     }))
@@ -82,16 +82,16 @@ pub fn lode_pkg_audit(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
 
     let args = lode_core::package_audit_args(&pm, None).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "package_manager": pm,
         "args": args,
     }))
@@ -103,16 +103,16 @@ pub fn lode_pkg_update(args: &Value) -> Result<Value, String> {
         .ok_or("Missing required argument: path")?;
     let package = args["package"].as_str();
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
 
     let args = lode_core::package_update_args(&pm, package).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "package_manager": pm,
         "args": args,
     }))
@@ -123,14 +123,14 @@ pub fn lode_pkg_list(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let pm = lode_core::detect_package_manager(root);
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "package_manager": pm,
     }))
 }
@@ -140,14 +140,14 @@ pub fn lode_pkg_clean(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let pm = lode_core::detect_package_manager(root).ok_or("No package manager detected")?;
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "package_manager": pm,
         "command": format!("{pm} clean"),
     }))

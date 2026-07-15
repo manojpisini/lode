@@ -75,6 +75,9 @@ fn run() -> lode_core::Result<()> {
         Command::Template { command } => {
             cmd::template::library_command("templates", command, template_paths())?
         }
+        Command::TemplateBundle { command } => {
+            cmd::template_bundle::template_bundle_command(command)?
+        }
         Command::Profile { command } => cmd::profile::profile_command(command)?,
         Command::Recipe { command } => cmd::recipe::recipe_command(command)?,
         Command::Commands { command } => cmd::commands::commands(command)?,
@@ -99,13 +102,20 @@ fn run() -> lode_core::Result<()> {
         Command::Lint => run_make("lint")?,
         Command::Check(args) => cmd::check::convention_check_with_output(args)?,
         Command::Agent { command } => cmd::agent::agent_command(command)?,
+        Command::AgentSim { command } => cmd::agent_sim::agent_sim_command(command)?,
+        Command::Archetype { command } => cmd::archetype::archetype_command(command)?,
+        Command::Cache { command } => cmd::cache::cache_command(command)?,
+        Command::EnvSnapshot { command } => cmd::env_snapshot::env_snapshot_command(command)?,
         Command::Assets { command } => cmd::assets::assets_command(command)?,
+        Command::Pack { command } => cmd::pack::pack_command(command)?,
         Command::Plan { command } => cmd::plan::plan_command(command)?,
+        Command::Policy { command } => cmd::policy::policy_command(command)?,
         Command::Project { command } => cmd::project::project_command(command)?,
         Command::Lock { command } => cmd::lock::lock_command(command)?,
         Command::Receipts { command } => cmd::receipts::receipt_command(command)?,
         Command::Context { command } => cmd::context::context_command(command)?,
         Command::Handoff { command } => cmd::handoff::handoff_command(command)?,
+        Command::Diagnose { command } => cmd::diagnose::diagnose_command(command)?,
         Command::Docs { command } => cmd::docs::docs_command(command)?,
         Command::DepGraph { command } => cmd::depgraph::depgraph_command(command)?,
         Command::Fix { path } => cmd::fix::convention_fix(path)?,
@@ -123,6 +133,7 @@ fn run() -> lode_core::Result<()> {
             license,
             dry_run,
         } => cmd::stamp::stamp_path(path, ext, license, dry_run)?,
+        Command::Sandbox { command } => cmd::sandbox::sandbox_command(command)?,
         Command::Verify { changed, output } => verify_command(changed, output)?,
         Command::Clean => run_make("clean")?,
         Command::Fresh => {
@@ -145,6 +156,7 @@ fn run() -> lode_core::Result<()> {
         Command::Explain => explain(),
         Command::Doctor { fix, output } => cmd::doctor::doctor_with_output(fix, output)?,
         Command::Scan { command } => cmd::scan::scan(command)?,
+        Command::SecretVault { command } => cmd::secret_vault::secret_vault_command(command)?,
         Command::Git { command } => cmd::git::git(command)?,
         Command::Hooks { command } => cmd::hooks::hooks(command)?,
         Command::Env { command } => cmd::env::env_command(command)?,
@@ -155,6 +167,7 @@ fn run() -> lode_core::Result<()> {
         Command::Pkg { command } => cmd::pkg::pkg(command)?,
         Command::Time { command } => cmd::time::time_command(command)?,
         Command::Metrics { command } => cmd::metrics::metrics(command)?,
+        Command::Migration { command } => cmd::migration::migration_command(command)?,
         Command::Workspace { command } => cmd::workspace::workspace(command)?,
         Command::Daemon { command } => cmd::daemon::daemon(command),
         Command::Log { command } => cmd::log::log_command(command)?,
@@ -1712,162 +1725,6 @@ fn comment_prefix(path: &Utf8PathBuf) -> Option<&'static str> {
         "md" | "html" | "xml" => Some("<!--"),
         _ => None,
     }
-}
-
-pub(crate) fn conventional_message(
-    kind: &str,
-    scope: Option<&str>,
-    subject: &str,
-    breaking: bool,
-) -> String {
-    let bang = if breaking { "!" } else { "" };
-    if let Some(scope) = scope {
-        format!("{kind}({scope}){bang}: {subject}")
-    } else {
-        format!("{kind}{bang}: {subject}")
-    }
-}
-
-pub(crate) fn slugify(input: &str) -> String {
-    let mut slug = String::new();
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch.to_ascii_lowercase());
-        } else if !slug.ends_with('-') {
-            slug.push('-');
-        }
-    }
-    slug.trim_matches('-').to_string()
-}
-
-pub(crate) fn run_git(args: &[&str]) -> lode_core::Result<()> {
-    let args = args
-        .iter()
-        .map(|arg| (*arg).to_string())
-        .collect::<Vec<_>>();
-    let status = run_process_status("git", &args, None)?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(LodeError::Message(format!(
-            "git command failed with {status}"
-        )))
-    }
-}
-
-pub(crate) fn git_changelog(
-    since: Option<&str>,
-    out: Option<Utf8PathBuf>,
-    format: &str,
-) -> lode_core::Result<()> {
-    let mut args = vec![
-        "log".to_string(),
-        "--pretty=format:%s".to_string(),
-        "--no-merges".to_string(),
-    ];
-    if let Some(since) = since {
-        args.push(format!("{since}..HEAD"));
-    }
-    let output = run_process_output("git", &args)?;
-    if !output.status.success() {
-        return Err(LodeError::Message("git log failed".to_string()));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let rendered = match format {
-        "json" => serde_json::to_string_pretty(
-            &stdout
-                .lines()
-                .map(|line| serde_json::json!({ "subject": line }))
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|error| LodeError::Message(error.to_string()))?,
-        "plain" => stdout.lines().collect::<Vec<_>>().join("\n") + "\n",
-        "markdown" | "md" => {
-            let mut text = String::from("# Changelog\n\n");
-            for line in stdout.lines() {
-                text.push_str(&format!("- {line}\n"));
-            }
-            text
-        }
-        other => {
-            return Err(LodeError::Message(format!(
-                "unsupported changelog format: {other}"
-            )))
-        }
-    };
-    if let Some(path) = out {
-        write_validated_output(&path, rendered)?;
-        println!("wrote changelog to {path}");
-    } else {
-        print!("{rendered}");
-    }
-    Ok(())
-}
-
-pub(crate) fn git_sign_setup() -> lode_core::Result<()> {
-    let path = Utf8PathBuf::from(".lode").join("git-signing.toml");
-    let project_root = ValidatedRoot::new(current_dir()?)?;
-    if let Some(parent) = path.parent() {
-        project_root.create_dir_all(parent)?;
-    }
-    project_root.write_atomic(&path, "enabled = true\nmode = \"manual\"\n")?;
-    println!("git signing setup recorded at {path}");
-    Ok(())
-}
-
-pub(crate) fn git_remote_setup(
-    provider: Option<String>,
-    visibility: Option<String>,
-    token_env: Option<String>,
-) -> lode_core::Result<()> {
-    let path = Utf8PathBuf::from(".lode").join("remote.toml");
-    let project_root = ValidatedRoot::new(current_dir()?)?;
-    if let Some(parent) = path.parent() {
-        project_root.create_dir_all(parent)?;
-    }
-    let contents = format!(
-        "provider = \"{}\"\nvisibility = \"{}\"\ntoken_env = \"{}\"\n",
-        provider.unwrap_or_else(|| "github".to_string()),
-        visibility.unwrap_or_else(|| "private".to_string()),
-        token_env.unwrap_or_else(|| "GITHUB_TOKEN".to_string())
-    );
-    project_root.write_atomic(&path, contents)?;
-    println!("git remote setup recorded at {path}");
-    Ok(())
-}
-
-pub(crate) fn install_git_hooks() -> lode_core::Result<()> {
-    let hooks_dir = Utf8PathBuf::from(".git").join("hooks");
-    if !hooks_dir.exists() {
-        return Err(LodeError::Message("not a git repository".to_string()));
-    }
-    let git_root = ValidatedRoot::new(".git")?;
-    git_root.write_atomic(
-        "hooks/pre-commit",
-        "#!/usr/bin/env sh\n# lode-managed\nlode check .\nlode scan secrets .\n",
-    )?;
-    git_root.write_atomic(
-        "hooks/pre-push",
-        "#!/usr/bin/env sh\n# lode-managed\nlode task test\n",
-    )?;
-    println!("installed lode-managed hook templates");
-    Ok(())
-}
-
-pub(crate) fn uninstall_git_hooks() -> lode_core::Result<()> {
-    let hooks_dir = Utf8PathBuf::from(".git").join("hooks");
-    for name in ["pre-commit", "pre-push"] {
-        let path = hooks_dir.join(name);
-        if path.exists()
-            && fs::read_to_string(&path)
-                .unwrap_or_default()
-                .contains("lode-managed")
-        {
-            ValidatedRoot::new(".git")?.remove_file(Utf8PathBuf::from("hooks").join(name))?;
-            println!("removed {path}");
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn add_license(

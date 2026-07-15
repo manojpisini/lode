@@ -4,10 +4,8 @@ use std::fs;
 
 use camino::Utf8PathBuf;
 use lode_core::{
-    analyze_project, format_adoption_report,
-    load_project_config,
+    analyze_project, format_adoption_report, load_project_config, register_project, LodeError,
     ProjectConfig, ProjectSection, SCHEMA_VERSION,
-    LodeError, register_project,
 };
 
 use crate::OutputFormat;
@@ -99,8 +97,7 @@ pub(crate) fn adopt_command(
         })?;
 
         let config_path = dir.join(".lode").join("project.toml");
-        let raw = toml::to_string_pretty(&config)
-            .map_err(|e| LodeError::Message(e.to_string()))?;
+        let raw = toml::to_string_pretty(&config).map_err(|e| LodeError::Message(e.to_string()))?;
         fs::write(config_path.as_std_path(), &raw).map_err(|e| LodeError::Io {
             path: config_path.as_str().into(),
             source: e,

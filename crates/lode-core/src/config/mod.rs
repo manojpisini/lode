@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod assets;
 pub mod build;
 pub mod convention;
 pub mod daemon;
@@ -10,6 +11,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod migrations;
 pub mod pkg;
+pub mod preferences;
 pub mod prereq;
 pub mod recipe;
 pub mod scaffold;
@@ -22,6 +24,7 @@ pub mod toolchain;
 pub mod workspace;
 
 pub use agent::AgentConfig;
+pub use assets::AssetsConfig;
 pub use build::BuildConfig;
 pub use convention::ConventionConfig;
 pub use daemon::DaemonConfig;
@@ -32,6 +35,7 @@ pub use license::LicenseConfig;
 pub use mcp::McpConfig;
 pub use metrics::MetricsConfig;
 pub use pkg::PkgConfig;
+pub use preferences::{AgentPrefs, ArchitecturePrefs, GitPrefs, PreferencesConfig, TestingPrefs};
 pub use prereq::PrereqConfig;
 pub use recipe::RecipeConfig;
 pub use scaffold::ScaffoldConfig;
@@ -50,6 +54,7 @@ pub struct LodeConfig {
     pub schema_version: u32,
     pub active_profile: Option<String>,
     pub identity: IdentityConfig,
+    pub assets: AssetsConfig,
     pub convention: ConventionConfig,
     pub signature: SignatureConfig,
     pub scaffold: ScaffoldConfig,
@@ -70,6 +75,7 @@ pub struct LodeConfig {
     pub recipe: RecipeConfig,
     pub time: TimeConfig,
     pub prereq: PrereqConfig,
+    pub preferences: PreferencesConfig,
 }
 
 impl Default for LodeConfig {
@@ -78,6 +84,7 @@ impl Default for LodeConfig {
             schema_version: SCHEMA_VERSION,
             active_profile: None,
             identity: IdentityConfig::default(),
+            assets: AssetsConfig::default(),
             convention: ConventionConfig::default(),
             signature: SignatureConfig::default(),
             scaffold: ScaffoldConfig::default(),
@@ -98,6 +105,7 @@ impl Default for LodeConfig {
             recipe: RecipeConfig::default(),
             time: TimeConfig::default(),
             prereq: PrereqConfig::default(),
+            preferences: PreferencesConfig::default(),
         }
     }
 }
@@ -141,6 +149,7 @@ fn merge_configs(base: LodeConfig, override_cfg: LodeConfig) -> LodeConfig {
         schema_version: base.schema_version,
         active_profile: override_cfg.active_profile.or(base.active_profile),
         identity: merge_identity(base.identity, override_cfg.identity),
+        assets: assets::merge_assets(&base.assets, &override_cfg.assets),
         convention: merge_convention(base.convention, override_cfg.convention),
         signature: merge_signature(base.signature, override_cfg.signature),
         scaffold: merge_scaffold(base.scaffold, override_cfg.scaffold),
@@ -161,6 +170,43 @@ fn merge_configs(base: LodeConfig, override_cfg: LodeConfig) -> LodeConfig {
         recipe: merge_recipe(base.recipe, override_cfg.recipe),
         time: merge_time(base.time, override_cfg.time),
         prereq: merge_prereq(base.prereq, override_cfg.prereq),
+        preferences: merge_preferences(base.preferences, override_cfg.preferences),
+    }
+}
+
+fn merge_preferences(base: PreferencesConfig, o: PreferencesConfig) -> PreferencesConfig {
+    PreferencesConfig {
+        architecture: ArchitecturePrefs {
+            default_style: non_empty(
+                o.architecture.default_style,
+                base.architecture.default_style,
+            ),
+            service_style: non_empty(
+                o.architecture.service_style,
+                base.architecture.service_style,
+            ),
+            prefer_explicit_boundaries: o.architecture.prefer_explicit_boundaries,
+            avoid_premature_microservices: o.architecture.avoid_premature_microservices,
+        },
+        testing: TestingPrefs {
+            require_unit_tests: o.testing.require_unit_tests,
+            require_integration_tests_for_io: o.testing.require_integration_tests_for_io,
+            minimum_coverage: o.testing.minimum_coverage,
+            prefer_property_tests: o.testing.prefer_property_tests,
+            framework: non_empty(o.testing.framework, base.testing.framework),
+        },
+        agents: AgentPrefs {
+            reuse_lode_assets_first: o.agents.reuse_lode_assets_first,
+            require_plan_before_write: o.agents.require_plan_before_write,
+            require_verification_before_completion: o.agents.require_verification_before_completion,
+            handoff_format: non_empty(o.agents.handoff_format, base.agents.handoff_format),
+            context_budget_tokens: o.agents.context_budget_tokens,
+        },
+        git: GitPrefs {
+            commit_style: non_empty(o.git.commit_style, base.git.commit_style),
+            prefer_atomic_commits: o.git.prefer_atomic_commits,
+            require_clean_verification: o.git.require_clean_verification,
+        },
     }
 }
 

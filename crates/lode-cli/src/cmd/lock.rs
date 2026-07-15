@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
 use lode_core::{
-    diff_locks, load_lock, lockfile_path, new_lock, save_lock, update_lock, verify_lock,
+    diff_locks, load_lock, lockfile_path, new_lock, save_lock, update_lock, verify_lock_in,
     LockAssetEntry, LodeError,
 };
 
@@ -75,26 +75,34 @@ fn lock_verify(output: OutputFormat) -> lode_core::Result<()> {
     let path = lockfile_path(&dir);
 
     if !path.exists() {
-        return Err(LodeError::Message("no lockfile found -- run `lode lock update` first".to_string()));
+        return Err(LodeError::Message(
+            "no lockfile found -- run `lode lock update` first".to_string(),
+        ));
     }
 
     let lock = load_lock(&path)?;
-    let report = verify_lock(&lock);
+    let report = verify_lock_in(&lock, Some(dir.as_std_path()));
 
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&report).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         if report.valid {
-            println!("lockfile verified ({} entries checked, {} warnings)", report.checked, report.warnings.len());
+            println!(
+                "lockfile verified ({} entries checked, {} warnings)",
+                report.checked,
+                report.warnings.len()
+            );
             for w in &report.warnings {
                 println!("  warning: {w}");
             }
         } else {
-            println!("lockfile verification FAILED ({} errors)", report.errors.len());
+            println!(
+                "lockfile verification FAILED ({} errors)",
+                report.errors.len()
+            );
             for e in &report.errors {
                 println!("  error: {e}");
             }
@@ -106,10 +114,7 @@ fn lock_verify(output: OutputFormat) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn lock_update(
-    ids: Option<Vec<String>>,
-    output: OutputFormat,
-) -> lode_core::Result<()> {
+fn lock_update(ids: Option<Vec<String>>, output: OutputFormat) -> lode_core::Result<()> {
     let dir = project_dir()?;
     let (path, mut lock) = lock_or_new(&dir);
 
@@ -165,8 +170,7 @@ fn lock_update(
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&diff)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&diff).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         println!("lockfile updated at {path}");
@@ -200,7 +204,9 @@ fn lock_diff(output: OutputFormat) -> lode_core::Result<()> {
     let path = lockfile_path(&dir);
 
     if !path.exists() {
-        return Err(LodeError::Message("no lockfile found -- run `lode lock update` first".to_string()));
+        return Err(LodeError::Message(
+            "no lockfile found -- run `lode lock update` first".to_string(),
+        ));
     }
 
     let lock = load_lock(&path)?;
@@ -211,8 +217,7 @@ fn lock_diff(output: OutputFormat) -> lode_core::Result<()> {
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&diff)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&diff).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         if diff.added.is_empty() && diff.removed.is_empty() && diff.changed.is_empty() {

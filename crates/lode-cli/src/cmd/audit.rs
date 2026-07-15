@@ -1,18 +1,70 @@
 #![deny(unsafe_code)]
 
-use lode_core::{load_global_config, audit_project, save_metrics};
+use crate::cmd::output;
+use crate::OutputFormat;
+use lode_core::{audit_project, load_global_config, save_metrics};
 
-pub fn health() -> lode_core::Result<()> {
+pub fn health_with_output(output: OutputFormat) -> lode_core::Result<()> {
     let cwd = crate::current_dir()?;
     let config = load_global_config()?;
     let report = audit_project(&cwd, &config)?;
     let metrics_path = save_metrics(&cwd, &report)?;
-    println!("health score: {}", report.score);
-    println!("convention violations: {}", report.convention_violations);
-    println!("secret findings: {}", report.secret_findings);
-    println!("license: {}", crate::status_bool(report.license_present));
-    println!("env example: {}", crate::status_bool(report.env_example_present));
-    println!("readme: {}", crate::status_bool(report.readme_present));
-    println!("metrics: {metrics_path}");
+    if output.should_use_json() {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report)
+                .map_err(|e| lode_core::LodeError::Message(e.to_string()))?
+        );
+    } else {
+        println!("{}", output::section("Health Report"));
+        println!(
+            "  {} {} {}",
+            output::bold("Score:"),
+            output::cyan(&report.score.to_string()),
+            output::dim("/ 100")
+        );
+        println!(
+            "  {}  {}",
+            output::info("convention violations"),
+            report.convention_violations
+        );
+        println!(
+            "  {}  {}",
+            output::info("secret findings"),
+            report.secret_findings
+        );
+        println!(
+            "  {}  {}",
+            output::bold("license:"),
+            if report.license_present {
+                output::green("present")
+            } else {
+                output::red("missing")
+            }
+        );
+        println!(
+            "  {}  {}",
+            output::bold("env example:"),
+            if report.env_example_present {
+                output::green("present")
+            } else {
+                output::red("missing")
+            }
+        );
+        println!(
+            "  {}  {}",
+            output::bold("readme:"),
+            if report.readme_present {
+                output::green("present")
+            } else {
+                output::red("missing")
+            }
+        );
+        println!(
+            "  {}  {}",
+            output::dim("metrics:"),
+            output::dim(metrics_path.as_str())
+        );
+    }
     Ok(())
 }

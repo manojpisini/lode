@@ -56,8 +56,8 @@ pub(crate) fn export_lodepack(
         collect_pack_files_as(&path, prefix, &mut pack)?;
     }
     pack.manifest.file_count = pack.files.len();
-    let raw =
-        serde_json::to_string_pretty(&pack).map_err(|error| LodeError::Message(error.to_string()))?;
+    let raw = serde_json::to_string_pretty(&pack)
+        .map_err(|error| LodeError::Message(error.to_string()))?;
     crate::write_validated_output(&output, raw)?;
     println!("exported {} files to {output}", pack.files.len());
     Ok(())
@@ -190,10 +190,7 @@ fn validate_lodepack_file_count(pack: &LodePack) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn validate_lodepack_file_checksum(
-    file: &LodePackFile,
-    normalized: &str,
-) -> lode_core::Result<()> {
+fn validate_lodepack_file_checksum(file: &LodePackFile, normalized: &str) -> lode_core::Result<()> {
     if file.checksum.is_empty() {
         return Ok(());
     }
@@ -211,8 +208,9 @@ fn lodepack_destination(root: &Utf8PathBuf, path: &str) -> lode_core::Result<Utf
         return Ok(root.join(path));
     };
     match first {
-        "templates" | "profiles" | "snippets" | "licenses" | "plugins" | "recipes"
-        | "commands" => Ok(global_asset_dir(first)?.join(rest)),
+        "templates" | "profiles" | "snippets" | "licenses" | "plugins" | "recipes" | "commands" => {
+            Ok(global_asset_dir(first)?.join(rest))
+        }
         _ => Ok(root.join(path)),
     }
 }

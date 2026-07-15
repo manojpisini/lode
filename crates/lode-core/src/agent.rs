@@ -257,37 +257,67 @@ pub fn generate_agent_policy(project_dir: &Utf8Path) -> Result<PolicyReport> {
     let agents_path = Utf8PathBuf::from("AGENTS.md");
     root.write_atomic(&agents_path, &agents_content)?;
     files_written.push(agents_path.clone());
-    let _ = add_managed_file(project_dir, &agents_path, ManagedBy::Agent, "Canonical agent bootstrap contract");
+    let _ = add_managed_file(
+        project_dir,
+        &agents_path,
+        ManagedBy::Agent,
+        "Canonical agent bootstrap contract",
+    );
 
     let claude_content = generate_claude_md(&project_name, &profile, &language, &plan);
     let claude_path = Utf8PathBuf::from("CLAUDE.md");
     root.write_atomic(&claude_path, &claude_content)?;
     files_written.push(claude_path.clone());
-    let _ = add_managed_file(project_dir, &claude_path, ManagedBy::Agent, "Claude-specific project context");
+    let _ = add_managed_file(
+        project_dir,
+        &claude_path,
+        ManagedBy::Agent,
+        "Claude-specific project context",
+    );
 
     let codex_content = generate_codex_md(&project_name, &language, &components);
     let codex_path = Utf8PathBuf::from("CODEX.md");
     root.write_atomic(&codex_path, &codex_content)?;
     files_written.push(codex_path.clone());
-    let _ = add_managed_file(project_dir, &codex_path, ManagedBy::Agent, "Codex-specific code generation patterns");
+    let _ = add_managed_file(
+        project_dir,
+        &codex_path,
+        ManagedBy::Agent,
+        "Codex-specific code generation patterns",
+    );
 
     let cursor_rules = generate_cursor_rules(&language, &profile);
     let cursor_path = Utf8PathBuf::from(".cursorrules");
     root.write_atomic(&cursor_path, &cursor_rules)?;
     files_written.push(cursor_path.clone());
-    let _ = add_managed_file(project_dir, &cursor_path, ManagedBy::Agent, "Cursor editor rules");
+    let _ = add_managed_file(
+        project_dir,
+        &cursor_path,
+        ManagedBy::Agent,
+        "Cursor editor rules",
+    );
 
     let windsurf_rules = generate_windsurf_rules(&language, &profile);
     let windsurf_path = Utf8PathBuf::from(".windsurfrules");
     root.write_atomic(&windsurf_path, &windsurf_rules)?;
     files_written.push(windsurf_path.clone());
-    let _ = add_managed_file(project_dir, &windsurf_path, ManagedBy::Agent, "Windsurf editor rules");
+    let _ = add_managed_file(
+        project_dir,
+        &windsurf_path,
+        ManagedBy::Agent,
+        "Windsurf editor rules",
+    );
 
     let mcp_json = generate_mcp_json(&project_name);
     let mcp_path = Utf8PathBuf::from(".mcp.json");
     root.write_atomic(&mcp_path, &mcp_json)?;
     files_written.push(mcp_path.clone());
-    let _ = add_managed_file(project_dir, &mcp_path, ManagedBy::Agent, "MCP server configuration");
+    let _ = add_managed_file(
+        project_dir,
+        &mcp_path,
+        ManagedBy::Agent,
+        "MCP server configuration",
+    );
 
     let plan_content = generate_plan_md(&project_name, &plan);
     let plan_path = policy_dir.join("context").join("PLAN.md");
@@ -300,7 +330,12 @@ pub fn generate_agent_policy(project_dir: &Utf8Path) -> Result<PolicyReport> {
     let constraints_path = policy_dir.join("context").join("CONSTRAINTS.md");
     root.write_atomic(&constraints_path, &constraints_content)?;
     files_written.push(constraints_path.clone());
-    let _ = add_managed_file(project_dir, &constraints_path, ManagedBy::Agent, "Project constraints");
+    let _ = add_managed_file(
+        project_dir,
+        &constraints_path,
+        ManagedBy::Agent,
+        "Project constraints",
+    );
 
     let tasks_content = generate_tasks_md(&plan);
     let tasks_path = policy_dir.join("context").join("TASKS.md");
@@ -336,15 +371,19 @@ fn generate_agents_md(
         md.push_str(&components.join(", "));
         md.push('\n');
     }
-    md.push_str("\n## Core Principles\n\n\
+    md.push_str(
+        "\n## Core Principles\n\n\
         1. **Discover before create** — Always ask LODE first\n\
         2. **Reuse before compose** — Prefer composing existing recipes\n\
         3. **Compose before customize** — Use recipe composition\n\
-        4. **Create only when necessary** — Promote back to LODE\n\n");
-    md.push_str("## Contract\n\n\
+        4. **Create only when necessary** — Promote back to LODE\n\n",
+    );
+    md.push_str(
+        "## Contract\n\n\
         - LODE owns: scaffolding, templates, profiles, recipes, conventions\n\
         - Agent owns: implementation logic, architecture decisions\n\
-        - Both own: agent context files, build config, CI\n\n");
+        - Both own: agent context files, build config, CI\n\n",
+    );
     md.push_str("## Quick Start\n\n");
     md.push_str("```\n");
     md.push_str("lode agent bootstrap --json\n");
@@ -460,10 +499,7 @@ fn generate_plan_md(name: &str, plan: &AgentPlan) -> String {
     } else {
         for task in &plan.tasks {
             let status = if task.done { "DONE" } else { "PENDING" };
-            md.push_str(&format!(
-                "- [{}] #{} {}\n",
-                status, task.id, task.task
-            ));
+            md.push_str(&format!("- [{}] #{} {}\n", status, task.id, task.task));
         }
     }
     md
@@ -485,7 +521,9 @@ fn generate_constraints_md(profile: &str, language: &str, components: &[String])
     if !components.is_empty() {
         md.push_str("## Component Constraints\n\n");
         for c in components {
-            md.push_str(&format!("- `{c}`: follow standard conventions for this component\n"));
+            md.push_str(&format!(
+                "- `{c}`: follow standard conventions for this component\n"
+            ));
         }
     }
     md
@@ -501,7 +539,10 @@ fn generate_tasks_md(plan: &AgentPlan) -> String {
         for task in &plan.tasks {
             let status = if task.done { "✅" } else { "⬜" };
             let branch = task.branch.as_deref().unwrap_or("-");
-            md.push_str(&format!("| {} | {} | {} | {} |\n", task.id, status, task.task, branch));
+            md.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                task.id, status, task.task, branch
+            ));
         }
     }
     md

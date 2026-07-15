@@ -52,10 +52,11 @@ pub fn lode_time_today(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8Path::new(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
     let total_seconds = lode_core::time_today(root).map_err(|e| e.to_string())?;
 
     let log = lode_core::load_time_log(root).map_err(|e| e.to_string())?;
@@ -68,7 +69,7 @@ pub fn lode_time_today(args: &Value) -> Result<Value, String> {
         .collect();
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "total_seconds": total_seconds,
         "sessions": today_sessions.iter().map(|s| json!({
             "started_at": s.started_at,
@@ -91,16 +92,17 @@ pub fn lode_time_report(args: &Value) -> Result<Value, String> {
         .unwrap_or(20)
         .min(1000);
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8Path::new(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
     let log = lode_core::load_time_log(root).map_err(|e| e.to_string())?;
 
     let sessions: Vec<_> = log.sessions.iter().rev().take(limit).cloned().collect();
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "total_sessions": log.sessions.len(),
         "showing": sessions.len(),
         "sessions": sessions.iter().map(|s| json!({

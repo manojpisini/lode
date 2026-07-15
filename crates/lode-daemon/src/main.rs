@@ -8,9 +8,10 @@ use camino::Utf8PathBuf;
 use clap::Parser;
 use tokio::sync::mpsc;
 
+use lode_core::auto_register_global_assets;
 use lode_daemon::{
     handle_create, handle_delete, handle_modify, handle_rename, load_state, run_ipc_listener,
-    save_state, DaemonState, DaemonWatcher, IdleWatchdog, IpcServer, WatcherConfig,
+    save_state, DaemonControl, DaemonState, DaemonWatcher, IdleWatchdog, IpcServer, WatcherConfig,
 };
 
 #[derive(Parser)]
@@ -28,6 +29,9 @@ struct Args {
 
     #[arg(long)]
     no_stamp: bool,
+
+    #[arg(long)]
+    no_auto_register: bool,
 
     #[arg(long, default_value = ".lode/daemon")]
     state_dir: PathBuf,
@@ -66,18 +70,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut watcher = DaemonWatcher::start(project_dir.clone(), config.clone())?;
     watcher.watch()?;
+    watcher.watch_global();
 
     let ipc_socket = args.state_dir.join("daemon.sock");
     let mut ipc_server = IpcServer::new(ipc_socket.clone());
     ipc_server.start().await?;
     let auth_token = ipc_server.auth_token().to_string();
+
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+    let control = DaemonControl::new(shutdown_tx.clone());
+
+    let ctrl = DaemonControl {
+        shutdown_tx: control.shutdown_tx.clone(),
+        paused: std::sync::Arc::clone(&control.paused),
+    };
     let ipc_task = tokio::spawn(async move {
-        if let Err(error) = run_ipc_listener(ipc_socket, auth_token).await {
+        if let Err(error) = run_ipc_listener(ipc_socket, auth_token, ctrl).await {
             eprintln!("IPC listener stopped: {error}");
         }
     });
-
-    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     let mut idle_watchdog = IdleWatchdog::new(args.idle_timeout, shutdown_tx.clone());
     idle_watchdog.start().await?;
 
@@ -149,15 +160,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                if control.paused.load(std::sync::atomic::Ordering::SeqCst) {
+                    continue;
+                }
                 if let Some(event) = watcher.receive_event() {
                     idle_watchdog.reset().await;
                     state.increment_events();
 
+                    if !args.no_auto_register && watcher.is_global_event(&event) {
+                        if matches!(event, lode_daemon::WatchEvent::Create(_) | lode_daemon::WatchEvent::Modify(_)) {
+                            let _ = auto_register_global_assets();
+                        }
+                    }
+
                     let result = match &event {
                         lode_daemon::WatchEvent::Create(p) => handle_create(p, &config),
                         lode_daemon::WatchEvent::Modify(p) => handle_modify(p, &config),
-                        lode_daemon::WatchEvent::Rename { from, to } => handle_rename(from, to, &config),
-                        lode_daemon::WatchEvent::Delete(p) => handle_delete(p, &config),
+                        lode_daemon::WatchEvent::Rename { from, to } => handle_rename(from, to),
+                        lode_daemon::WatchEvent::Delete(p) => handle_delete(p),
                     };
 
                     match result {

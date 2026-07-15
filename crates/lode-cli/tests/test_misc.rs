@@ -1326,8 +1326,7 @@ fn file_add_list_check_remove_round_trip() {
 
     std::fs::write(temp.path().join("hello.txt"), "hello world\n").expect("write file");
     std::fs::create_dir_all(temp.path().join("sub")).expect("create dir");
-    std::fs::write(temp.path().join("sub").join("nested.txt"), "nested\n")
-        .expect("write file");
+    std::fs::write(temp.path().join("sub").join("nested.txt"), "nested\n").expect("write file");
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -1461,7 +1460,11 @@ fn context_compile_respects_token_budget() {
         .success()
         .stdout(predicate::str::contains("Context Compiled"));
 
-    let compiled = temp.path().join(".lode").join("context").join("COMPILED.md");
+    let compiled = temp
+        .path()
+        .join(".lode")
+        .join("context")
+        .join("COMPILED.md");
     assert!(compiled.exists());
     let contents = std::fs::read_to_string(&compiled).expect("read file");
     assert!(contents.contains("Project Summary"));
@@ -1529,9 +1532,21 @@ fn agent_policy_generates_all_expected_files() {
     assert!(project_dir.join(".cursorrules").exists());
     assert!(project_dir.join(".windsurfrules").exists());
     assert!(project_dir.join(".mcp.json").exists());
-    assert!(project_dir.join(".lode").join("context").join("PLAN.md").exists());
-    assert!(project_dir.join(".lode").join("context").join("CONSTRAINTS.md").exists());
-    assert!(project_dir.join(".lode").join("context").join("TASKS.md").exists());
+    assert!(project_dir
+        .join(".lode")
+        .join("context")
+        .join("PLAN.md")
+        .exists());
+    assert!(project_dir
+        .join(".lode")
+        .join("context")
+        .join("CONSTRAINTS.md")
+        .exists());
+    assert!(project_dir
+        .join(".lode")
+        .join("context")
+        .join("TASKS.md")
+        .exists());
 
     let agents_content = std::fs::read_to_string(project_dir.join("AGENTS.md")).expect("read file");
     assert!(agents_content.contains("my-project"));
@@ -1659,4 +1674,77 @@ fn verify_changed_without_manifest_reports_gracefully() {
         .assert()
         .success()
         .stdout(predicate::str::contains("No file manifest found"));
+}
+
+#[test]
+fn template_bundle_capture_show_validate_verify() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let config = isolated_config(&temp);
+
+    // Create a source directory with some files to capture
+    let source = temp.path().join("mysrc");
+    std::fs::create_dir_all(&source).expect("create source");
+    std::fs::write(source.join("README.md"), "# Hello {{ project }}\n").expect("write");
+    std::fs::write(source.join("main.rs"), "fn main() {}\n").expect("write");
+    std::fs::create_dir_all(source.join("assets")).expect("create assets dir");
+    std::fs::write(source.join("assets").join("logo.png"), "fake-png").expect("write");
+
+    let bundle_dir = temp.path().join("mybundle");
+
+    // Capture
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args([
+            "template-bundle",
+            "capture",
+            source.to_str().unwrap(),
+            bundle_dir.to_str().unwrap(),
+            "--name",
+            "mybundle",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("captured"))
+        .stdout(predicate::str::contains("inline files"));
+
+    assert!(bundle_dir.join("mybundle.toml").exists(), "manifest exists");
+    assert!(bundle_dir.join("assets").exists(), "assets dir exists");
+
+    // Show
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["template-bundle", "show", bundle_dir.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("schema_version"))
+        .stdout(predicate::str::contains("mybundle"));
+
+    // Validate
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["template-bundle", "validate", bundle_dir.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("is valid"));
+
+    // Verify (may report missing assets if asset source paths are nested)
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["template-bundle", "verify", bundle_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Preview
+    lode()
+        .env("LODE_CONFIG", &config)
+        .current_dir(temp.path())
+        .args(["template-bundle", "preview", source.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("source:"))
+        .stdout(predicate::str::contains("inline files:"));
 }

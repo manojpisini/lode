@@ -15,18 +15,6 @@ pub enum StateError {
     IoError(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StateFile {
-    pub version: u32,
-    pub state: DaemonState,
-}
-
-impl StateFile {
-    pub fn new(state: DaemonState) -> Self {
-        Self { version: 1, state }
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DaemonState {
     pub active: bool,
@@ -62,18 +50,6 @@ impl DaemonState {
         }
     }
 
-    pub fn remove_watcher(&mut self, name: &str) {
-        self.watchers.retain(|w| w != name);
-    }
-
-    pub fn pause(&mut self) {
-        self.paused = true;
-    }
-
-    pub fn resume(&mut self) {
-        self.paused = false;
-    }
-
     pub fn stop(&mut self) {
         self.active = false;
     }
@@ -87,16 +63,14 @@ pub fn load_state(path: &Path) -> Result<DaemonState, StateError> {
     let content =
         std::fs::read_to_string(path).map_err(|e| StateError::FileError(e.to_string()))?;
 
-    let state_file: StateFile =
+    let state: DaemonState =
         serde_json::from_str(&content).map_err(|e| StateError::SerializeError(e.to_string()))?;
 
-    Ok(state_file.state)
+    Ok(state)
 }
 
 pub fn save_state(path: &Path, state: &DaemonState) -> Result<(), StateError> {
-    let state_file = StateFile::new(state.clone());
-
-    let content = serde_json::to_string_pretty(&state_file)
+    let content = serde_json::to_string_pretty(&state)
         .map_err(|e| StateError::SerializeError(e.to_string()))?;
 
     let parent = path
@@ -157,23 +131,6 @@ mod daemon_state_tests {
     }
 
     #[test]
-    fn remove_watcher_ignores_missing() {
-        let mut state = DaemonState::new();
-        state.add_watcher("src".to_string());
-        state.remove_watcher("tests");
-        assert_eq!(state.watchers.len(), 1);
-    }
-
-    #[test]
-    fn pause_resume_toggle() {
-        let mut state = DaemonState::new();
-        state.pause();
-        assert!(state.paused);
-        state.resume();
-        assert!(!state.paused);
-    }
-
-    #[test]
     fn stop_deactivates() {
         let mut state = DaemonState::new();
         state.stop();
@@ -220,13 +177,6 @@ mod daemon_state_tests {
         let state = DaemonState::new();
         save_state(&path, &state).unwrap();
         assert!(path.exists());
-    }
-
-    #[test]
-    fn state_file_version_is_1() {
-        let state = DaemonState::new();
-        let file = StateFile::new(state);
-        assert_eq!(file.version, 1);
     }
 
     #[test]

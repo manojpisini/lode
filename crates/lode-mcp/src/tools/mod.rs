@@ -11,6 +11,7 @@ pub mod release;
 pub mod secrets;
 pub mod signature;
 pub mod template;
+pub mod template_bundle;
 pub mod time;
 pub mod toolchain;
 
@@ -45,11 +46,7 @@ impl ToolInputValidator {
         let required = schema
             .get("required")
             .and_then(|r| r.as_array())
-            .map(|r| {
-                r.iter()
-                    .filter_map(|v| v.as_str())
-                    .collect::<Vec<&str>>()
-            })
+            .map(|r| r.iter().filter_map(|v| v.as_str()).collect::<Vec<&str>>())
             .unwrap_or_default();
 
         for field in &required {
@@ -74,9 +71,7 @@ impl ToolInputValidator {
                             _ => true,
                         };
                         if !valid {
-                            return Err(format!(
-                                "Argument '{key}' expected type '{prop_type}'"
-                            ));
+                            return Err(format!("Argument '{key}' expected type '{prop_type}'"));
                         }
                     }
                 }
@@ -103,6 +98,7 @@ pub fn register_all_tools() -> Vec<Tool> {
     tools.extend(agent::tools());
     tools.extend(config::tools());
     tools.extend(template::tools());
+    tools.extend(template_bundle::tools());
     tools.extend(toolchain::tools());
     tools
 }
@@ -147,6 +143,12 @@ pub fn dispatch_tool(name: &str, args: &Value) -> ToolResult<Value> {
         "lode_config_validate" => config::lode_config_validate(args),
         "lode_template_list" => template::lode_template_list(args),
         "lode_template_show" => template::lode_template_show(args),
+        "lode_template_bundle_list" => template_bundle::lode_template_bundle_list(args),
+        "lode_template_bundle_show" => template_bundle::lode_template_bundle_show(args),
+        "lode_template_bundle_validate" => template_bundle::lode_template_bundle_validate(args),
+        "lode_template_bundle_preview" => template_bundle::lode_template_bundle_preview(args),
+        "lode_template_bundle_apply" => template_bundle::lode_template_bundle_apply(args),
+        "lode_template_bundle_capture" => template_bundle::lode_template_bundle_capture(args),
         "lode_toolchain_status" => toolchain::lode_toolchain_status(args),
         "lode_toolchain_pin" => toolchain::lode_toolchain_pin(args),
         _ => Err(format!("Unknown tool: {name}")),
@@ -160,7 +162,7 @@ mod dispatch_tests {
     #[test]
     fn register_all_tools_returns_expected_count() {
         let tools = register_all_tools();
-        assert_eq!(tools.len(), 38);
+        assert_eq!(tools.len(), 44);
     }
 
     #[test]

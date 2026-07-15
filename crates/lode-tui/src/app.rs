@@ -1,6 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::ipc::{DaemonEvent, DaemonIpc};
 use crate::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +63,6 @@ pub struct ProjectData {
     pub session_today: Vec<SessionEntry>,
     pub dir_bar: Vec<(String, u64)>,
     pub heatmap: [[u8; 7]; 4],
-    pub events: Vec<DaemonEvent>,
     pub deps_vulns: usize,
     pub deps_outdated: Vec<String>,
     pub audit_ok: bool,
@@ -123,7 +121,6 @@ pub struct App {
     pub active_pane: Pane,
     pub project_data: ProjectData,
     pub theme: Theme,
-    ipc: Option<DaemonIpc>,
 }
 
 impl App {
@@ -134,20 +131,10 @@ impl App {
             active_pane: Pane::Overview,
             project_data: data,
             theme: crate::theme::dark_theme(),
-            ipc: None,
         }
     }
 
-    pub fn tick(&mut self) {
-        if self.ipc.is_none() {
-            self.ipc = DaemonIpc::connect(&self.project_data.name).ok();
-        }
-        if let Some(ref mut ipc) = self.ipc {
-            while let Some(ev) = ipc.read_event() {
-                self.project_data.events.push(ev);
-            }
-        }
-    }
+    pub fn tick(&mut self) {}
 
     pub fn handle_key(&mut self, key: KeyEvent) -> AppResult {
         match key.code {
@@ -377,7 +364,6 @@ impl App {
                 [1, 0, 2, 3, 4, 1, 2],
                 [4, 2, 1, 0, 3, 2, 1],
             ],
-            events: vec![],
             deps_vulns: 0,
             deps_outdated: vec![],
             audit_ok: true,

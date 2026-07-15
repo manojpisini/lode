@@ -4,42 +4,37 @@ use camino::Utf8PathBuf;
 use lode_core::{global_asset_dir, LodeError, PluginInstallReceipt, PluginSecurity, ValidatedRoot};
 use serde::{Deserialize, Serialize};
 
+use crate::OutputFormat;
 use crate::PluginCommand;
 
 pub(crate) fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {
     match command {
         PluginCommand::List => crate::list_dir(global_asset_dir("plugins")?)?,
-        PluginCommand::Search { query, format } => {
+        PluginCommand::Search { query, output } => {
             let entries = search_plugin_index(query.as_deref())?;
-            match format.as_str() {
-                "json" => println!(
+            if output.should_use_json() {
+                println!(
                     "{}",
                     serde_json::to_string_pretty(&entries)
                         .map_err(|error| LodeError::Message(error.to_string()))?
-                ),
-                "table" => {
-                    if entries.is_empty() {
-                        println!("no plugins found");
-                    } else {
-                        for entry in entries {
-                            println!(
-                                "{}\t{}\t{}\t{}",
-                                entry.name,
-                                entry.version,
-                                if entry.installed {
-                                    "installed"
-                                } else {
-                                    "available"
-                                },
-                                entry.description
-                            );
-                        }
+                );
+            } else {
+                if entries.is_empty() {
+                    println!("no plugins found");
+                } else {
+                    for entry in entries {
+                        println!(
+                            "{}\t{}\t{}\t{}",
+                            entry.name,
+                            entry.version,
+                            if entry.installed {
+                                "installed"
+                            } else {
+                                "available"
+                            },
+                            entry.description
+                        );
                     }
-                }
-                other => {
-                    return Err(LodeError::Message(format!(
-                        "unsupported plugin search format: {other}"
-                    )))
                 }
             }
         }

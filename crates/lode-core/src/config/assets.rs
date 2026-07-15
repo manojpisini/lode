@@ -213,8 +213,6 @@ impl AssetEntry {
     }
 }
 
-
-
 #[derive(Debug, Clone, Default)]
 pub struct EvaluateContext {
     pub os_platform: String,

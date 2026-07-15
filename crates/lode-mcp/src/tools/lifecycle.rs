@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::schema::{optional_string_schema, string_schema, tool_input_schema};
+use crate::util::load_config;
 
 use super::Tool;
 
@@ -64,16 +65,6 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-fn load_config(root: &camino::Utf8Path) -> Result<lode_core::config::LodeConfig, String> {
-    let project_toml = root.join(".lode").join("project.toml");
-    if !project_toml.exists() {
-        return Ok(lode_core::config::default_config());
-    }
-    let raw = std::fs::read_to_string(&project_toml).map_err(|e| e.to_string())?;
-    let config: lode_core::config::LodeConfig = toml::from_str(&raw).map_err(|e| e.to_string())?;
-    Ok(config)
-}
-
 pub fn lode_init(args: &Value) -> Result<Value, String> {
     let name = args["name"]
         .as_str()
@@ -94,10 +85,11 @@ pub fn lode_init(args: &Value) -> Result<Value, String> {
         })
         .unwrap_or_default();
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let base_path = camino::Utf8PathBuf::from(path);
+    let base_path = camino::Utf8PathBuf::from_path_buf(validated.path().to_path_buf())
+        .map_err(|_| "non-utf8 path".to_string())?;
     let mut config = lode_core::config::default_config();
     if !author.is_empty() {
         config.identity.author = author.to_string();
@@ -117,6 +109,7 @@ pub fn lode_init(args: &Value) -> Result<Value, String> {
         lang: None,
         preset: None,
         license: None,
+        in_place: false,
     };
 
     match lode_core::init_project(request) {
@@ -141,10 +134,11 @@ pub fn lode_add(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: component")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let project_dir = camino::Utf8PathBuf::from(path);
+    let project_dir = camino::Utf8PathBuf::from_path_buf(validated.path().to_path_buf())
+        .map_err(|_| "non-utf8 path".to_string())?;
     let config = load_config(&project_dir)?;
 
     let request = lode_core::AddRequest {
@@ -171,10 +165,11 @@ pub fn lode_sync(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let project_dir = camino::Utf8PathBuf::from(path);
+    let project_dir = camino::Utf8PathBuf::from_path_buf(validated.path().to_path_buf())
+        .map_err(|_| "non-utf8 path".to_string())?;
     let config = load_config(&project_dir)?;
 
     match lode_core::sync_project(project_dir, config, false, false) {
@@ -193,14 +188,15 @@ pub fn lode_info(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
     let project_toml = root.join(".lode").join("project.toml");
 
     if !project_toml.exists() {
-        return Err(format!("No LODE project found at {path}"));
+        return Err(format!("No LODE project found at {}", root));
     }
 
     let raw = std::fs::read_to_string(&project_toml).map_err(|e| e.to_string())?;
@@ -208,7 +204,7 @@ pub fn lode_info(args: &Value) -> Result<Value, String> {
         toml::from_str(&raw).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "name": project_config.project.name,
         "created_by": project_config.project.created_by,
         "created_at": project_config.project.created_at,

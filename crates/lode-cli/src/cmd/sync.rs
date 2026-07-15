@@ -2,8 +2,8 @@
 
 use camino::Utf8PathBuf;
 
-use crate::{agent_sync, current_dir};
 use crate::cmd::template::validate_template_tree;
+use crate::{agent_sync, current_dir};
 use lode_core::{
     audit_project, global_asset_dir, load_global_config, save_metrics, sync_project, LodeError,
 };

@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::schema::{optional_string_schema, string_schema, tool_input_schema};
+use crate::util::load_config;
 
 use super::Tool;
 
@@ -44,28 +45,19 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-fn load_config(root: &camino::Utf8Path) -> Result<lode_core::config::LodeConfig, String> {
-    let project_toml = root.join(".lode").join("project.toml");
-    if !project_toml.exists() {
-        return Ok(lode_core::config::default_config());
-    }
-    let raw = std::fs::read_to_string(&project_toml).map_err(|e| e.to_string())?;
-    let config: lode_core::config::LodeConfig = toml::from_str(&raw).map_err(|e| e.to_string())?;
-    Ok(config)
-}
-
 pub fn lode_check(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
-    let config = load_config(&root)?;
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
+    let config = load_config(root)?;
 
-    let report = lode_core::check_path(&root, &config).map_err(|e| e.to_string())?;
+    let report = lode_core::check_path(root, &config).map_err(|e| e.to_string())?;
 
     let violations: Vec<Value> = report
         .violations
@@ -79,7 +71,7 @@ pub fn lode_check(args: &Value) -> Result<Value, String> {
         .collect();
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "checked": report.checked,
         "violations_count": violations.len(),
         "violations": violations,
@@ -92,16 +84,17 @@ pub fn lode_fix(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
-    let config = load_config(&root)?;
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
+    let config = load_config(root)?;
 
-    let report = lode_core::fix_path(&root, &config).map_err(|e| e.to_string())?;
+    let report = lode_core::fix_path(root, &config).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "checked": report.checked,
         "remaining_violations": report.violations.len(),
         "renamed": report.renamed.len(),

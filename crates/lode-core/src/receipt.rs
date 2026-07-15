@@ -69,7 +69,9 @@ pub struct GitState {
 
 fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("T{}", d.as_secs())
 }
 
@@ -188,10 +190,12 @@ impl CommandReceipt {
         let root = ValidatedRoot::new(project_dir)?;
         root.create_dir_all(receipts_dir.as_str())?;
         let path = receipts_dir.join(format!("{}.json", self.receipt_id));
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| LodeError::Message(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| LodeError::Message(e.to_string()))?;
         root.write_atomic(
-            receipts_dir.join(format!("{}.json", self.receipt_id)).as_str(),
+            receipts_dir
+                .join(format!("{}.json", self.receipt_id))
+                .as_str(),
             json,
         )?;
         Ok(path)

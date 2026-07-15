@@ -7,9 +7,12 @@ use crate::OutputFormat;
 
 pub(crate) fn handoff_command(command: HandoffCommand) -> lode_core::Result<()> {
     match command {
-        HandoffCommand::Create { task, format, next, plan_id } => {
-            handoff_create(&task, &format, &next, plan_id.as_deref())
-        }
+        HandoffCommand::Create {
+            task,
+            format,
+            next,
+            plan_id,
+        } => handoff_create(&task, &format, &next, plan_id.as_deref()),
         HandoffCommand::Show { handoff_id, output } => handoff_show(&handoff_id, output),
         HandoffCommand::Verify { handoff_id } => handoff_verify(&handoff_id),
         HandoffCommand::Resume { handoff_id } => handoff_resume(&handoff_id),
@@ -18,15 +21,18 @@ pub(crate) fn handoff_command(command: HandoffCommand) -> lode_core::Result<()> 
 }
 
 fn project_dir() -> lode_core::Result<camino::Utf8PathBuf> {
-    let cwd = std::env::current_dir().map_err(|e| {
-        LodeError::Message(format!("cannot get current dir: {e}"))
-    })?;
-    camino::Utf8PathBuf::from_path_buf(cwd).map_err(|_| {
-        LodeError::Message("non-UTF-8 path".to_string())
-    })
+    let cwd = std::env::current_dir()
+        .map_err(|e| LodeError::Message(format!("cannot get current dir: {e}")))?;
+    camino::Utf8PathBuf::from_path_buf(cwd)
+        .map_err(|_| LodeError::Message("non-UTF-8 path".to_string()))
 }
 
-fn handoff_create(task: &str, format: &str, next: &str, plan_id: Option<&str>) -> lode_core::Result<()> {
+fn handoff_create(
+    task: &str,
+    format: &str,
+    next: &str,
+    plan_id: Option<&str>,
+) -> lode_core::Result<()> {
     let dir = project_dir()?;
     let mut handoff = Handoff::new(task);
     handoff.next_action = next.to_string();

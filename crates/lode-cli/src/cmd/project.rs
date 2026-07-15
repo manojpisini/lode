@@ -3,7 +3,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use camino::Utf8PathBuf;
-use lode_core::{load_project_config, load_scaffold_lock, ProjectConfig, ScaffoldLock, LodeError};
+use lode_core::{load_project_config, load_scaffold_lock, LodeError, ProjectConfig, ScaffoldLock};
 
 use crate::ProjectCommand;
 
@@ -73,8 +73,14 @@ fn project_plan(intent: Option<String>, output: OutputFormat) -> lode_core::Resu
         } else {
             println!("  manifest: none (not a lode project)");
         }
-        println!("  lock: {}", if lock.is_some() { "present" } else { "absent" });
-        println!("  intent: {}", intent.as_deref().unwrap_or("sync project state"));
+        println!(
+            "  lock: {}",
+            if lock.is_some() { "present" } else { "absent" }
+        );
+        println!(
+            "  intent: {}",
+            intent.as_deref().unwrap_or("sync project state")
+        );
         println!();
         println!("use `lode project diff` to see differences");
         if manifest.is_some() {
@@ -86,8 +92,9 @@ fn project_plan(intent: Option<String>, output: OutputFormat) -> lode_core::Resu
 
 fn project_apply(plan_id: &str, dry_run: bool, output: OutputFormat) -> lode_core::Result<()> {
     let dir = project_dir()?;
-    let manifest = load_manifest(&dir)?
-        .ok_or_else(|| LodeError::Message("no project manifest found -- run `lode init` first".to_string()))?;
+    let manifest = load_manifest(&dir)?.ok_or_else(|| {
+        LodeError::Message("no project manifest found -- run `lode init` first".to_string())
+    })?;
 
     if output.should_use_json() {
         let report = serde_json::json!({
@@ -100,9 +107,15 @@ fn project_apply(plan_id: &str, dry_run: bool, output: OutputFormat) -> lode_cor
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
     } else {
         if dry_run {
-            println!("[dry-run] would apply plan {plan_id} to project {}", manifest.project.name);
+            println!(
+                "[dry-run] would apply plan {plan_id} to project {}",
+                manifest.project.name
+            );
         } else {
-            println!("applying plan {plan_id} to project {}", manifest.project.name);
+            println!(
+                "applying plan {plan_id} to project {}",
+                manifest.project.name
+            );
             println!("  (plan application not yet implemented -- use `lode plan apply {plan_id}` instead)");
         }
     }
@@ -197,7 +210,10 @@ fn project_reconcile(dry_run: bool, output: OutputFormat) -> lode_core::Result<(
     } else {
         println!("reconciling project: {}", manifest.project.name);
         if dry_run {
-            println!("  [dry-run] checking {} components...", manifest.project.components.len());
+            println!(
+                "  [dry-run] checking {} components...",
+                manifest.project.components.len()
+            );
             for component in &manifest.project.components {
                 println!("    would verify component: {component}");
             }
@@ -206,7 +222,14 @@ fn project_reconcile(dry_run: bool, output: OutputFormat) -> lode_core::Result<(
             }
             println!("  run without --dry-run to apply fixes");
         } else {
-            println!("  project is valid ({})", if lock.is_some() { "tracked" } else { "untracked" });
+            println!(
+                "  project is valid ({})",
+                if lock.is_some() {
+                    "tracked"
+                } else {
+                    "untracked"
+                }
+            );
             println!("  run `lode project diff` to see any discrepancies");
         }
     }

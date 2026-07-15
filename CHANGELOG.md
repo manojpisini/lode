@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.1.1 — 2026-07-14
+
+### Added
+
+- **Template bundles**: `lode template-bundle` with `capture`, `apply`, `validate`, `verify`, `show`, `preview` subcommands
+- **MCP**: 6 new template bundle tools (`lode_template_bundle_list`, `lode_template_bundle_show`, `lode_template_bundle_validate`, `lode_template_bundle_preview`, `lode_template_bundle_apply`, `lode_template_bundle_capture`) + `lode://template-bundles` resource (44 tools, 9 resources total)
+- **CLI commands**: `file`, `context`, `handoff`, `diagnose`, `docs`, `dep-graph`, `cache`, `env-snapshot`, `assets`, `pack`, `plan`, `policy`, `project`, `lock`, `receipts`, `archetype`, `agent-sim`, `sandbox`, `secret-vault`, `migration`, `mc`, `tauri`, `gha`, `cp`
+- **Search index**: persistent local search index with inverted index (FTS5-style)
+- **Asset catalog**: lifecycle states and quality ratings
+- **Context compiler**: token-budgeted context compilation (`lode context compile --budget`)
+- **Managed file ownership**: `file-manifest.json` tracking system
+- **Agent policy generator**: `lode agent policy` generates canonical agent policy files
+- **Change-aware verification**: `lode verify --changed`
+- **Documentation**: 22 docs covering architecture, guides, reference, operations, user manual
+- **CI**: `cargo audit` and `cargo deny check` jobs added to CI pipeline
+- **Fuzz testing**: CI fuzz jobs for `ValidatedRoot` and `Process` validation
+
+### Changed
+
+- **Cleanup**: removed ~765 lines of dead code (unused IPC/formatting/git abstractions, 3 duplicated `load_config` functions consolidated)
+- **TUI**: replaced custom `Sparkline` widget with ratatui built-in, removed dead IPC module (protocol mismatch)
+- **Daemon**: removed `StateFile` wrapper, dead methods, unused `Default` impls
+- **MCP**: removed unused `Default for McpServer`, deduplicated `load_config` into shared util
+
 ## v0.1.0 — 2026-07-11
 
 ### Added

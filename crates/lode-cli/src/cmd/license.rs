@@ -1,21 +1,21 @@
 #![deny(unsafe_code)]
 
 use camino::Utf8PathBuf;
-use lode_core::{global_asset_dir, ValidatedRoot, LodeError};
+use lode_core::{global_asset_dir, LodeError, ValidatedRoot};
 
 use std::fs;
 
 use crate::{
     add_license, collect_file_names, current_dir, license_path, list_dir, project_license_id,
-    read_license, safe_relative_path, LicenseCommand,
+    read_license, safe_relative_path, LicenseCommand, OutputFormat,
 };
 use lode_core::load_global_config;
 
 pub(crate) fn license(command: LicenseCommand) -> lode_core::Result<()> {
     match command {
-        LicenseCommand::List { format } => {
+        LicenseCommand::List { output } => {
             let root = global_asset_dir("licenses")?;
-            if format == "json" {
+            if output.should_use_json() {
                 let mut items = Vec::new();
                 collect_file_names(&root, &mut items)?;
                 println!(
@@ -58,7 +58,7 @@ pub(crate) fn license(command: LicenseCommand) -> lode_core::Result<()> {
             ValidatedRoot::new(current_dir()?)?.write_atomic("LICENSE", contents)?;
             println!("license set: {id}");
         }
-        LicenseCommand::Check { json } => {
+        LicenseCommand::Check { output } => {
             let path = Utf8PathBuf::from("LICENSE");
             let ok = path.exists()
                 && !fs::read_to_string(&path)
@@ -68,7 +68,7 @@ pub(crate) fn license(command: LicenseCommand) -> lode_core::Result<()> {
                     })?
                     .trim()
                     .is_empty();
-            if json {
+            if output.should_use_json() {
                 println!("{{\"license\":{ok}}}");
             } else if ok {
                 println!("license ok");

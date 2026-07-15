@@ -24,12 +24,13 @@ pub fn lode_scan_secrets(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
 
-    let report = lode_core::scan_secrets(&root).map_err(|e| e.to_string())?;
+    let report = lode_core::scan_secrets(root).map_err(|e| e.to_string())?;
 
     let findings: Vec<Value> = report
         .findings
@@ -44,7 +45,7 @@ pub fn lode_scan_secrets(args: &Value) -> Result<Value, String> {
         .collect();
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "checked_files": report.checked_files,
         "total_findings": report.findings.len(),
         "findings": findings,

@@ -93,10 +93,14 @@ impl Operation {
 
     pub fn inverse(&self) -> Option<Operation> {
         match self {
-            Operation::CreateFile { path, .. } => Some(Operation::DeleteFile {
-                path: path.clone(),
-            }),
-            Operation::ModifyFile { path, search, replace } => Some(Operation::ModifyFile {
+            Operation::CreateFile { path, .. } => {
+                Some(Operation::DeleteFile { path: path.clone() })
+            }
+            Operation::ModifyFile {
+                path,
+                search,
+                replace,
+            } => Some(Operation::ModifyFile {
                 path: path.clone(),
                 search: replace.clone(),
                 replace: search.clone(),
@@ -115,7 +119,9 @@ impl Operation {
 
 fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("T{}", d.as_secs())
 }
 
@@ -186,7 +192,10 @@ impl Plan {
                         warnings.push(format!("{} does not exist", path));
                     }
                     if full.is_dir() {
-                        let is_empty = full.read_dir().map(|mut d| d.next().is_none()).unwrap_or(false);
+                        let is_empty = full
+                            .read_dir()
+                            .map(|mut d| d.next().is_none())
+                            .unwrap_or(false);
                         if !is_empty {
                             errors.push(format!("{} is a non-empty directory", path));
                         }
@@ -196,7 +205,11 @@ impl Plan {
             }
         }
 
-        Ok(PlanValidation { valid: errors.is_empty(), errors, warnings })
+        Ok(PlanValidation {
+            valid: errors.is_empty(),
+            errors,
+            warnings,
+        })
     }
 
     pub fn apply(&self, project_dir: &Utf8Path, dry_run: bool) -> Result<ApplyReport> {
@@ -219,7 +232,11 @@ impl Plan {
                     root.write_atomic(path.as_str(), content)?;
                     report.created.push(path.clone());
                 }
-                Operation::ModifyFile { path, search, replace } => {
+                Operation::ModifyFile {
+                    path,
+                    search,
+                    replace,
+                } => {
                     if dry_run {
                         report.dry_run_ops.push(description);
                         continue;
@@ -230,7 +247,9 @@ impl Plan {
                         source: e,
                     })?;
                     if !content.contains(search.as_str()) {
-                        report.warnings.push(format!("search string not found in {path}"));
+                        report
+                            .warnings
+                            .push(format!("search string not found in {path}"));
                         continue;
                     }
                     let new_content = content.replace(search.as_str(), replace.as_str());
@@ -269,7 +288,9 @@ impl Plan {
                     report.commands_executed.push(description);
                 }
                 Operation::ApplyRecipe { name } => {
-                    report.warnings.push(format!("recipe {name} would be applied"));
+                    report
+                        .warnings
+                        .push(format!("recipe {name} would be applied"));
                 }
                 Operation::SetConfig { key, value } => {
                     if dry_run {
@@ -306,14 +327,17 @@ impl Plan {
         let root = ValidatedRoot::new(project_dir)?;
         root.create_dir_all(".lode/plans")?;
         let path = dir.join(format!("{}.json", self.plan_id));
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| LodeError::Message(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| LodeError::Message(e.to_string()))?;
         root.write_atomic(format!(".lode/plans/{}.json", self.plan_id), json)?;
         Ok(path)
     }
 
     pub fn load(project_dir: &Utf8Path, plan_id: &str) -> Result<Self> {
-        let path = project_dir.join(".lode").join("plans").join(format!("{plan_id}.json"));
+        let path = project_dir
+            .join(".lode")
+            .join("plans")
+            .join(format!("{plan_id}.json"));
         let raw = fs::read_to_string(&path).map_err(|e| LodeError::Io {
             path: PathBuf::from(path.as_str()),
             source: e,

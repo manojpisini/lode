@@ -36,10 +36,10 @@ pub fn lode_toolchain_status(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let config = lode_core::ToolchainConfig::default();
 
     let statuses = lode_core::toolchain_status(root, &config);
@@ -58,7 +58,7 @@ pub fn lode_toolchain_status(args: &Value) -> Result<Value, String> {
         .collect();
 
     Ok(json!({
-        "path": path,
+        "path": root.display().to_string(),
         "tools": tools,
     }))
 }
@@ -87,10 +87,10 @@ pub fn lode_toolchain_pin(args: &Value) -> Result<Value, String> {
         ));
     }
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let config = lode_core::ToolchainConfig::default();
 
     let runtime = config

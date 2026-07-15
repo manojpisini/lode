@@ -80,17 +80,4 @@ impl IdleWatchdog {
         let mut last = self.last_event.write().await;
         *last = Instant::now();
     }
-
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-}
-
-pub async fn start(
-    timeout_secs: u64,
-    shutdown_sender: mpsc::Sender<()>,
-) -> Result<IdleWatchdog, IdleError> {
-    let mut watchdog = IdleWatchdog::new(timeout_secs, shutdown_sender);
-    watchdog.start().await?;
-    Ok(watchdog)
 }

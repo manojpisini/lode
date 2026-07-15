@@ -401,7 +401,7 @@ fn health_writes_metrics_and_metrics_show_reads_them() {
         .arg("health")
         .assert()
         .success()
-        .stdout(predicate::str::contains("health score"));
+        .stdout(predicate::str::contains("Health Report"));
 
     assert!(temp.path().join(".lode").join("metrics.json").exists());
 
@@ -507,7 +507,7 @@ fn daemon_start_status_log_and_stop_are_stateful() {
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["daemon", "list-watchers", "--json"])
+        .args(["daemon", "list-watchers", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"paused\": true"))
@@ -557,7 +557,7 @@ fn daemon_flags_status_json_and_log_tail_are_stateful() {
     lode()
         .env("LODE_CONFIG", &config)
         .current_dir(temp.path())
-        .args(["daemon", "status", "--json"])
+        .args(["daemon", "status", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"active\":true"))
@@ -608,7 +608,7 @@ fn daemon_status_json_includes_recent_events() {
 
     lode()
         .env("LODE_CONFIG", &config)
-        .args(["daemon", "status", "--json"])
+        .args(["daemon", "status", "--output", "json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"recent_events\":[{"))

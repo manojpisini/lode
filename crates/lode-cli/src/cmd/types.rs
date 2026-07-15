@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -80,6 +81,12 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: LibraryCommand,
     },
+    /// Manage template bundles (apply, capture, preview, list, show, validate, verify)
+    #[command(name = "template-bundle")]
+    TemplateBundle {
+        #[command(subcommand)]
+        command: TemplateBundleCommand,
+    },
     /// Manage profiles (list, show, use, new, delete)
     Profile {
         #[command(subcommand)]
@@ -105,6 +112,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: PluginCommand,
     },
+    /// Manage policy-as-code checks and waivers
+    Policy {
+        #[command(subcommand)]
+        command: PolicyCommand,
+    },
     /// Start the MCP protocol server (stdio or HTTP)
     Mcp {
         #[arg(long, help = "Use HTTP transport instead of stdio")]
@@ -129,6 +141,21 @@ pub(crate) enum Command {
     Agent {
         #[command(subcommand)]
         command: AgentCommand,
+    },
+    /// Simulate agent intent resolution
+    AgentSim {
+        #[command(subcommand)]
+        command: AgentSimCommand,
+    },
+    /// List and apply project archetypes
+    Archetype {
+        #[command(subcommand)]
+        command: ArchetypeCommand,
+    },
+    /// Manage the result cache (stats, clear)
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
     },
     /// Track the current work task
     Task {
@@ -181,6 +208,11 @@ pub(crate) enum Command {
         #[arg(long, help = "Show what would be done without doing it")]
         dry_run: bool,
     },
+    /// Execute commands in a hermetic sandbox
+    Sandbox {
+        #[command(subcommand)]
+        command: SandboxCommand,
+    },
     /// Run project verification checks
     Verify {
         #[arg(long, help = "Check file manifest for externally modified files")]
@@ -228,6 +260,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: ScanCommand,
     },
+    /// Manage the secret vault (set, get, list, remove, grant, revoke)
+    SecretVault {
+        #[command(subcommand)]
+        command: SecretVaultCommand,
+    },
     /// Git workflow automation (branch, commit, tag, changelog, hooks)
     Git {
         #[command(subcommand)]
@@ -237,6 +274,11 @@ pub(crate) enum Command {
     Assets {
         #[command(subcommand)]
         command: AssetsCommand,
+    },
+    /// Manage organization packs (list, use, layer, export)
+    Pack {
+        #[command(subcommand)]
+        command: PackCommand,
     },
     /// Manage execution plans (create, show, validate, apply, rollback, list)
     Plan {
@@ -278,6 +320,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: EnvCommand,
     },
+    /// Manage environment snapshots (create, list, compare, restore)
+    EnvSnapshot {
+        #[command(subcommand)]
+        command: EnvSnapshotCommand,
+    },
     /// Manage licenses (list, show, add, remove, set, apply)
     License {
         #[command(subcommand)]
@@ -313,10 +360,20 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: TimeCommand,
     },
+    /// Diagnose build/test failures from known patterns
+    Diagnose {
+        #[command(subcommand)]
+        command: DiagnoseCommand,
+    },
     /// View project metrics (show, trend, baseline, diff-baseline)
     Metrics {
         #[command(subcommand)]
         command: MetricsCommand,
+    },
+    /// Manage schema and data migrations (plan, apply, rollback, list)
+    Migration {
+        #[command(subcommand)]
+        command: MigrationCommand,
     },
     /// Manage multi-crate workspaces (init, list, add, remove, run, graph)
     Workspace {
@@ -855,6 +912,82 @@ pub(crate) enum LibraryCommand {
     Edit {
         /// Template name
         name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum TemplateBundleCommand {
+    /// Apply a template bundle to the current directory
+    Apply {
+        #[arg(help = "Path to the template bundle directory")]
+        path: PathBuf,
+        #[arg(long, value_delimiter = '=', help = "Template variables (key=value)")]
+        variables: Vec<String>,
+        #[arg(
+            long,
+            default_value = "error",
+            help = "Overwrite policy: skip, error, replace"
+        )]
+        overwrite: Option<String>,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+    },
+    /// Capture a directory as a template bundle
+    Capture {
+        #[arg(help = "Source directory to capture")]
+        source: PathBuf,
+        #[arg(help = "Destination directory for the bundle")]
+        dest: PathBuf,
+        #[arg(
+            long,
+            help = "Capture mode: minimal, source, development, complete (default: source)"
+        )]
+        mode: Option<String>,
+        #[arg(long, help = "Show what would be captured without writing")]
+        dry_run: bool,
+        #[arg(long, help = "Skip secret redaction")]
+        no_redact: bool,
+        #[arg(long, help = "Template name (defaults to directory name)")]
+        name: Option<String>,
+        #[arg(
+            long,
+            default_value = "bundle",
+            help = "Template kind: file, bundle, feature, project"
+        )]
+        kind: Option<String>,
+    },
+    /// Preview what would be captured from a directory
+    Preview {
+        #[arg(help = "Source directory to preview")]
+        source: PathBuf,
+        #[arg(
+            long,
+            help = "Capture mode: minimal, source, development, complete (default: source)"
+        )]
+        mode: Option<String>,
+    },
+    /// List available template bundles
+    List {
+        #[arg(
+            long,
+            help = "Directory to search for template bundles (default: global template dir)"
+        )]
+        path: Option<PathBuf>,
+    },
+    /// Show a template bundle manifest
+    Show {
+        #[arg(help = "Path to the template bundle")]
+        path: PathBuf,
+    },
+    /// Validate a template bundle manifest
+    Validate {
+        #[arg(help = "Path to the template bundle")]
+        path: PathBuf,
+    },
+    /// Verify all referenced files and assets exist
+    Verify {
+        #[arg(help = "Path to the template bundle")]
+        path: PathBuf,
     },
 }
 
@@ -1539,6 +1672,236 @@ pub(crate) enum SelfCommand {
     Uninstall {
         #[arg(long, help = "Keep configuration files")]
         keep_config: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ArchetypeCommand {
+    /// List available archetypes
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Show archetype details
+    Show {
+        id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Apply an archetype to the project
+    Apply {
+        id: String,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PolicyCommand {
+    /// Check project against active policies
+    Check {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// List available policies
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Explain a specific policy
+    Explain {
+        id: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Waive a failing policy
+    Waive {
+        policy_id: String,
+        #[arg(long, help = "Reason for the waiver")]
+        reason: String,
+        #[arg(long, help = "Expiry date or condition")]
+        expires: Option<String>,
+        #[arg(long, help = "Owner of the waiver")]
+        owner: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PackCommand {
+    /// List available packs
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Activate a pack
+    Use {
+        id: String,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+    },
+    /// Layer a pack on top of the current configuration
+    Layer {
+        id: String,
+        #[arg(long, help = "Show what would be done without doing it")]
+        dry_run: bool,
+    },
+    /// Export active pack configuration
+    Export {
+        #[arg(long, help = "Output file path")]
+        out: Option<Utf8PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CacheCommand {
+    /// Show cache statistics
+    Stats {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Clear the entire cache
+    Clear,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DiagnoseCommand {
+    /// Diagnose build/test output against known patterns
+    Run {
+        #[arg(help = "File path containing build/test output, or - for stdin")]
+        input: Option<String>,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// List known diagnosis patterns
+    Patterns {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SandboxCommand {
+    /// Run a command in a sandboxed environment
+    Run {
+        #[arg(help = "Command to execute")]
+        command: String,
+        #[arg(long, help = "Arguments for the command")]
+        args: Vec<String>,
+        #[arg(long, default_value = "30", help = "Timeout in seconds")]
+        timeout: u64,
+        #[arg(long, help = "Inherit environment variables")]
+        inherit_env: bool,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum EnvSnapshotCommand {
+    /// Create a new environment snapshot
+    Create {
+        #[arg(help = "Label for the snapshot")]
+        label: String,
+    },
+    /// List environment snapshots
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Compare two environment snapshots
+    Compare {
+        #[arg(help = "First snapshot ID")]
+        id1: String,
+        #[arg(help = "Second snapshot ID")]
+        id2: String,
+    },
+    /// Restore an environment snapshot
+    Restore {
+        #[arg(help = "Snapshot ID to restore")]
+        id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AgentSimCommand {
+    /// Simulate agent intent resolution against the catalog
+    Simulate {
+        #[arg(help = "Natural language intent to simulate")]
+        intent: String,
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum MigrationCommand {
+    /// Plan a new migration
+    Plan {
+        #[arg(help = "Description of the migration")]
+        description: String,
+        #[arg(long, default_value = "schema", help = "Kind of migration")]
+        kind: String,
+    },
+    /// Apply a pending migration
+    Apply {
+        #[arg(help = "Migration ID to apply")]
+        id: String,
+    },
+    /// Roll back an applied migration
+    Rollback {
+        #[arg(help = "Migration ID to roll back")]
+        id: String,
+    },
+    /// List all migrations and their state
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SecretVaultCommand {
+    /// Set a secret in the vault
+    Set {
+        #[arg(help = "Secret key")]
+        key: String,
+        #[arg(help = "Secret value")]
+        value: String,
+        #[arg(long, default_value = "local", help = "Scope (local, project, global)")]
+        scope: String,
+    },
+    /// Get a secret value from the vault
+    Get {
+        #[arg(help = "Secret key")]
+        key: String,
+        #[arg(long, help = "Show the secret value (redacted by default)")]
+        show: bool,
+    },
+    /// List all secrets in the vault
+    List {
+        #[arg(long, value_enum, default_value = "table", help = "Output format")]
+        output: OutputFormat,
+    },
+    /// Remove a secret from the vault
+    Remove {
+        #[arg(help = "Secret key to remove")]
+        key: String,
+    },
+    /// Grant access to a secret
+    Grant {
+        #[arg(help = "Secret key")]
+        key: String,
+        #[arg(help = "Principal (e.g. tool, user)")]
+        principal: String,
+        #[arg(long, default_value = "read", help = "Permission (read, write)")]
+        permission: String,
+    },
+    /// Revoke access to a secret
+    Revoke {
+        #[arg(help = "Secret key")]
+        key: String,
+        #[arg(help = "Principal to revoke access for")]
+        principal: String,
     },
 }
 

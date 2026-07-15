@@ -1,10 +1,12 @@
 #![deny(unsafe_code)]
 
-use lode_core::{global_dir, profile_names, template_paths, command_names};
+use crate::cmd::output;
+use crate::OutputFormat;
+use lode_core::{command_names, global_dir, profile_names, template_paths};
 
-pub fn info(json: bool) -> lode_core::Result<()> {
+pub fn info_with_output(output: OutputFormat) -> lode_core::Result<()> {
     let dir = global_dir()?;
-    if json {
+    if output.should_use_json() {
         println!(
             "{{\"config\":\"{}\",\"profiles\":{},\"templates\":{},\"commands\":{}}}",
             dir.join("config.toml"),
@@ -13,10 +15,14 @@ pub fn info(json: bool) -> lode_core::Result<()> {
             command_names().len()
         );
     } else {
-        println!("config   {}", dir.join("config.toml"));
-        println!("profiles {}", profile_names().len());
-        println!("templates {}", template_paths().len());
-        println!("commands {}", command_names().len());
+        println!("{}", output::section("Lode Info"));
+        let rows = vec![
+            vec!["config".to_string(), dir.join("config.toml").to_string()],
+            vec!["profiles".to_string(), profile_names().len().to_string()],
+            vec!["templates".to_string(), template_paths().len().to_string()],
+            vec!["commands".to_string(), command_names().len().to_string()],
+        ];
+        print!("{}", output::table(&["resource", "value"], &rows));
     }
     Ok(())
 }
@@ -27,6 +33,6 @@ mod tests {
 
     #[test]
     fn test_info_fn_exists() {
-        let _fn: fn(bool) -> lode_core::Result<()> = info;
+        let _fn: fn(OutputFormat) -> lode_core::Result<()> = info_with_output;
     }
 }

@@ -1,8 +1,6 @@
 #![deny(unsafe_code)]
 
-use lode_core::{
-    compile_context, global_dir, load_global_config, ContextPack, LodeError,
-};
+use lode_core::{compile_context, global_dir, load_global_config, ContextPack, LodeError};
 
 use crate::output;
 use crate::ContextCommand;
@@ -19,12 +17,10 @@ pub(crate) fn context_command(command: ContextCommand) -> lode_core::Result<()> 
 }
 
 fn project_dir() -> lode_core::Result<camino::Utf8PathBuf> {
-    let cwd = std::env::current_dir().map_err(|e| {
-        LodeError::Message(format!("cannot get current dir: {e}"))
-    })?;
-    camino::Utf8PathBuf::from_path_buf(cwd).map_err(|_| {
-        LodeError::Message("non-UTF-8 path".to_string())
-    })
+    let cwd = std::env::current_dir()
+        .map_err(|e| LodeError::Message(format!("cannot get current dir: {e}")))?;
+    camino::Utf8PathBuf::from_path_buf(cwd)
+        .map_err(|_| LodeError::Message("non-UTF-8 path".to_string()))
 }
 
 fn context_build(output: OutputFormat) -> lode_core::Result<()> {
@@ -34,8 +30,7 @@ fn context_build(output: OutputFormat) -> lode_core::Result<()> {
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&pack)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&pack).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         println!("Context pack built for {}", pack.project_name);
@@ -56,8 +51,7 @@ fn context_show(output: OutputFormat) -> lode_core::Result<()> {
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&pack)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&pack).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         println!("Context for {}:\n", pack.project_name);
@@ -71,7 +65,12 @@ fn context_show(output: OutputFormat) -> lode_core::Result<()> {
         if !pack.decisions.is_empty() {
             println!("Active decisions:");
             for d in &pack.decisions {
-                println!("  [{}] {} ({})", if d.status == "accepted" { "x" } else { " " }, d.title, d.status);
+                println!(
+                    "  [{}] {} ({})",
+                    if d.status == "accepted" { "x" } else { " " },
+                    d.title,
+                    d.status
+                );
             }
             println!();
         }
@@ -101,7 +100,8 @@ fn context_diff() -> lode_core::Result<()> {
     for f in &pack.files {
         println!("  {} ({:.8})", f.path, f.hash);
     }
-    println!("\n{} decisions, {} gates, {} deps",
+    println!(
+        "\n{} decisions, {} gates, {} deps",
         pack.decisions.len(),
         pack.quality_gates.len(),
         pack.dependencies.len(),
@@ -122,8 +122,7 @@ fn context_compile(budget: Option<usize>, output: OutputFormat) -> lode_core::Re
     if output.should_use_json() {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report)
-                .map_err(|e| LodeError::Message(e.to_string()))?
+            serde_json::to_string_pretty(&report).map_err(|e| LodeError::Message(e.to_string()))?
         );
     } else {
         println!("{}", output::bold("Context Compiled"));
@@ -140,11 +139,7 @@ fn context_compile(budget: Option<usize>, output: OutputFormat) -> lode_core::Re
             report.included_files,
             report.skipped_files,
         );
-        println!(
-            "  {} {}",
-            output::dim("Output:"),
-            report.output_path,
-        );
+        println!("  {} {}", output::dim("Output:"), report.output_path,);
     }
     Ok(())
 }

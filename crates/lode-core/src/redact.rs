@@ -16,9 +16,16 @@ fn redact_line(line: &str) -> String {
     let lower = line.to_ascii_lowercase();
     let has_assignment = line.contains('=') || line.contains(':');
     if has_assignment
-        && ["api_key", "apikey", "secret", "token", "password", "private_key"]
-            .iter()
-            .any(|needle| lower.contains(needle))
+        && [
+            "api_key",
+            "apikey",
+            "secret",
+            "token",
+            "password",
+            "private_key",
+        ]
+        .iter()
+        .any(|needle| lower.contains(needle))
         && !lower.contains("changeme")
         && !lower.contains("example")
     {
@@ -30,43 +37,97 @@ fn redact_line(line: &str) -> String {
             line.to_string()
         };
     }
-    if line.contains("ghp_") || line.contains("github_pat_") {
-        return line
-            .replace("ghp_", "ghp_[REDACTED]")
-            .replace("github_pat_", "github_pat_[REDACTED]");
+    if let Some(redacted) = redact_github_token(line) {
+        return redacted;
     }
-    if (line.contains("AKIA")
-        || line.contains("ASIA")
-        || line.contains("ABIA")
-        || line.contains("ACCA")
-        || line.contains("AROA"))
-        && line.len() >= 20
-    {
-        let mut result = String::with_capacity(line.len());
-        let mut remaining = line;
-        let prefixes = &["AKIA", "ASIA", "ABIA", "ACCA", "AROA"];
-        while !remaining.is_empty() {
-            let mut matched = false;
-            for prefix in prefixes {
-                if let Some(pos) = remaining.find(prefix) {
-                    result.push_str(&remaining[..pos]);
-                    result.push_str("[REDACTED]");
-                    remaining = &remaining[pos + prefix.len()..];
-                    matched = true;
-                    break;
-                }
-            }
-            if !matched {
-                result.push_str(remaining);
-                break;
-            }
-        }
-        return result;
+    if let Some(redacted) = redact_aws_key(line) {
+        return redacted;
     }
     if line.contains("-----BEGIN") && line.contains("PRIVATE KEY-----") {
         return "[REDACTED PRIVATE KEY]".to_string();
     }
+    if let Some(redacted) = redact_high_entropy(line) {
+        return redacted;
+    }
     line.to_string()
+}
+
+fn redact_github_token(line: &str) -> Option<String> {
+    for (prefix, prefix_len) in &[("ghp_", 4usize), ("github_pat_", 11)] {
+        if let Some(pos) = line.find(prefix) {
+            let rest = &line[pos + prefix_len..];
+            let token_end = rest
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            if token_end >= 4 {
+                if let Some(eq) = line[..pos].rfind('=') {
+                    return Some(format!("{}=[REDACTED]", &line[..eq]));
+                }
+                return Some(format!("{}[REDACTED]{}", &line[..pos], &rest[token_end..]));
+            }
+        }
+    }
+    None
+}
+
+fn redact_aws_key(line: &str) -> Option<String> {
+    if line.len() < 20 {
+        return None;
+    }
+    let prefixes = &["AKIA", "ASIA", "ABIA", "ACCA", "AROA"];
+    for prefix in prefixes {
+        if let Some(pos) = line.find(prefix) {
+            let rest = &line[pos..];
+            let token_end = rest
+                .find(|c: char| !c.is_ascii_alphanumeric())
+                .unwrap_or(rest.len());
+            if token_end >= 20 {
+                return Some(format!("{}[REDACTED]{}", &line[..pos], &rest[token_end..]));
+            }
+        }
+    }
+    None
+}
+
+fn shannon_entropy(s: &str) -> f64 {
+    if s.is_empty() {
+        return 0.0;
+    }
+    let len = s.len() as f64;
+    let mut freq = [0u32; 256];
+    for &b in s.as_bytes() {
+        freq[b as usize] += 1;
+    }
+    let mut entropy = 0.0;
+    for &count in freq.iter() {
+        if count > 0 {
+            let p = count as f64 / len;
+            entropy -= p * p.log2();
+        }
+    }
+    entropy
+}
+
+fn redact_high_entropy(line: &str) -> Option<String> {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-' {
+            let start = i;
+            while i < bytes.len()
+                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+            {
+                i += 1;
+            }
+            let token = &line[start..i];
+            if token.len() >= 16 && shannon_entropy(token) > 4.5 {
+                return Some(format!("{}[REDACTED]{}", &line[..start], &line[i..]));
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 pub fn redact_findings(input: &str, findings: &[SecretFinding]) -> String {
@@ -177,5 +238,31 @@ mod tests {
         let input = "safe line";
         let result = redact_findings(input, &[]);
         assert_eq!(result, "safe line");
+    }
+
+    #[test]
+    fn redacts_high_entropy_standalone_token() {
+        let token = "aB3dE5fG7hI9jK1lM2nO4pQ6rS8tU0vW1xY3zZ5";
+        let line = format!("some_prefix_{token}_suffix");
+        let result = redact(&line);
+        assert!(
+            result.contains("[REDACTED]"),
+            "high-entropy token should be redacted"
+        );
+        assert!(!result.contains(&token), "token value should not appear");
+    }
+
+    #[test]
+    fn skips_low_entropy_long_token() {
+        let line = "src/main/aaaaaaaaaaaaaaaa/";
+        let result = redact(line);
+        assert_eq!(result, "src/main/aaaaaaaaaaaaaaaa/");
+    }
+
+    #[test]
+    fn skips_short_high_entropy() {
+        let line = "aB3dE5fG"; // 8 chars, under 16 threshold
+        let result = redact(line);
+        assert_eq!(result, line);
     }
 }

@@ -54,11 +54,10 @@ pub fn load_lock(path: &Utf8PathBuf) -> Result<LodeLock> {
         path: path.as_str().into(),
         source,
     })?;
-    let lock: LodeLock =
-        toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
-            path: PathBuf::from(path.as_str()),
-            source: Box::new(source),
-        })?;
+    let lock: LodeLock = toml::from_str(&raw).map_err(|source| LodeError::TomlDeserialize {
+        path: PathBuf::from(path.as_str()),
+        source: Box::new(source),
+    })?;
     if lock.schema_version != LOCKFILE_SCHEMA_VERSION {
         return Err(LodeError::SchemaMismatch {
             expected: LOCKFILE_SCHEMA_VERSION,
@@ -75,7 +74,8 @@ pub fn save_lock(path: &Utf8PathBuf, lock: &LodeLock) -> Result<()> {
             source,
         })?;
     }
-    let raw = toml::to_string_pretty(lock).map_err(|source| LodeError::Message(source.to_string()))?;
+    let raw =
+        toml::to_string_pretty(lock).map_err(|source| LodeError::Message(source.to_string()))?;
     fs::write(path.as_std_path(), &raw).map_err(|source| LodeError::Io {
         path: path.as_str().into(),
         source,
@@ -112,6 +112,11 @@ pub fn hash_file(path: &Utf8PathBuf) -> Result<String> {
 }
 
 pub fn verify_lock(lock: &LodeLock) -> LockVerifyReport {
+    verify_lock_in(lock, None)
+}
+
+pub fn verify_lock_in(lock: &LodeLock, root: Option<&std::path::Path>) -> LockVerifyReport {
+    let root = root.and_then(|r| std::path::Path::new(r).canonicalize().ok());
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     let mut checked = 0;
@@ -120,6 +125,21 @@ pub fn verify_lock(lock: &LodeLock) -> LockVerifyReport {
         checked += 1;
         if let Some(ref path) = entry.path {
             let p = Utf8PathBuf::from(path);
+            if let Some(ref root) = root {
+                let canonical = std::path::Path::new(&p).canonicalize();
+                match canonical {
+                    Ok(abs_path) => {
+                        if !abs_path.starts_with(root) {
+                            errors.push(format!("{}: path outside project root: {path}", entry.id));
+                            continue;
+                        }
+                    }
+                    Err(_) => {
+                        errors.push(format!("{}: cannot resolve path: {path}", entry.id));
+                        continue;
+                    }
+                }
+            }
             if !p.exists() {
                 errors.push(format!("{}: file not found: {path}", entry.id));
                 continue;
@@ -138,7 +158,10 @@ pub fn verify_lock(lock: &LodeLock) -> LockVerifyReport {
                 }
             }
         } else {
-            warnings.push(format!("{}: no path recorded, skipping hash verification", entry.id));
+            warnings.push(format!(
+                "{}: no path recorded, skipping hash verification",
+                entry.id
+            ));
         }
     }
 
@@ -194,10 +217,7 @@ pub fn diff_locks(current: &LodeLock, expected: &LodeLock) -> LockDiff {
     }
 }
 
-pub fn update_lock(
-    lock: &mut LodeLock,
-    assets: Vec<LockAssetEntry>,
-) -> LockDiff {
+pub fn update_lock(lock: &mut LodeLock, assets: Vec<LockAssetEntry>) -> LockDiff {
     let old = LodeLock {
         schema_version: lock.schema_version,
         created_at: lock.created_at.clone(),

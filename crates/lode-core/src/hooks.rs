@@ -196,14 +196,20 @@ fn enforce_hook_execute_permission(hook: &Hook) -> Result<()> {
     Ok(())
 }
 
+fn check_project_hook_permission(hook: &Hook) -> Result<()> {
+    let hook_str = hook.path.as_str();
+    let plugins_dir = crate::install::global_asset_dir("plugins")?;
+    if hook_str.starts_with(plugins_dir.as_str()) {
+        return enforce_hook_execute_permission(hook);
+    }
+    Ok(())
+}
+
 pub fn run_hook(hook: &Hook, project_dir: &Utf8Path, dry_run: bool) -> Result<()> {
     if dry_run {
         return Ok(());
     }
-    enforce_hook_execute_permission(hook)?;
-    if dry_run {
-        return Ok(());
-    }
+    check_project_hook_permission(hook)?;
     match &hook.runtime {
         HookRuntime::Shell => {
             let (shell, args): (&str, &[&str]) = if cfg!(target_os = "windows") {

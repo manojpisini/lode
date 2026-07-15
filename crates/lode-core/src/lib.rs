@@ -3,16 +3,19 @@
 //! This crate provides the foundational types and operations used by all LODE
 //! components: filesystem safety (ValidatedRoot), process execution (Process),
 //! project scaffolding, naming conventions, secret scanning, git integration,
-//! configuration management, package manager overlays, templates, recipes,
-//! snippets, plugins, hooks, release management, time tracking, and more.
+//! configuration management, package manager overlays, templates, template bundles,
+//! recipes, snippets, plugins, hooks, release management, time tracking, and more.
 
 // Note: #![deny(unsafe_code)] is intentionally omitted because
 // fs_safety.rs contains unsafe ReplaceFileW for atomic Windows replacements.
 
 pub mod adopt;
 pub mod agent;
+pub mod agent_sim;
+pub mod archetype;
 pub mod assets;
 pub mod audit;
+pub mod cache;
 pub mod catalog;
 pub mod commands;
 pub mod config;
@@ -20,7 +23,9 @@ pub mod context;
 pub mod contract;
 pub mod convention;
 pub mod dep_graph;
+pub mod diagnose;
 pub mod env;
+pub mod env_snapshot;
 pub mod error;
 pub mod file_manifest;
 pub mod fs_safety;
@@ -31,8 +36,11 @@ pub mod install;
 pub mod ipc;
 pub mod license;
 pub mod lockfile;
+pub mod migration;
+pub mod organization;
 pub mod pkg;
 pub mod plan;
+pub mod policies;
 pub mod prereq;
 pub mod process;
 pub mod receipt;
@@ -41,13 +49,18 @@ pub mod redact;
 pub mod registry;
 pub mod release;
 pub mod rules;
+pub mod sandbox;
 pub mod scaffold;
 pub mod search_index;
+pub mod secret_broker;
 pub mod secrets;
 pub mod signature;
 pub mod snippet;
 pub mod task;
 pub mod template;
+pub mod template_bundle;
+pub mod template_bundle_apply;
+pub mod template_bundle_capture;
 pub mod template_sync;
 pub mod test_history;
 pub mod time_tracker;
@@ -102,7 +115,7 @@ pub use install::{
 pub use license::*;
 pub use lockfile::{
     diff_locks, hash_file, load_lock, lockfile_path, new_lock, save_lock, update_lock, verify_lock,
-    LockAssetEntry, LockDiff, LockVerifyReport, LodeLock,
+    verify_lock_in, LockAssetEntry, LockDiff, LockVerifyReport, LodeLock,
 };
 pub use pkg::*;
 pub use plan::{ApplyReport, Operation, Plan, PlanMetadata, PlanStatus, PlanValidation};

@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 
+use std::collections::HashMap;
 use std::fs;
 
 use camino::Utf8PathBuf;
@@ -9,8 +10,8 @@ use lode_core::{
 };
 
 use crate::{
-    current_dir, list_dir, now_timestamp, open_editor, resolve_command_path, run_command_macro,
-    safe_relative_path, CommandsCommand, content_hash_bytes,
+    content_hash_bytes, current_dir, list_dir, now_timestamp, open_editor, resolve_command_path,
+    run_command_macro_loaded, safe_relative_path, CommandsCommand, OutputFormat,
 };
 
 pub(crate) fn commands(command: CommandsCommand) -> lode_core::Result<()> {
@@ -21,15 +22,23 @@ pub(crate) fn commands(command: CommandsCommand) -> lode_core::Result<()> {
             }
             list_dir(Utf8PathBuf::from(".lode").join("commands"))?;
         }
-        CommandsCommand::Show { name } => {
+        CommandsCommand::Show { name, output } => {
             let path = resolve_command_path(&name)?;
-            print!(
-                "{}",
-                fs::read_to_string(&path).map_err(|source| LodeError::Io {
-                    path: path.as_str().into(),
-                    source,
-                })?
-            );
+            let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            if output.should_use_json() {
+                let value: serde_json::Value = toml::from_str(&raw)
+                    .map_err(|e| LodeError::Message(format!("failed to parse command: {e}")))?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value)
+                        .map_err(|e| LodeError::Message(e.to_string()))?
+                );
+            } else {
+                print!("{raw}");
+            }
         }
         CommandsCommand::Add { slug, global, from } => {
             add_command_macro(&slug, global, from.as_deref())?;
@@ -40,7 +49,16 @@ pub(crate) fn commands(command: CommandsCommand) -> lode_core::Result<()> {
         CommandsCommand::Export { out } => {
             export_command_macros(out)?;
         }
-        CommandsCommand::Run { slug, dry_run } => run_command_macro(&slug, dry_run)?,
+        CommandsCommand::Run { slug, dry_run } => {
+            let path = resolve_command_path(&slug)?;
+            let raw = fs::read_to_string(&path).map_err(|source| LodeError::Io {
+                path: path.as_str().into(),
+                source,
+            })?;
+            let value: toml::Value =
+                toml::from_str(&raw).map_err(|error| LodeError::Message(error.to_string()))?;
+            run_command_macro_loaded(&slug, &value, &HashMap::new(), dry_run)?
+        }
         CommandsCommand::Edit { name } => {
             let path = resolve_command_path(&name)?;
             open_editor(&path)?;

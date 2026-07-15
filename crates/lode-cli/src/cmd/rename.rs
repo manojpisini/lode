@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
 use camino::Utf8PathBuf;
-use lode_core::{load_global_config, ValidatedRoot, LodeError};
+use lode_core::{load_global_config, LodeError, ValidatedRoot};
 
 pub fn rename_path(path: Utf8PathBuf, to: Option<String>) -> lode_core::Result<()> {
     let config = load_global_config()?;

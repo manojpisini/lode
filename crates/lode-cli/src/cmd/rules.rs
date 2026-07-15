@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 
-use crate::{cmd, CheckArgs, RulesCommand};
+use crate::{cmd, CheckArgs, OutputFormat, RulesCommand};
 use lode_core::{load_global_config, LodeError};
 
 pub(crate) fn rules(command: RulesCommand) -> lode_core::Result<()> {
@@ -14,9 +14,9 @@ pub(crate) fn rules(command: RulesCommand) -> lode_core::Result<()> {
             );
         }
         RulesCommand::Check { path } => {
-            cmd::check::convention_check(CheckArgs {
+            cmd::check::convention_check_with_output(CheckArgs {
                 path,
-                json: false,
+                output: OutputFormat::Table,
                 fix: false,
             })?;
         }

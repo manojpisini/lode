@@ -15,7 +15,7 @@ fn setup_defaults_creates_config_and_dirs() {
         .arg("--defaults")
         .assert()
         .success()
-        .stdout(predicate::str::contains("lode initialised"));
+        .stdout(predicate::str::contains("Setup"));
 
     assert!(temp.path().join(".lode").join("config.toml").exists());
     assert!(temp.path().join(".lode").join("templates").exists());

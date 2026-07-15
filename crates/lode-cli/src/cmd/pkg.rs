@@ -3,7 +3,8 @@
 use crate::{
     cmd, current_dir, detect_package_manager, package_audit_args, package_command,
     package_dependencies, package_manifest_inventory, package_outdated_args, package_update_args,
-    run_process_status, PackageDependency, PackageOperationPlan, PkgCommand, ScanCommand,
+    run_process_status, OutputFormat, PackageDependency, PackageOperationPlan, PkgCommand,
+    ScanCommand,
 };
 use camino::Utf8PathBuf;
 use lode_core::{LodeError, ValidatedRoot};
@@ -47,7 +48,7 @@ pub(crate) fn pkg(command: PkgCommand) -> lode_core::Result<()> {
                 cmd::scan::scan(ScanCommand::Secrets {
                     path: Some(current_dir()?),
                     staged: false,
-                    json: false,
+                    output: OutputFormat::Table,
                     quiet: false,
                 })?;
             }

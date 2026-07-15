@@ -2,8 +2,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 
-
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssetDependency {
     pub id: String,
@@ -266,8 +264,10 @@ impl DepGraphBuilder {
                             .iter()
                             .position(|n| *n == neighbor.as_str())
                             .unwrap_or(0);
-                        let cycle: Vec<String> =
-                            stack[cycle_start..].iter().map(|s| (*s).to_string()).collect();
+                        let cycle: Vec<String> = stack[cycle_start..]
+                            .iter()
+                            .map(|s| (*s).to_string())
+                            .collect();
                         cycles.push(cycle);
                     }
                 }
@@ -585,8 +585,7 @@ pub fn builtin_asset_deps() -> HashMap<String, AssetDeps> {
     // Core profiles
     map.insert(
         "profile/core/bare".to_string(),
-        AssetDeps::new()
-            .requires(vec![AssetDependency::new("template/core/dotfiles")]),
+        AssetDeps::new().requires(vec![AssetDependency::new("template/core/dotfiles")]),
     );
     map.insert(
         "profile/rust".to_string(),
@@ -610,8 +609,7 @@ pub fn builtin_asset_deps() -> HashMap<String, AssetDeps> {
     // Components
     map.insert(
         "component/ci".to_string(),
-        AssetDeps::new()
-            .requires(vec![AssetDependency::new("template/github/workflows")]),
+        AssetDeps::new().requires(vec![AssetDependency::new("template/github/workflows")]),
     );
     map.insert(
         "component/security".to_string(),
@@ -621,19 +619,15 @@ pub fn builtin_asset_deps() -> HashMap<String, AssetDeps> {
     );
     map.insert(
         "component/release".to_string(),
-        AssetDeps::new()
-            .requires(vec![AssetDependency::new("template/github/workflows")]),
+        AssetDeps::new().requires(vec![AssetDependency::new("template/github/workflows")]),
     );
     map.insert(
         "component/docker".to_string(),
-        AssetDeps::new()
-            .requires(vec![AssetDependency::new("template/docker")]),
+        AssetDeps::new().requires(vec![AssetDependency::new("template/docker")]),
     );
     map.insert(
         "component/devcontainer".to_string(),
-        AssetDeps::new().requires(vec![
-            AssetDependency::new("template/devcontainer"),
-        ]),
+        AssetDeps::new().requires(vec![AssetDependency::new("template/devcontainer")]),
     );
 
     // Template groups
@@ -729,7 +723,10 @@ pub fn format_dep_resolution_table(resolution: &DepResolution) -> String {
         }
     }
 
-    if resolution.errors.is_empty() && resolution.conflicts.is_empty() && resolution.unresolved.is_empty() {
+    if resolution.errors.is_empty()
+        && resolution.conflicts.is_empty()
+        && resolution.unresolved.is_empty()
+    {
         lines.push(String::new());
         lines.push("✓ All dependencies resolved without conflicts.".to_string());
     } else {
@@ -869,10 +866,7 @@ mod tests {
 
         let resolution = builder.resolve(vec!["a".to_string()]);
         assert!(!resolution.graph.cycles.is_empty());
-        assert!(resolution
-            .warnings
-            .iter()
-            .any(|w| w.contains("cycle")));
+        assert!(resolution.warnings.iter().any(|w| w.contains("cycle")));
     }
 
     #[test]
@@ -880,10 +874,7 @@ mod tests {
         let builder = DepGraphBuilder::new();
         let resolution = builder.resolve(vec!["nonexistent".to_string()]);
         assert!(!resolution.errors.is_empty());
-        assert!(resolution
-            .errors
-            .iter()
-            .any(|e| e.contains("nonexistent")));
+        assert!(resolution.errors.iter().any(|e| e.contains("nonexistent")));
     }
 
     #[test]
@@ -908,7 +899,9 @@ mod tests {
         let mut builder = DepGraphBuilder::new();
         builder.add_asset(
             "app",
-            AssetDeps::new().requires(vec![AssetDependency::new("core")]).recommends(vec![AssetDependency::new("extra")]),
+            AssetDeps::new()
+                .requires(vec![AssetDependency::new("core")])
+                .recommends(vec![AssetDependency::new("extra")]),
         );
         builder.add_asset("core", AssetDeps::new());
         builder.add_asset("extra", AssetDeps::new());
@@ -926,7 +919,10 @@ mod tests {
     #[test]
     fn provides_is_resolved_in_graph() {
         let mut builder = DepGraphBuilder::new();
-        builder.add_asset("tool", AssetDeps::new().provides(vec!["capability/x".to_string()]));
+        builder.add_asset(
+            "tool",
+            AssetDeps::new().provides(vec!["capability/x".to_string()]),
+        );
         let resolution = builder.resolve(vec!["tool".to_string()]);
         assert_eq!(resolution.resolution.len(), 1);
         assert_eq!(

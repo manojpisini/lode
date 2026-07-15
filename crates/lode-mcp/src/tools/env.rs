@@ -41,17 +41,18 @@ pub fn lode_env_check(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
     let env_config = lode_core::EnvConfig::default();
 
     let drifts =
         lode_core::check_env_drift(root.as_std_path(), &env_config).map_err(|e| e.to_string())?;
 
     Ok(json!({
-        "path": path,
+        "path": root.as_str(),
         "drift_count": drifts.len(),
         "drifts": drifts.iter().map(|d| json!({
             "key": d.key,
@@ -110,10 +111,11 @@ pub fn lode_env_sync(args: &Value) -> Result<Value, String> {
         .as_str()
         .ok_or("Missing required argument: path")?;
 
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let root =
+        camino::Utf8Path::from_path(validated.path()).ok_or_else(|| "non-utf8 path".to_string())?;
     let project_name = root.file_name().unwrap_or("project");
     let env_config = lode_core::EnvConfig::default();
 
@@ -122,6 +124,6 @@ pub fn lode_env_sync(args: &Value) -> Result<Value, String> {
 
     Ok(json!({
         "status": "ok",
-        "path": path,
+        "path": root.as_str(),
     }))
 }

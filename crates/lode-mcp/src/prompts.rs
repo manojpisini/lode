@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::error::McpError;
+use crate::util::load_config;
 
 type PromptResult<T> = Result<T, McpError>;
 
@@ -57,22 +58,14 @@ pub fn get_prompt(name: &str, args: &Value) -> PromptResult<Value> {
     }
 }
 
-fn load_config(root: &camino::Utf8Path) -> PromptResult<lode_core::config::LodeConfig> {
-    let project_toml = root.join(".lode").join("project.toml");
-    if !project_toml.exists() {
-        return Ok(lode_core::config::default_config());
-    }
-    let raw = std::fs::read_to_string(&project_toml)?;
-    let config: lode_core::config::LodeConfig = toml::from_str(&raw)?;
-    Ok(config)
-}
-
 fn get_project_review(args: &Value) -> PromptResult<Value> {
     let path = args["path"]
         .as_str()
         .ok_or_else(|| McpError::InvalidParams("Missing required argument: path".to_string()))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let validated = lode_core::ValidatedRoot::new(path)?;
+    let root = camino::Utf8PathBuf::from_path_buf(validated.path().to_path_buf())
+        .map_err(|_| McpError::Internal("non-utf8 path".to_string()))?;
     let mut sections = Vec::new();
 
     let project_toml = root.join(".lode").join("project.toml");
@@ -80,7 +73,7 @@ fn get_project_review(args: &Value) -> PromptResult<Value> {
         let raw = std::fs::read_to_string(&project_toml)?;
         sections.push(format!("## Project Configuration\n{raw}"));
 
-        let config = load_config(&root)?;
+        let config = load_config(&root).map_err(|e| McpError::Internal(e))?;
         let audit = lode_core::audit_project(&root, &config)?;
         sections.push(format!(
             "## Health\n- Score: {}/100\n- Convention violations: {}\n- Secret findings: {}\n- License: {}\n- README: {}",
@@ -140,13 +133,15 @@ fn get_convention_check(args: &Value) -> PromptResult<Value> {
         .as_str()
         .ok_or_else(|| McpError::InvalidParams("Missing required argument: path".to_string()))?;
 
-    let root = camino::Utf8PathBuf::from(path);
+    let validated = lode_core::ValidatedRoot::new(path)?;
+    let root = camino::Utf8PathBuf::from_path_buf(validated.path().to_path_buf())
+        .map_err(|_| McpError::Internal("non-utf8 path".to_string()))?;
 
     let mut sections = Vec::new();
 
     let project_toml = root.join(".lode").join("project.toml");
     if project_toml.exists() {
-        let config = load_config(&root)?;
+        let config = load_config(&root).map_err(|e| McpError::Internal(e))?;
 
         let report = lode_core::check_path(&root, &config)?;
 

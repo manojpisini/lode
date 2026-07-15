@@ -5,7 +5,7 @@ use lode_core::{
     ValidatedRoot,
 };
 
-use crate::{LibraryCommand, ProfileCommand};
+use crate::{LibraryCommand, OutputFormat, ProfileCommand};
 
 pub(crate) fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
     match command {
@@ -14,7 +14,21 @@ pub(crate) fn profile_command(command: ProfileCommand) -> lode_core::Result<()> 
                 println!("{profile}");
             }
         }
-        ProfileCommand::Show { name } => {
+        ProfileCommand::Show { name, output } => {
+            if output.should_use_json() {
+                let profiles_dir = global_asset_dir("profiles")?;
+                let path = profiles_dir.join(format!("{name}.toml"));
+                let content = std::fs::read_to_string(&path)
+                    .map_err(|e| LodeError::Message(format!("profile not found: {name}: {e}")))?;
+                let value: serde_json::Value = toml::from_str(&content)
+                    .map_err(|e| LodeError::Message(format!("failed to parse profile: {e}")))?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value)
+                        .map_err(|e| LodeError::Message(e.to_string()))?
+                );
+                return Ok(());
+            }
             crate::cmd::template::library_command(
                 "profiles",
                 LibraryCommand::Show { name, raw: true },

@@ -1,29 +1,51 @@
 #![deny(unsafe_code)]
 
+use crate::cmd::output;
+use crate::OutputFormat;
 use lode_core::setup_defaults;
 use serde_json::json;
 
-pub fn doctor(fix: bool, json: bool) -> lode_core::Result<()> {
+pub fn doctor_with_output(fix: bool, output: OutputFormat) -> lode_core::Result<()> {
     let mut fixed = false;
     if fix {
         setup_defaults(false)?;
         fixed = true;
     }
     let report = crate::build_doctor_report(fixed);
-    if json {
+    if output.should_use_json() {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!(report))
                 .map_err(|e| lode_core::LodeError::Message(e.to_string()))?
         );
     } else {
-        println!("doctor {}", report.status);
+        let badge = match report.status.as_str() {
+            "ok" => output::ok("doctor"),
+            "warn" => output::warn("doctor"),
+            _ => output::fail("doctor"),
+        };
+        println!("{}", output::section("System Check"));
+        println!("  {}\n", badge);
         if report.fixed {
-            println!("fixed\tsafe defaults refreshed");
+            println!(
+                "  {} {}\n",
+                output::green("✔"),
+                output::dim("safe defaults refreshed")
+            );
         }
-        for check in &report.checks {
-            println!("{}\t{}\t{}", check.name, check.status, check.detail);
-        }
+        let rows: Vec<Vec<String>> = report
+            .checks
+            .iter()
+            .map(|c| {
+                let sym = match c.status.as_str() {
+                    "ok" => output::green("✔"),
+                    "warn" => output::yellow("⚠"),
+                    _ => output::red("✘"),
+                };
+                vec![sym, c.name.clone(), c.detail.clone()]
+            })
+            .collect();
+        print!("{}", output::table(&["", "check", "detail"], &rows));
     }
     Ok(())
 }

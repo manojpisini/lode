@@ -4,7 +4,7 @@ use std::fs;
 
 use lode_core::{global_asset_dir, recipe_names, LodeError, ValidatedRoot};
 
-use crate::{LibraryCommand, RecipeCommand};
+use crate::{LibraryCommand, OutputFormat, RecipeCommand};
 
 pub(crate) fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
     match command {
@@ -13,7 +13,21 @@ pub(crate) fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
                 println!("{recipe}");
             }
         }
-        RecipeCommand::Show { name } => {
+        RecipeCommand::Show { name, output } => {
+            if output.should_use_json() {
+                let recipes_dir = global_asset_dir("recipes")?;
+                let path = recipes_dir.join(format!("{name}.toml"));
+                let content = std::fs::read_to_string(&path)
+                    .map_err(|e| LodeError::Message(format!("recipe not found: {name}: {e}")))?;
+                let value: serde_json::Value = toml::from_str(&content)
+                    .map_err(|e| LodeError::Message(format!("failed to parse recipe: {e}")))?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value)
+                        .map_err(|e| LodeError::Message(e.to_string()))?
+                );
+                return Ok(());
+            }
             crate::cmd::template::library_command(
                 "recipes",
                 LibraryCommand::Show { name, raw: true },

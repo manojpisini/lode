@@ -20,7 +20,7 @@ pub fn lode_release(args: &Value) -> Result<Value, String> {
     let path = args["path"]
         .as_str()
         .ok_or("Missing required argument: path")?;
-    let _validated =
+    let validated =
         lode_core::ValidatedRoot::new(path).map_err(|e| format!("Invalid project root: {e}"))?;
 
     let bump = args["bump"]
@@ -33,13 +33,13 @@ pub fn lode_release(args: &Value) -> Result<Value, String> {
     }
     let dry_run = args["dry_run"].as_bool().unwrap_or(false);
 
-    let root = std::path::Path::new(path);
+    let root = validated.path();
     let config = lode_core::ReleaseConfig::default();
 
     match lode_core::create_release(root, &config, dry_run) {
         Ok(report) => Ok(json!({
             "status": "ok",
-            "path": path,
+            "path": root.display().to_string(),
             "old_version": report.old_version,
             "new_version": report.new_version,
             "tag": report.tag,

@@ -7,6 +7,7 @@ pub fn list_resource_uris() -> Vec<String> {
         "lode://config".to_string(),
         "lode://registry".to_string(),
         "lode://templates".to_string(),
+        "lode://template-bundles".to_string(),
         "lode://profiles".to_string(),
         "lode://recipes".to_string(),
         "lode://project/info".to_string(),
@@ -33,6 +34,12 @@ pub fn list_resources() -> Vec<Value> {
             "uri": "lode://templates",
             "name": "Templates",
             "description": "Available project template paths",
+            "mimeType": "application/json",
+        }),
+        json!({
+            "uri": "lode://template-bundles",
+            "name": "Template Bundles",
+            "description": "Available template bundles in the global templates directory",
             "mimeType": "application/json",
         }),
         json!({
@@ -75,6 +82,7 @@ pub fn read_resource(uri: &str) -> ResResult<Vec<Value>> {
         "lode://config" => read_config_resource(),
         "lode://registry" => read_registry_resource(),
         "lode://templates" => read_templates_resource(),
+        "lode://template-bundles" => read_template_bundles_resource(),
         "lode://profiles" => read_profiles_resource(),
         "lode://recipes" => read_recipes_resource(),
         "lode://project/info" => read_project_info(),
@@ -110,6 +118,43 @@ fn read_templates_resource() -> ResResult<Vec<Value>> {
     let content = serde_json::to_string_pretty(&items)?;
     Ok(vec![json!({
         "uri": "lode://templates",
+        "mimeType": "application/json",
+        "text": content,
+    })])
+}
+
+fn read_template_bundles_resource() -> ResResult<Vec<Value>> {
+    let search_dir = lode_core::global_dir()
+        .map(|g| g.into_std_path_buf().join("templates"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    let mut bundles = Vec::new();
+    if search_dir.exists() {
+        for entry in
+            std::fs::read_dir(&search_dir).map_err(|e| McpError::Internal(e.to_string()))?
+        {
+            let entry = entry.map_err(|e| McpError::Internal(e.to_string()))?;
+            let p = entry.path();
+            if p.is_dir() {
+                let dirname = p
+                    .file_name()
+                    .map(|s| s.to_string_lossy())
+                    .unwrap_or_default()
+                    .to_string();
+                let manifest_path = p.join(format!("{dirname}.toml"));
+                if manifest_path.exists() {
+                    bundles.push(json!({
+                        "name": dirname,
+                        "path": p.to_string_lossy(),
+                    }));
+                }
+            }
+        }
+    }
+
+    let content = serde_json::to_string_pretty(&bundles)?;
+    Ok(vec![json!({
+        "uri": "lode://template-bundles",
         "mimeType": "application/json",
         "text": content,
     })])

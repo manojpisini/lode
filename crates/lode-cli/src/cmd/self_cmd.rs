@@ -75,9 +75,7 @@ pub(crate) fn self_command(command: SelfCommand) -> lode_core::Result<()> {
                 println!("removed generated Lode data; kept config.toml");
             } else if root_path.exists() {
                 let parent = root_path.parent().ok_or_else(|| {
-                    lode_core::LodeError::Message(format!(
-                        "global root has no parent: {root_path}"
-                    ))
+                    lode_core::LodeError::Message(format!("global root has no parent: {root_path}"))
                 })?;
                 let name = root_path.file_name().ok_or_else(|| {
                     lode_core::LodeError::Message(format!(
