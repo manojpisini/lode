@@ -26,34 +26,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup MSYS2 (Windows GNU)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+
       - name: Install Rust stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          toolchain: stable
           target: ${{ matrix.target }}
-
-      - name: Set MSYS2 path (Windows)
-        if: runner.os == 'Windows'
-        run: echo "C:\msys64\ucrt64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        shell: pwsh
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release binaries
-        run: cargo build --release -p lode-cli -p lode-lsp
+        run: cargo build --release --target ${{ matrix.target }} -p lode-cli -p lode-lsp
 
       - name: Create archive
         shell: bash
         run: |
           VERSION="${{ github.ref_name }}"
-          DIR="lode-$VERSION-${{ matrix.target }}"
+          TARGET="${{ matrix.target }}"
+          DIR="lode-$VERSION-$TARGET"
+          BIN_DIR="target/$TARGET/release"
           mkdir -p "$DIR"
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp target/release/lode.exe "$DIR/"
-            cp target/release/lode-lsp.exe "$DIR/"
+            cp "$BIN_DIR/lode.exe" "$DIR/"
+            cp "$BIN_DIR/lode-lsp.exe" "$DIR/"
             7z a "$DIR${{ matrix.ext }}" "$DIR"
           else
-            cp target/release/lode "$DIR/"
-            cp target/release/lode-lsp "$DIR/"
+            cp "$BIN_DIR/lode" "$DIR/"
+            cp "$BIN_DIR/lode-lsp" "$DIR/"
             tar czf "$DIR${{ matrix.ext }}" "$DIR"
           fi
 
@@ -69,6 +76,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
