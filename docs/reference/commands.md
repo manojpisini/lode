@@ -21,9 +21,9 @@
 
 | Command | Description |
 |---------|-------------|
-| `lode scan` | Scan for secrets |
-| `lode scan --quiet` | Quiet mode (exit code only) |
-| `lode scan --staged` | Scan staged files only |
+| `lode scan secrets` | Scan for secrets |
+| `lode scan secrets --quiet` | Quiet mode (exit code only) |
+| `lode scan secrets --staged` | Scan staged files only |
 | `lode scan foreign` | Scan for non-LODE projects |
 
 ## Templates
@@ -62,7 +62,7 @@
 | Command | Description |
 |---------|-------------|
 | `lode git branch <kind> <description>` | Create conventional branch |
-| `lode git commit <kind> <scope> <message>` | Create conventional commit |
+| `lode git commit [message] --type <kind> --scope <scope>` | Create conventional commit |
 | `lode git changelog` | Generate changelog |
 | `lode git tag <version>` | Create version tag |
 

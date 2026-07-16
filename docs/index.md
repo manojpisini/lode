@@ -25,9 +25,9 @@ lode check
 ```
 crates/
   lode-core/    — Core library (config, rules, secrets, templates)
-  lode-cli/     — CLI binary (40+ commands)
+  lode-cli/     — CLI binary (65+ commands)
   lode-daemon/  — Background file watcher
-  lode-mcp/     — MCP server (44 tools)
+  lode-mcp/     — MCP server (38 tools)
   lode-tui/     — Terminal UI (7 panes)
   lode-lsp/     — LSP server
 extensions/
@@ -43,6 +43,6 @@ prompts/         — UPPS v5.2.0 prompt suite
 - **Validation:** `lode check`, `lode fix`, `lode scan`, `lode audit`
 - **Orchestration:** `lode agent`, `lode context`, `lode plan`
 - **Daemon:** Background file watching, IPC, auto-shutdown
-- **MCP:** 44 tools, 9 resources, 3 prompts
+- **MCP:** 38 core tools (+ CLI-specific tools), 9 resources, 3 prompts
 - **Secrets:** Scanning, redaction, brokering
 - **Template Bundles:** Capture, apply, validate, verify

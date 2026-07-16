@@ -20,7 +20,7 @@ Checks that all files follow naming conventions (default: `snake_case`).
 ## 3. Scan for Secrets
 
 ```bash
-lode scan
+lode scan secrets
 ```
 
 Scans the project for API keys, tokens, and other secrets.

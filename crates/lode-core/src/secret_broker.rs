@@ -7,7 +7,6 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::error::{LodeError, Result};
 
@@ -16,13 +15,25 @@ pub struct SecretVault {
     pub secrets: HashMap<String, SecretEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SecretEntry {
     pub key: String,
     pub value: String,
     pub scope: String,
     pub created_at: u64,
     pub grants: Vec<Grant>,
+}
+
+impl std::fmt::Debug for SecretEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretEntry")
+            .field("key", &self.key)
+            .field("value", &"***redacted***")
+            .field("scope", &self.scope)
+            .field("created_at", &self.created_at)
+            .field("grants", &self.grants)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,14 +77,8 @@ fn load_or_create_key() -> Result<[u8; 32]> {
         }
     }
 
-    let entropy = format!(
-        "{}{}{}{}",
-        std::env::var("COMPUTERNAME").unwrap_or_default(),
-        std::env::var("HOSTNAME").unwrap_or_default(),
-        std::process::id(),
-        now_secs(),
-    );
-    let key: [u8; 32] = Sha256::digest(entropy.as_bytes()).into();
+    let mut key = [0u8; 32];
+    getrandom::getrandom(&mut key).expect("getrandom failed");
 
     if let Some(parent) = key_path.parent() {
         fs::create_dir_all(parent).map_err(|source| LodeError::Io {
@@ -82,9 +87,15 @@ fn load_or_create_key() -> Result<[u8; 32]> {
         })?;
     }
     fs::write(&key_path, key).map_err(|source| LodeError::Io {
-        path: key_path,
+        path: key_path.clone(),
         source,
     })?;
+    #[cfg(unix)]
+    {
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&key_path, Permissions::from_mode(0o600)).ok();
+    }
 
     Ok(key)
 }
@@ -194,10 +205,17 @@ pub fn get_secret_for(key: &str, principal: &str) -> Result<Option<String>> {
         Some(e) => e,
         None => return Ok(None),
     };
-    if !entry.grants.is_empty() && !entry.grants.iter().any(|g| g.principal == principal) {
-        return Err(LodeError::Message(format!(
-            "access denied: '{principal}' is not granted access to '{key}'"
-        )));
+    if !entry.grants.is_empty() {
+        let now = now_secs();
+        let valid = entry
+            .grants
+            .iter()
+            .any(|g| g.principal == principal && g.expires_at.is_none_or(|exp| now < exp));
+        if !valid {
+            return Err(LodeError::Message(format!(
+                "access denied: '{principal}' is not granted access to '{key}'"
+            )));
+        }
     }
     Ok(Some(entry.value.clone()))
 }

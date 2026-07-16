@@ -15,7 +15,7 @@ Manage projects, track time, scan secrets, enforce conventions, run daemons, ser
 | [lode-cli](https://crates.io/crates/lode-cli) | [![crates.io](https://img.shields.io/crates/v/lode-cli.svg)](https://crates.io/crates/lode-cli) | CLI binary — the main entry point |
 | [lode-core](https://crates.io/crates/lode-core) | [![crates.io](https://img.shields.io/crates/v/lode-core.svg)](https://crates.io/crates/lode-core) | Core library: config, rules, secrets, scaffold, git |
 | [lode-daemon](https://crates.io/crates/lode-daemon) | [![crates.io](https://img.shields.io/crates/v/lode-daemon.svg)](https://crates.io/crates/lode-daemon) | Background file watcher with IPC |
-| [lode-mcp](https://crates.io/crates/lode-mcp) | [![crates.io](https://img.shields.io/crates/v/lode-mcp.svg)](https://crates.io/crates/lode-mcp) | MCP server: 44 tools, 9 resources, 3 prompts |
+| [lode-mcp](https://crates.io/crates/lode-mcp) | [![crates.io](https://img.shields.io/crates/v/lode-mcp.svg)](https://crates.io/crates/lode-mcp) | MCP server: 38 tools, 9 resources, 3 prompts |
 | [lode-tui](https://crates.io/crates/lode-tui) | [![crates.io](https://img.shields.io/crates/v/lode-tui.svg)](https://crates.io/crates/lode-tui) | Terminal UI with 7 panes |
 | [lode-lsp](https://crates.io/crates/lode-lsp) | [![crates.io](https://img.shields.io/crates/v/lode-lsp.svg)](https://crates.io/crates/lode-lsp) | LSP server over JSON-RPC |
 

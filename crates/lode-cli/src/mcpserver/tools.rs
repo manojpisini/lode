@@ -1338,10 +1338,7 @@ pub fn lode_template_bundle_capture(args: &Value) -> Result<Value, String> {
         destination: Some(dest.clone()),
         project: false,
         dry_run,
-        redact_secrets: !args
-            .get("no_redact")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
+        redact_secrets: true,
         ..Default::default()
     };
     if dry_run {

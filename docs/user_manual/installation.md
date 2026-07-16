@@ -10,7 +10,7 @@ cargo install lode-lsp
 ## From Source
 
 ```bash
-git clone https://github.com/your-org/lode
+git clone https://github.com/manojpisini/lode
 cd lode
 cargo build --release -p lode-cli
 cargo build --release -p lode-lsp
@@ -33,5 +33,5 @@ lode setup
 ```
 
 This creates:
-- `~/.config/lode/config.toml` — Global configuration
+- `~/.lode/config.toml` — Global configuration
 - `~/.local/share/lode/` — Global assets directory

@@ -23,9 +23,9 @@
 
 ## Commands
 
-- [Commands Cheatsheet](commands.md) — All 40+ CLI commands with descriptions and flags
+- [Commands Cheatsheet](commands.md) — All 65+ CLI commands with descriptions and flags
 
 ## Tools
 
-- [MCP Tools](mcp_tools.md) — All 44 MCP tools, resources, prompts
+- [MCP Tools](mcp_tools.md) — All 38 core MCP tools + CLI-specific tools, 9 resources, 3 prompts
 - [LSP Capabilities](lsp.md) — LSP server features

@@ -2,7 +2,7 @@
 
 ## Global Configuration
 
-Location: `~/.config/lode/config.toml`
+Location: `~/.lode/config.toml`
 
 ```toml
 [identity]

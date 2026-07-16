@@ -10,6 +10,7 @@ use std::{
     env, fs, io,
     io::{IsTerminal, Read},
     process::ExitCode,
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -566,9 +567,16 @@ pub(crate) fn should_require_signature(uri: &str) -> bool {
         .any(|extension| uri.ends_with(&format!(".{extension}")))
 }
 
+static MCP_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
 pub(crate) fn mcp_handle_request(request: &Value) -> String {
     let method = request["method"].as_str().unwrap_or("");
     let id = request.get("id").cloned().unwrap_or(json!(null));
+    if method == "initialize" {
+        MCP_INITIALIZED.store(true, Ordering::SeqCst);
+    } else if method != "notifications/initialized" && !MCP_INITIALIZED.load(Ordering::SeqCst) {
+        return json!({"jsonrpc":"2.0","error":{"code":-32000,"message":"not initialized"},"id":id}).to_string();
+    }
     match method {
         "tools/list" => json!({"jsonrpc":"2.0","result":mcp_tools(),"id":id}).to_string(),
         "tools/call" => match mcp_call_tool(request) {

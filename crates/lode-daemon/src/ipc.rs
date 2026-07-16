@@ -118,6 +118,12 @@ impl IpcServer {
         // Write auth token to sidecar file
         let token_path = token_path(&self.socket_path);
         tokio::fs::write(&token_path, &self.auth_token).await?;
+        #[cfg(unix)]
+        {
+            use std::fs::Permissions;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&token_path, Permissions::from_mode(0o600)).ok();
+        }
 
         self.running = true;
         Ok(())
@@ -146,24 +152,17 @@ impl IpcServer {
 }
 
 fn generate_token() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let pid = std::process::id();
-    // Deterministic token based on time + pid (non-cryptographic, sufficient for local IPC)
-    let raw = format!("lode-ipc-{pid}-{nanos}");
-    let hash = simple_hash(&raw);
-    format!("lode-ipc-token-{pid}-{hash}")
+    let mut buf = [0u8; 32];
+    getrandom::getrandom(&mut buf).expect("getrandom failed");
+    format!("lode-ipc-token-{}", hex_encode(&buf))
 }
 
-fn simple_hash(input: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    input.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .concat()
 }
 
 pub fn token_path(socket_path: &Path) -> PathBuf {

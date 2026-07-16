@@ -48,7 +48,7 @@ Limits output to approximately 4000 tokens.
 ## Agent Simulation
 
 ```bash
-lode agent-sim build --intent "Add tests for new module"
+lode agent-sim simulate --intent "Add tests for new module"
 ```
 
 Simulates an agent executing an intent against the project, producing a trace of actions.

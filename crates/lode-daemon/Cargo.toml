@@ -11,7 +11,7 @@ homepage.workspace = true
 authors.workspace = true
 
 [dependencies]
-lode-core = { path = "../lode-core", version = "0.1.0" }
+lode-core = { path = "../lode-core", version = "0.1.1" }
 serde.workspace = true
 serde_json.workspace = true
 camino.workspace = true
@@ -19,6 +19,10 @@ thiserror.workspace = true
 clap.workspace = true
 tokio.workspace = true
 notify.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

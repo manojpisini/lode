@@ -35,17 +35,25 @@ node_modules/
 outputs/
 .omx/
 .agents/
-.prompt_suite/
-reports/
-artifacts/
-logs/
-plans/
+/presentation/
 
 # Legacy project artifacts
 Defaults.txt
 TUI_Design_Demo.png
 SECURITY_AUDIT_PROMPT.md
 MASTER_SECURITY_AUDIT_PROMPT.md
-prompts/
 LODE_DESIGN_FINAL.md
 .old
+
+# BEGIN MISSION DIRECTIVES MANAGED IGNORE
+/prompts/
+/.prompt_suite/
+/results/
+/reports/
+/logs/
+/artifacts/
+/outputs/
+/.md-prompts-staging-*/
+/.md-prompts-backup-*/
+# docs/ remains tracked and is intentionally not ignored.
+# END MISSION DIRECTIVES MANAGED IGNORE

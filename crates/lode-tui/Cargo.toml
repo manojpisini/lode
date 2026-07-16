@@ -15,9 +15,12 @@ name = "lode-tui"
 path = "src/main.rs"
 
 [dependencies]
-lode-core = { path = "../lode-core", version = "0.1.0" }
+lode-core = { path = "../lode-core", version = "0.1.1" }
 camino.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

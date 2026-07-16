@@ -7,7 +7,7 @@ LODE scans for secrets (API keys, tokens, private keys) in your project files.
 ## Scanning
 
 ```bash
-lode scan
+lode scan secrets
 ```
 
 Scans the entire project for secrets.
@@ -15,7 +15,7 @@ Scans the entire project for secrets.
 ### Quiet Mode
 
 ```bash
-lode scan --quiet
+lode scan secrets --quiet
 ```
 
 Only returns an exit code (0 = no secrets found, 7 = secrets found).
@@ -23,7 +23,7 @@ Only returns an exit code (0 = no secrets found, 7 = secrets found).
 ### Staged Files Only
 
 ```bash
-lode scan --staged
+lode scan secrets --staged
 ```
 
 Only scans files staged in git.
