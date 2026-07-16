@@ -61,10 +61,8 @@ pub fn apply_manifest(
         } else {
             report.directories_created.push(dir_path);
             // handle .gitkeep and .gitignore
-            if dir.keep {
-                if !full_path.join(".gitkeep").exists() {
-                    let _ = std::fs::write(full_path.join(".gitkeep"), "");
-                }
+            if dir.keep && !full_path.join(".gitkeep").exists() {
+                let _ = std::fs::write(full_path.join(".gitkeep"), "");
             }
             if dir.gitignore_contents {
                 let gi = full_path.join(".gitignore");
@@ -253,11 +251,11 @@ fn build_context(
     // Add derived variables
     if let Some(project) = values.get("project").or_else(|| values.get("name")) {
         ctx = ctx.with("project", project);
-        ctx = ctx.with("ident", &crate::template::slug_to_ident(project));
-        ctx = ctx.with("class", &crate::template::slug_to_class(project));
-        ctx = ctx.with("camel", &slug_to_camel(project));
-        ctx = ctx.with("constant", &slug_to_constant(project));
-        ctx = ctx.with("title", &slug_to_title(project));
+        ctx = ctx.with("ident", crate::template::slug_to_ident(project));
+        ctx = ctx.with("class", crate::template::slug_to_class(project));
+        ctx = ctx.with("camel", slug_to_camel(project));
+        ctx = ctx.with("constant", slug_to_constant(project));
+        ctx = ctx.with("title", slug_to_title(project));
     }
 
     // Platform and arch
@@ -282,8 +280,7 @@ fn slug_to_constant(s: &str) -> String {
 }
 
 fn slug_to_title(s: &str) -> String {
-    s.replace('-', " ")
-        .replace('_', " ")
+    s.replace(['-', '_'], " ")
         .split_whitespace()
         .map(|w| {
             let mut c = w.chars();

@@ -11,7 +11,7 @@ use lode_core::{
 
 use crate::{
     content_hash_bytes, current_dir, list_dir, now_timestamp, open_editor, resolve_command_path,
-    run_command_macro_loaded, safe_relative_path, CommandsCommand, OutputFormat,
+    run_command_macro_loaded, safe_relative_path, CommandsCommand,
 };
 
 pub(crate) fn commands(command: CommandsCommand) -> lode_core::Result<()> {

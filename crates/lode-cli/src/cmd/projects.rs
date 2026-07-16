@@ -5,7 +5,7 @@ use lode_core::{
     save_registry, LodeError,
 };
 
-use crate::{current_dir, OutputFormat, ProjectsCommand};
+use crate::{current_dir, ProjectsCommand};
 
 pub(crate) fn projects(command: ProjectsCommand) -> lode_core::Result<()> {
     match command {

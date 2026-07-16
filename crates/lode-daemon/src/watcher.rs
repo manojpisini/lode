@@ -108,14 +108,14 @@ impl DaemonWatcher {
         ];
         for kind in &asset_kinds {
             if let Ok(dir) = lode_core::global_asset_dir(kind) {
-                if dir.exists() && !self.watched_dirs.contains(&dir) {
-                    if self
+                if dir.exists()
+                    && !self.watched_dirs.contains(&dir)
+                    && self
                         .watcher
                         .watch(dir.as_std_path(), RecursiveMode::Recursive)
                         .is_ok()
-                    {
-                        self.watched_dirs.push(dir);
-                    }
+                {
+                    self.watched_dirs.push(dir);
                 }
             }
         }

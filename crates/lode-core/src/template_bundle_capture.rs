@@ -573,9 +573,8 @@ fn classify_file(path: &Path, size: u64, config: &CaptureConfig) -> ClassKind {
 }
 
 fn classify_owner(rel_path: &str) -> Option<String> {
-    if rel_path.starts_with(".lode") || rel_path.ends_with(".lode") {
-        Some("managed".into())
-    } else if rel_path.starts_with(".git") {
+    if rel_path.starts_with(".lode") || rel_path.ends_with(".lode") || rel_path.starts_with(".git")
+    {
         Some("managed".into())
     } else if rel_path.ends_with(".lock") || rel_path.ends_with(".gitkeep") {
         Some("derived".into())
@@ -762,7 +761,7 @@ mod tests {
         assert!(!receipt.assets_copied.is_empty() || !receipt.inline_files.is_empty());
 
         // Verify the bundle was written
-        let template_id = dir.file_name().unwrap().to_string_lossy().to_string();
+        let _template_id = dir.file_name().unwrap().to_string_lossy().to_string();
         // The bundle might be in temp dir, just check receipt fields
         assert!(receipt.destination.exists());
         let _ = fs::remove_dir_all(&receipt.destination);

@@ -2,7 +2,6 @@
 
 use crate::cmd::output;
 use crate::CheckArgs;
-use crate::OutputFormat;
 use lode_core::{check_path, fix_path, load_global_config, LodeError};
 
 pub(crate) fn convention_check_with_output(args: CheckArgs) -> lode_core::Result<()> {
@@ -59,7 +58,7 @@ pub(crate) fn convention_check_with_output(args: CheckArgs) -> lode_core::Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CheckArgs;
+    use crate::{CheckArgs, OutputFormat};
 
     #[test]
     fn test_check_args_defaults() {

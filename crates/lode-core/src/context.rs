@@ -497,7 +497,7 @@ pub fn compile_context(
 
     let total_estimated: usize = entries.iter().map(|e| e.estimated_tokens).sum();
 
-    entries.sort_by(|a, b| a.priority.cmp(&b.priority));
+    entries.sort_by_key(|a| a.priority);
 
     let mut budget_remaining = budget;
     let mut included_count = 0;
@@ -555,7 +555,7 @@ pub fn compile_context(
         } else {
             project_dir.join(".lode").join("context")
         };
-        let name = entry.path.split('/').last().unwrap_or(&entry.path);
+        let name = entry.path.split('/').next_back().unwrap_or(&entry.path);
         let file_path = scan_dir.join(name);
         if let Ok(content) = fs::read_to_string(&file_path) {
             compiled.push_str(&format!("### {}\n\n", entry.path));
@@ -568,7 +568,7 @@ pub fn compile_context(
     root.create_dir_all(Utf8Path::new(".lode/context"))?;
     root.write_atomic(&output_rel, &compiled)?;
 
-    entries.sort_by(|a, b| a.priority.cmp(&b.priority));
+    entries.sort_by_key(|a| a.priority);
 
     let _ = add_managed_file(
         project_dir,

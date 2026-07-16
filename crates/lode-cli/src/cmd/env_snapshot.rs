@@ -3,7 +3,6 @@
 use lode_core::env_snapshot;
 
 use crate::EnvSnapshotCommand;
-use crate::OutputFormat;
 
 pub(crate) fn env_snapshot_command(command: EnvSnapshotCommand) -> lode_core::Result<()> {
     match command {

@@ -1,7 +1,6 @@
 #![deny(unsafe_code)]
 
 use crate::cmd::output as out;
-use crate::OutputFormat;
 use crate::ScanCommand;
 use lode_core::scan_secrets;
 
@@ -96,7 +95,7 @@ pub(crate) fn scan(command: ScanCommand) -> lode_core::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ScanCommand;
+    use crate::{OutputFormat, ScanCommand};
 
     #[test]
     fn test_scan_command_secrets_default() {

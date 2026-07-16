@@ -248,13 +248,13 @@ fn process_ipc_line(line: &str, auth_token: &str, control: &DaemonControl) -> Op
         (cmd, tok)
     };
 
-    if let Err(_) = authenticate(&token_str, auth_token) {
+    if authenticate(&token_str, auth_token).is_err() {
         return Some(IpcResponse::error("Authentication failed: invalid token"));
     }
 
     match parse_command(&command_str) {
         Ok(command) => Some(handle_command(&command, control)),
-        Err(e) => Some(IpcResponse::error(&e.to_string())),
+        Err(e) => Some(IpcResponse::error(e.to_string())),
     }
 }
 

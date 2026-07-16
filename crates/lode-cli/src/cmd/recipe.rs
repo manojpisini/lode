@@ -4,7 +4,7 @@ use std::fs;
 
 use lode_core::{global_asset_dir, recipe_names, LodeError, ValidatedRoot};
 
-use crate::{LibraryCommand, OutputFormat, RecipeCommand};
+use crate::{LibraryCommand, RecipeCommand};
 
 pub(crate) fn recipe_command(command: RecipeCommand) -> lode_core::Result<()> {
     match command {

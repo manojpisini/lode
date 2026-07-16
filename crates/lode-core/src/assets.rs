@@ -882,6 +882,7 @@ pub fn template_contents(path: &str, context: &RenderContext) -> String {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn profile_contents(profile: &str) -> String {
     let (lang, desc, checks, targets, vars): (
         &str,
@@ -1270,41 +1271,45 @@ fn profile_contents(profile: &str) -> String {
 
         // ── Java profiles ────────────────────────────────────────────
         p if p.starts_with("java/") => {
-            let (desc, checks, targets): (&str, &[(&str, &str)], &[(&str, &str, &str)]) =
-                match profile {
-                    "java/java-gradle" => (
-                        "Java project with Gradle build tool",
-                        &[("java", "java --version"), ("gradle", "gradle --version")],
-                        &[
-                            ("build", "./gradlew build", "Build with Gradle"),
-                            ("test", "./gradlew test", "Run tests"),
-                            ("clean", "./gradlew clean", "Clean build artifacts"),
-                        ],
-                    ),
-                    "java/java-maven" => (
-                        "Java project with Maven build tool",
-                        &[("java", "java --version"), ("mvn", "mvn --version")],
-                        &[
-                            ("build", "mvn --batch-mode compile", "Compile with Maven"),
-                            ("test", "mvn --batch-mode test", "Run tests"),
-                            (
-                                "package",
-                                "mvn --batch-mode package",
-                                "Package the artifact",
-                            ),
-                            ("clean", "mvn --batch-mode clean", "Clean build artifacts"),
-                        ],
-                    ),
-                    _ => (
-                        "Java project",
-                        &[("java", "java --version"), ("javac", "javac --version")],
-                        &[
-                            ("build", "make build", "Build the project"),
-                            ("test", "make test", "Run tests"),
-                            ("clean", "make clean", "Clean build artifacts"),
-                        ],
-                    ),
-                };
+            #[allow(clippy::type_complexity)]
+            let (desc, checks, targets): (
+                &str,
+                &[(&str, &str)],
+                &[(&str, &str, &str)],
+            ) = match profile {
+                "java/java-gradle" => (
+                    "Java project with Gradle build tool",
+                    &[("java", "java --version"), ("gradle", "gradle --version")],
+                    &[
+                        ("build", "./gradlew build", "Build with Gradle"),
+                        ("test", "./gradlew test", "Run tests"),
+                        ("clean", "./gradlew clean", "Clean build artifacts"),
+                    ],
+                ),
+                "java/java-maven" => (
+                    "Java project with Maven build tool",
+                    &[("java", "java --version"), ("mvn", "mvn --version")],
+                    &[
+                        ("build", "mvn --batch-mode compile", "Compile with Maven"),
+                        ("test", "mvn --batch-mode test", "Run tests"),
+                        (
+                            "package",
+                            "mvn --batch-mode package",
+                            "Package the artifact",
+                        ),
+                        ("clean", "mvn --batch-mode clean", "Clean build artifacts"),
+                    ],
+                ),
+                _ => (
+                    "Java project",
+                    &[("java", "java --version"), ("javac", "javac --version")],
+                    &[
+                        ("build", "make build", "Build the project"),
+                        ("test", "make test", "Run tests"),
+                        ("clean", "make clean", "Clean build artifacts"),
+                    ],
+                ),
+            };
             ("java", desc, checks, targets, &[])
         }
 
@@ -1370,6 +1375,7 @@ fn profile_contents(profile: &str) -> String {
         // ── Challenge / Competitive Programming profiles ──────────────
         p if p.starts_with("challenge/competitive-") => {
             let sub = p.strip_prefix("challenge/competitive-").unwrap_or("cpp");
+            #[allow(clippy::type_complexity)]
             let (lang, desc, checks, targets): (
                 &str,
                 &str,
@@ -1580,7 +1586,7 @@ fn snippet_contents(lang: &str, name: &str) -> String {
 fn command_contents(command: &str) -> String {
     match command {
         "commit" => {
-            return r#"slug = "commit"
+            r#"slug = "commit"
 description = "Stage all files and commit with a message"
 help = "Usage: lode commit -m \"message\""
 
@@ -1608,7 +1614,7 @@ show_output = true
 "#.to_string()
         }
         "fresh" => {
-            return r#"slug = "fresh"
+            r#"slug = "fresh"
 description = "Clean build artifacts and perform a full rebuild"
 
 [[steps]]
@@ -1621,7 +1627,7 @@ run = "install"
 "#.to_string()
         }
         "ship" => {
-            return r#"slug = "ship"
+            r#"slug = "ship"
 description = "Verify project and create a release"
 
 [[steps]]
@@ -1634,7 +1640,7 @@ run = "release"
 "#.to_string()
         }
         "explain" => {
-            return r#"slug = "explain"
+            r#"slug = "explain"
 description = "Explain what Lode does"
 
 [[steps]]
@@ -1643,7 +1649,7 @@ run = "echo \"Lode keeps project structure, defaults, commands, snippets, and co
 "#.to_string()
         }
         "setup-dev" => {
-            return r#"slug = "setup-dev"
+            r#"slug = "setup-dev"
 description = "Check prerequisites, install dependencies, and verify the setup"
 
 [[steps]]
@@ -1665,7 +1671,7 @@ show_output = true
 "#.to_string()
         }
         "dev" => {
-            return r#"slug = "dev"
+            r#"slug = "dev"
 description = "Build and run the development environment"
 
 [[steps]]
@@ -1678,7 +1684,7 @@ run = "dev"
 "#.to_string()
         }
         "build" => {
-            return r#"slug = "build"
+            r#"slug = "build"
 description = "Clean previous artifacts and perform a full build"
 
 [[steps]]
@@ -1691,7 +1697,7 @@ run = "build"
 "#.to_string()
         }
         "test-all" => {
-            return r#"slug = "test-all"
+            r#"slug = "test-all"
 description = "Build, run all tests, and show a summary"
 
 [[steps]]
@@ -1709,7 +1715,7 @@ show_output = true
 "#.to_string()
         }
         "lint-all" => {
-            return r#"slug = "lint-all"
+            r#"slug = "lint-all"
 description = "Check formatting and run the linter, then show results"
 
 [[steps]]
@@ -1727,7 +1733,7 @@ show_output = true
 "#.to_string()
         }
         "fmt-all" => {
-            return r#"slug = "fmt-all"
+            r#"slug = "fmt-all"
 description = "Format the codebase and verify formatting"
 
 [[steps]]
@@ -1741,7 +1747,7 @@ show_output = true
 "#.to_string()
         }
         "clean-all" => {
-            return r#"slug = "clean-all"
+            r#"slug = "clean-all"
 description = "Remove all common build artifacts and caches"
 
 [[steps]]
@@ -1760,7 +1766,7 @@ show_output = true
 "#.to_string()
         }
         "verify" => {
-            return r#"slug = "verify"
+            r#"slug = "verify"
 description = "Full verification pipeline: format, lint, and test"
 
 [[steps]]
@@ -1777,7 +1783,7 @@ run = "test"
 "#.to_string()
         }
         "health" => {
-            return r#"slug = "health"
+            r#"slug = "health"
 description = "Check environment health and report status"
 
 [[steps]]
@@ -1810,7 +1816,7 @@ show_output = true
 "#.to_string()
         }
         "release-local" => {
-            return r#"slug = "release-local"
+            r#"slug = "release-local"
 description = "Verify, build in release mode, and package the artifact"
 
 [[steps]]
@@ -1823,7 +1829,7 @@ run = "release"
 "#.to_string()
         }
         "cp-new" => {
-            return r#"slug = "cp-new"
+            r#"slug = "cp-new"
 description = "Scaffold a new competitive programming problem directory"
 help = "Usage: lode cp-new <problem-name>"
 
@@ -1851,7 +1857,7 @@ show_output = true
 "#.to_string()
         }
         "cp-run" => {
-            return r#"slug = "cp-run"
+            r#"slug = "cp-run"
 description = "Compile and run a competitive programming solution"
 help = "Usage: lode cp-run <file.cpp>"
 
@@ -1871,7 +1877,7 @@ show_output = true
 "#.to_string()
         }
         "cp-stress" => {
-            return r#"slug = "cp-stress"
+            r#"slug = "cp-stress"
 description = "Stress test a solution against a brute force implementation"
 
 [[steps]]
@@ -1886,7 +1892,7 @@ show_output = true
 "#.to_string()
         }
         "hackathon-demo" => {
-            return r#"slug = "hackathon-demo"
+            r#"slug = "hackathon-demo"
 description = "Build and start the hackathon demo environment"
 
 [[steps]]
@@ -1899,7 +1905,7 @@ run = "demo"
 "#.to_string()
         }
         "mc-run-client" => {
-            return r#"slug = "mc-run-client"
+            r#"slug = "mc-run-client"
 description = "Run the Minecraft client for testing"
 
 [[steps]]
@@ -1914,7 +1920,7 @@ show_output = true
 "#.to_string()
         }
         "mc-run-server" => {
-            return r#"slug = "mc-run-server"
+            r#"slug = "mc-run-server"
 description = "Run the Minecraft server for testing"
 
 [[steps]]
@@ -1929,7 +1935,7 @@ show_output = true
 "#.to_string()
         }
         "gha-validate" => {
-            return r#"slug = "gha-validate"
+            r#"slug = "gha-validate"
 description = "Validate GitHub Actions workflow files"
 
 [[steps]]
@@ -1949,7 +1955,7 @@ show_output = true
 "#.to_string()
         }
         "tauri-dev" => {
-            return r#"slug = "tauri-dev"
+            r#"slug = "tauri-dev"
 description = "Start the Tauri development environment with hot reload"
 
 [[steps]]
@@ -1963,7 +1969,7 @@ args = ["tauri", "dev"]
 "#.to_string()
         }
         "tauri-build" => {
-            return r#"slug = "tauri-build"
+            r#"slug = "tauri-build"
 description = "Build Tauri app for production"
 
 [[steps]]
@@ -1977,7 +1983,7 @@ args = ["tauri", "build"]
 "#.to_string()
         }
         "git-commit" => {
-            return r#"slug = "git-commit"
+            r#"slug = "git-commit"
 description = "Stage all changes and create a git commit"
 help = "Usage: lode git-commit -m \"message\""
 
@@ -2006,7 +2012,7 @@ show_output = true
             .to_string()
         }
         "git-tag" => {
-            return r#"slug = "git-tag"
+            r#"slug = "git-tag"
 description = "Create an annotated version tag and optionally push"
 help = "Usage: lode git-tag -v 1.0.0 -m 'v1.0.0' --push"
 
@@ -2030,7 +2036,7 @@ run = "git push origin \"v{{ args.version }}\""
             .to_string()
         }
         "git-changelog" => {
-            return r#"slug = "git-changelog"
+            r#"slug = "git-changelog"
 description = "Generate changelog from git log"
 help = "Usage: lode git-changelog"
 
@@ -2050,7 +2056,7 @@ show_output = true
             .to_string()
         }
         "git-install-hooks" => {
-            return r#"slug = "git-install-hooks"
+            r#"slug = "git-install-hooks"
 description = "Install lode-managed git hook scripts"
 
 [[steps]]
@@ -2069,7 +2075,7 @@ show_output = true
             .to_string()
         }
         "git-sign-setup" => {
-            return r#"slug = "git-sign-setup"
+            r#"slug = "git-sign-setup"
 description = "Configure git commit signing metadata"
 
 [[steps]]
@@ -2084,7 +2090,7 @@ show_output = true
             .to_string()
         }
         "git-remote-setup" => {
-            return r#"slug = "git-remote-setup"
+            r#"slug = "git-remote-setup"
 description = "Record git remote provider metadata"
 help = "Usage: lode git-remote-setup --provider github --visibility private"
 

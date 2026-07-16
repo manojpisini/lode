@@ -70,7 +70,7 @@ impl Process {
     }
 }
 
-fn validate_program(program: &str) -> Result<()> {
+pub(crate) fn validate_program(program: &str) -> Result<()> {
     if program.is_empty()
         || program.contains('/')
         || program.contains('\\')

@@ -167,11 +167,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     idle_watchdog.reset().await;
                     state.increment_events();
 
-                    if !args.no_auto_register && watcher.is_global_event(&event) {
-                        if matches!(event, lode_daemon::WatchEvent::Create(_) | lode_daemon::WatchEvent::Modify(_)) {
+                    if !args.no_auto_register && watcher.is_global_event(&event)
+                        && matches!(event, lode_daemon::WatchEvent::Create(_) | lode_daemon::WatchEvent::Modify(_)) {
                             let _ = auto_register_global_assets();
                         }
-                    }
 
                     let result = match &event {
                         lode_daemon::WatchEvent::Create(p) => handle_create(p, &config),

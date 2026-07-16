@@ -65,7 +65,9 @@ fn project_plan(intent: Option<String>, output: OutputFormat) -> lode_core::Resu
             "intent": intent,
             "timestamp": timestamp(),
         });
-        println!("{}", serde_json::to_string_pretty(&plan).unwrap());
+        let json =
+            serde_json::to_string_pretty(&plan).map_err(|e| LodeError::Message(e.to_string()))?;
+        println!("{}", json);
     } else {
         println!("project plan for: {}", dir);
         if let Some(ref cfg) = manifest {
@@ -104,7 +106,9 @@ fn project_apply(plan_id: &str, dry_run: bool, output: OutputFormat) -> lode_cor
             "status": "not_implemented",
             "timestamp": timestamp(),
         });
-        println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        let json =
+            serde_json::to_string_pretty(&report).map_err(|e| LodeError::Message(e.to_string()))?;
+        println!("{}", json);
     } else {
         if dry_run {
             println!(
@@ -175,7 +179,9 @@ fn project_diff(output: OutputFormat) -> lode_core::Result<()> {
     }
 
     if output.should_use_json() {
-        println!("{}", serde_json::to_string_pretty(&diffs).unwrap());
+        let json =
+            serde_json::to_string_pretty(&diffs).map_err(|e| LodeError::Message(e.to_string()))?;
+        println!("{}", json);
     } else {
         if diffs.is_empty() {
             println!("project is up to date with manifest");
@@ -206,7 +212,9 @@ fn project_reconcile(dry_run: bool, output: OutputFormat) -> lode_core::Result<(
             "lock_present": lock.is_some(),
             "timestamp": timestamp(),
         });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+        let json =
+            serde_json::to_string_pretty(&result).map_err(|e| LodeError::Message(e.to_string()))?;
+        println!("{}", json);
     } else {
         println!("reconciling project: {}", manifest.project.name);
         if dry_run {
@@ -249,7 +257,9 @@ fn project_explain(output: OutputFormat) -> lode_core::Result<()> {
             "lock_entries": lock.as_ref().map(|l| l.entries.len()),
             "timestamp": timestamp(),
         });
-        println!("{}", serde_json::to_string_pretty(&info).unwrap());
+        let json =
+            serde_json::to_string_pretty(&info).map_err(|e| LodeError::Message(e.to_string()))?;
+        println!("{}", json);
     } else {
         if let Some(ref cfg) = manifest {
             println!("Project: {}", cfg.project.name);

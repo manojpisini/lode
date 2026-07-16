@@ -50,7 +50,7 @@ impl ToolInputValidator {
             .unwrap_or_default();
 
         for field in &required {
-            if !args.get(field).filter(|v| !v.is_null()).is_some() {
+            if args.get(field).filter(|v| !v.is_null()).is_none() {
                 return Err(format!("Missing required argument: {field}"));
             }
         }

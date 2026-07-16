@@ -5,21 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LodeError, Process, Result};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct PluginSecurity {
     pub network: bool,
     pub execute: bool,
     pub fs_write: Vec<String>,
-}
-
-impl Default for PluginSecurity {
-    fn default() -> Self {
-        Self {
-            network: false,
-            execute: false,
-            fs_write: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

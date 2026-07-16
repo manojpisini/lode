@@ -81,7 +81,7 @@ fn load_or_create_key() -> Result<[u8; 32]> {
             source,
         })?;
     }
-    fs::write(&key_path, &key).map_err(|source| LodeError::Io {
+    fs::write(&key_path, key).map_err(|source| LodeError::Io {
         path: key_path,
         source,
     })?;

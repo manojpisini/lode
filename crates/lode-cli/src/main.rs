@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod cmd;
+pub mod mcpserver;
 
 pub(crate) use cmd::plugin::{read_plugin_install_receipt, read_plugin_security};
 
@@ -22,11 +23,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use lode_core::{
-    audit_project, check_file_integrity, check_path, command_names, default_config,
-    default_lodepack_checksum_algorithm, file_manifest_path, global_asset_dir, global_dir,
-    list_managed_files, load_global_config, load_metrics, load_registry, profile_names,
-    recipe_names, redact, scan_secrets, template_paths, LodeError, LodePack, LodePackFile,
-    LodePackManifest, Process, ValidatedRoot,
+    check_file_integrity, check_path, command_names, default_config,
+    default_lodepack_checksum_algorithm, global_asset_dir, global_dir, list_managed_files,
+    load_global_config, load_metrics, profile_names, recipe_names, redact, scan_secrets,
+    template_paths, LodeError, LodePack, LodePackFile, LodePackManifest, Process, ValidatedRoot,
 };
 use serde_json::{json, Value};
 
@@ -390,94 +390,6 @@ pub(crate) fn print_simple_diff(current: &str, default: &str) {
     }
 }
 
-pub(crate) fn mcp_tools() -> Value {
-    let mut tools = vec![
-        json!({
-                "name": "lode_config_show",
-                "description": "Return the loaded global Lode configuration.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_template_list",
-                "description": "List embedded/default template paths.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_profile_list",
-                "description": "List embedded/default profile names.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_recipe_list",
-                "description": "List embedded/default recipe names.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_audit",
-                "description": "Audit the current project and return the health report.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_scan_foreign",
-                "description": "Analyse a non-Lode project and return a local adoption/migration report.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Project path to inspect. Defaults to the current working directory." }
-                    }
-                }
-        }),
-        json!({
-                "name": "lode_time_today",
-                "description": "Return total tracked time from .lode/time-log.json for today.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_info",
-                "description": "Return local project status, package manager, config schema, and available Lode assets.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_metrics_show",
-                "description": "Return the latest project metrics snapshot if available.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_pkg_outdated",
-                "description": "Return the native package-manager command plan for checking outdated packages.",
-                "inputSchema": { "type": "object", "properties": {} }
-        }),
-        json!({
-                "name": "lode_pkg_audit",
-                "description": "Return the native package-manager command plan for dependency audit.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "fail_on": { "type": "string", "enum": ["low", "medium", "high", "critical"] }
-                    }
-                }
-        }),
-        json!({
-                "name": "lode_pkg_update",
-                "description": "Return the native package-manager command plan for package updates.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string", "description": "Optional package name to update." }
-                    }
-                }
-        }),
-    ];
-    for slug in mcp_command_names() {
-        tools.push(json!({
-            "name": format!("lode_custom_{slug}"),
-            "description": format!("Discover local custom command `{slug}`. Execution is intentionally not exposed over MCP in this build."),
-            "inputSchema": { "type": "object", "properties": {} }
-        }));
-    }
-    json!({ "tools": tools })
-}
-
 pub(crate) fn mcp_command_names() -> Vec<String> {
     let mut names = command_names()
         .iter()
@@ -506,39 +418,6 @@ pub(crate) fn mcp_command_names() -> Vec<String> {
 
 pub(crate) fn json_pretty(value: &Value) -> lode_core::Result<String> {
     serde_json::to_string_pretty(value).map_err(|error| LodeError::Message(error.to_string()))
-}
-
-pub(crate) fn mcp_resources() -> Value {
-    json!({
-        "resources": [
-            { "uri": "lode://config", "name": "Global config", "mimeType": "application/toml" },
-            { "uri": "lode://registry", "name": "Project registry", "mimeType": "application/json" },
-            { "uri": "lode://templates", "name": "Template inventory", "mimeType": "application/json" },
-            { "uri": "lode://profiles", "name": "Profile inventory", "mimeType": "application/json" },
-            { "uri": "lode://snippets", "name": "Snippet inventory", "mimeType": "application/json" },
-            { "uri": "lode://project/info", "name": "Project info", "mimeType": "application/json" },
-            { "uri": "lode://project/health", "name": "Project health", "mimeType": "application/json" },
-            { "uri": "lode://project/metrics", "name": "Project metrics", "mimeType": "application/json" },
-            { "uri": "lode://project/time", "name": "Project time log", "mimeType": "application/json" },
-            { "uri": "lode://project/config", "name": "Effective project config", "mimeType": "application/toml" },
-            { "uri": "lode://project/conventions", "name": "Convention settings", "mimeType": "application/json" }
-        ]
-    })
-}
-
-pub(crate) fn mcp_prompts() -> Value {
-    json!({
-        "prompts": [
-            {
-                "name": "lode-project-review",
-                "description": "Review a project against the local Lode preferences."
-            },
-            {
-                "name": "lode-scaffold-plan",
-                "description": "Plan a scaffold using available profiles, recipes, and templates."
-            }
-        ]
-    })
 }
 
 pub(crate) fn run_mcp_stdio() -> lode_core::Result<()> {
@@ -688,35 +567,43 @@ pub(crate) fn should_require_signature(uri: &str) -> bool {
 }
 
 pub(crate) fn mcp_handle_request(request: &Value) -> String {
-    let id = request.get("id").cloned().unwrap_or(Value::Null);
-    let method = request
-        .get("method")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let result = match method {
-        "initialize" => Ok(json!({
-            "protocolVersion": "2024-11-05",
-            "serverInfo": { "name": "lode", "version": env!("CARGO_PKG_VERSION") },
-            "capabilities": {
-                "tools": {},
-                "resources": {},
-                "prompts": {}
-            }
-        })),
-        "tools/list" => Ok(mcp_tools()),
-        "resources/list" => Ok(mcp_resources()),
-        "prompts/list" => Ok(mcp_prompts()),
-        "tools/call" => mcp_call_tool(request),
-        "resources/read" => mcp_read_resource(request),
-        _ => Err((-32601, format!("method not found: {method}"))),
-    };
-    match result {
-        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string(),
-        Err((code, message)) => {
-            json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
-                .to_string()
-        }
+    let method = request["method"].as_str().unwrap_or("");
+    let id = request.get("id").cloned().unwrap_or(json!(null));
+    match method {
+        "tools/list" => json!({"jsonrpc":"2.0","result":mcp_tools(),"id":id}).to_string(),
+        "tools/call" => match mcp_call_tool(request) {
+            Ok(v) => json!({"jsonrpc":"2.0","result":v,"id":id}).to_string(),
+            Err((c, m)) => json!({"jsonrpc":"2.0","error":{"code":c,"message":m},"id":id}).to_string(),
+        },
+        "resources/list" => json!({"jsonrpc":"2.0","result":mcp_resources(),"id":id}).to_string(),
+        "resources/read" => match mcp_read_resource(request) {
+            Ok(v) => json!({"jsonrpc":"2.0","result":v,"id":id}).to_string(),
+            Err((c, m)) => json!({"jsonrpc":"2.0","error":{"code":c,"message":m},"id":id}).to_string(),
+        },
+        "prompts/list" => json!({"jsonrpc":"2.0","result":mcp_prompts(),"id":id}).to_string(),
+        "initialize" => json!({"jsonrpc":"2.0","result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{},"resources":{"listChanged":false},"prompts":{"listChanged":false}},"serverInfo":{"name":"lode","version":env!("CARGO_PKG_VERSION")}},"id":id}).to_string(),
+        _ => mcpserver::handle_request(request).to_string(),
     }
+}
+
+pub(crate) fn mcp_tools() -> Value {
+    let mut tools: Vec<Value> = mcpserver::tools::register_all_tools().iter().map(|t| json!({"name": t.name, "description": t.description, "inputSchema": t.input_schema})).collect();
+    tools.push(json!({"name": "lode_scan_foreign", "description": "Analyse a non-Lode project and return a local adoption/migration report.", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "description": "Project path to inspect."}},"required": ["path"]}}));
+    tools.push(json!({"name": "lode_profile_list", "description": "List embedded/default profile names.", "inputSchema": {"type": "object", "properties": {}}}));
+    tools.push(json!({"name": "lode_recipe_list", "description": "List embedded/default recipe names.", "inputSchema": {"type": "object", "properties": {}}}));
+    tools.push(json!({"name": "lode_metrics_show", "description": "Return the latest project metrics snapshot if available.", "inputSchema": {"type": "object", "properties": {}}}));
+    for slug in mcp_command_names() {
+        tools.push(json!({"name": format!("lode_custom_{slug}"), "description": format!("Discover local custom command `{slug}`."), "inputSchema": {"type": "object", "properties": {}}}));
+    }
+    json!({"tools": tools})
+}
+
+pub(crate) fn mcp_resources() -> Value {
+    json!({"resources": mcpserver::resources::list_resources()})
+}
+
+pub(crate) fn mcp_prompts() -> Value {
+    json!({"prompts": mcpserver::prompts::list_prompts()})
 }
 
 pub(crate) fn mcp_call_tool(request: &Value) -> std::result::Result<Value, (i64, String)> {
@@ -724,91 +611,81 @@ pub(crate) fn mcp_call_tool(request: &Value) -> std::result::Result<Value, (i64,
         .pointer("/params/name")
         .and_then(Value::as_str)
         .ok_or_else(|| (-32602, "missing params.name".to_string()))?;
+    let args = request
+        .pointer("/params/arguments")
+        .cloned()
+        .unwrap_or(json!({}));
+    let is_cli_tool = matches!(
+        name,
+        "lode_scan_foreign"
+            | "lode_profile_list"
+            | "lode_recipe_list"
+            | "lode_metrics_show"
+            | "lode_pkg_audit"
+            | "lode_pkg_outdated"
+            | "lode_pkg_update"
+    );
+    if !name.starts_with("lode_custom_") && !is_cli_tool {
+        let validator = mcpserver::ToolInputValidator::new(&mcpserver::tools::register_all_tools());
+        validator.validate(name, &args).map_err(|e| (-32602, e))?;
+    }
     let value = match name {
-        "lode_config_show" => {
-            serde_json::to_value(load_global_config().unwrap_or_else(|_| default_config()))
-                .map_err(|error| (-32603, error.to_string()))?
-        }
-        "lode_template_list" => json!(template_paths()),
-        "lode_profile_list" => json!(profile_names()),
-        "lode_recipe_list" => json!(recipe_names()),
-        "lode_audit" => {
-            let config = load_global_config().unwrap_or_else(|_| default_config());
-            let cwd = current_dir().map_err(|error| (-32603, error.to_string()))?;
-            serde_json::to_value(
-                audit_project(&cwd, &config).map_err(|error| (-32603, error.to_string()))?,
-            )
-            .map_err(|error| (-32603, error.to_string()))?
-        }
         "lode_scan_foreign" => {
-            let path = request
-                .pointer("/params/arguments/path")
+            let path = args
+                .get("path")
                 .and_then(Value::as_str)
                 .map(Utf8PathBuf::from)
                 .map(Ok)
                 .unwrap_or_else(current_dir)
-                .map_err(|error| (-32603, error.to_string()))?;
-            serde_json::to_value(
-                scan_foreign_project(&path).map_err(|error| (-32603, error.to_string()))?,
-            )
-            .map_err(|error| (-32603, error.to_string()))?
-        }
-        "lode_time_today" => mcp_time_today_value(),
-        "lode_info" => mcp_project_info_value().map_err(|error| (-32603, error.to_string()))?,
-        "lode_metrics_show" => {
-            let cwd = current_dir().map_err(|error| (-32603, error.to_string()))?;
-            serde_json::to_value(load_metrics(&cwd).map_err(|error| (-32603, error.to_string()))?)
-                .map_err(|error| (-32603, error.to_string()))?
+                .map_err(|e| (-32603, e.to_string()))?;
+            serde_json::to_value(scan_foreign_project(&path).map_err(|e| (-32603, e.to_string()))?)
+                .map_err(|e| (-32603, e.to_string()))?
         }
         "lode_pkg_outdated" => {
             let manager = detect_package_manager().unwrap_or_else(|| "unknown".to_string());
-            let plan = PackageOperationPlan::new(
+            serde_json::to_value(PackageOperationPlan::new(
                 "outdated",
                 &manager,
-                package_outdated_args(&manager).map_err(|error| (-32603, error.to_string()))?,
-            );
-            serde_json::to_value(plan).map_err(|error| (-32603, error.to_string()))?
+                package_outdated_args(&manager).map_err(|e| (-32603, e.to_string()))?,
+            ))
+            .map_err(|e| (-32603, e.to_string()))?
         }
         "lode_pkg_audit" => {
             let manager = detect_package_manager().unwrap_or_else(|| "unknown".to_string());
-            let fail_on = request
-                .pointer("/params/arguments/fail_on")
-                .and_then(Value::as_str);
-            let plan = PackageOperationPlan::new(
+            let fail_on = args.get("fail_on").and_then(Value::as_str);
+            serde_json::to_value(PackageOperationPlan::new(
                 "audit",
                 &manager,
-                package_audit_args(&manager, fail_on)
-                    .map_err(|error| (-32603, error.to_string()))?,
-            );
-            serde_json::to_value(plan).map_err(|error| (-32603, error.to_string()))?
+                package_audit_args(&manager, fail_on).map_err(|e| (-32603, e.to_string()))?,
+            ))
+            .map_err(|e| (-32603, e.to_string()))?
         }
         "lode_pkg_update" => {
             let manager = detect_package_manager().unwrap_or_else(|| "unknown".to_string());
-            let name = request
-                .pointer("/params/arguments/name")
-                .and_then(Value::as_str);
-            let plan = PackageOperationPlan::new(
+            let name = args.get("name").and_then(Value::as_str);
+            serde_json::to_value(PackageOperationPlan::new(
                 "update",
                 &manager,
-                package_update_args(&manager, name).map_err(|error| (-32603, error.to_string()))?,
-            );
-            serde_json::to_value(plan).map_err(|error| (-32603, error.to_string()))?
+                package_update_args(&manager, name).map_err(|e| (-32603, e.to_string()))?,
+            ))
+            .map_err(|e| (-32603, e.to_string()))?
+        }
+        "lode_profile_list" => json!(profile_names()),
+        "lode_recipe_list" => json!(recipe_names()),
+        "lode_metrics_show" => {
+            let cwd = current_dir().map_err(|e| (-32603, e.to_string()))?;
+            serde_json::to_value(load_metrics(&cwd).map_err(|e| (-32603, e.to_string()))?)
+                .map_err(|e| (-32603, e.to_string()))?
         }
         other if other.starts_with("lode_custom_") => {
-            let slug = other.trim_start_matches("lode_custom_");
-            mcp_custom_command_value(slug).map_err(|error| (-32603, error.to_string()))?
+            mcp_custom_command_value(other.trim_start_matches("lode_custom_"))
+                .map_err(|e| (-32603, e.to_string()))?
         }
-        other => return Err((-32602, format!("unknown tool: {other}"))),
+        _ => mcpserver::tools::dispatch_tool(name, &args)
+            .map_err(|e| (-32603, lode_core::redact(&e)))?,
     };
-    Ok(json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string())
-            }
-        ],
-        "structuredContent": value
-    }))
+    let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
+    Ok(json!({"content": [{"type": "text", "text": lode_core::redact(&text)}]}))
 }
 
 pub(crate) fn mcp_read_resource(request: &Value) -> std::result::Result<Value, (i64, String)> {
@@ -817,92 +694,27 @@ pub(crate) fn mcp_read_resource(request: &Value) -> std::result::Result<Value, (
         .and_then(Value::as_str)
         .ok_or_else(|| (-32602, "missing params.uri".to_string()))?;
     let text = match uri {
-        "lode://config" => {
-            toml::to_string_pretty(&load_global_config().unwrap_or_else(|_| default_config()))
-                .map_err(|error| (-32603, error.to_string()))?
-        }
-        "lode://registry" => serde_json::to_string_pretty(&load_registry().unwrap_or_default())
-            .map_err(|error| (-32603, error.to_string()))?,
-        "lode://templates" => serde_json::to_string_pretty(template_paths())
-            .map_err(|error| (-32603, error.to_string()))?,
-        "lode://profiles" => serde_json::to_string_pretty(&profile_names())
-            .map_err(|error| (-32603, error.to_string()))?,
         "lode://snippets" => serde_json::to_string_pretty(&snippet_inventory())
-            .map_err(|error| (-32603, error.to_string()))?,
-        "lode://project/info" => serde_json::to_string_pretty(
-            &mcp_project_info_value().map_err(|error| (-32603, error.to_string()))?,
-        )
-        .map_err(|error| (-32603, error.to_string()))?,
-        "lode://project/health" => {
-            let config = load_global_config().unwrap_or_else(|_| default_config());
-            let cwd = current_dir().map_err(|error| (-32603, error.to_string()))?;
-            serde_json::to_string_pretty(
-                &audit_project(&cwd, &config).map_err(|error| (-32603, error.to_string()))?,
-            )
-            .map_err(|error| (-32603, error.to_string()))?
-        }
-        "lode://project/metrics" => {
-            let cwd = current_dir().map_err(|error| (-32603, error.to_string()))?;
-            serde_json::to_string_pretty(
-                &load_metrics(&cwd).map_err(|error| (-32603, error.to_string()))?,
-            )
-            .map_err(|error| (-32603, error.to_string()))?
-        }
+            .map_err(|e| (-32603, e.to_string()))?,
         "lode://project/time" => serde_json::to_string_pretty(&load_time_log().unwrap_or_default())
-            .map_err(|error| (-32603, error.to_string()))?,
+            .map_err(|e| (-32603, e.to_string()))?,
         "lode://project/config" => {
             toml::to_string_pretty(&load_global_config().unwrap_or_else(|_| default_config()))
-                .map_err(|error| (-32603, error.to_string()))?
+                .map_err(|e| (-32603, e.to_string()))?
         }
         "lode://project/conventions" => {
             let config = load_global_config().unwrap_or_else(|_| default_config());
-            serde_json::to_string_pretty(&config.convention)
-                .map_err(|error| (-32603, error.to_string()))?
+            serde_json::to_string_pretty(&config.convention).map_err(|e| (-32603, e.to_string()))?
         }
-        other => return Err((-32602, format!("unknown resource: {other}"))),
+        _ => {
+            let contents =
+                mcpserver::resources::read_resource(uri).map_err(|e| (e.code(), e.to_string()))?;
+            return Ok(json!({"contents": contents}));
+        }
     };
-    Ok(json!({
-        "contents": [
-            {
-                "uri": uri,
-                "mimeType": if uri == "lode://config" || uri == "lode://project/config" { "application/toml" } else { "application/json" },
-                "text": text
-            }
-        ]
-    }))
-}
-
-pub(crate) fn mcp_project_info_value() -> lode_core::Result<Value> {
-    let cwd = current_dir()?;
-    let config = load_global_config().unwrap_or_else(|_| default_config());
-    Ok(json!({
-        "path": cwd,
-        "schema_version": config.schema_version,
-        "package_manager": detect_package_manager(),
-        "profiles": profile_names(),
-        "templates": template_paths().len(),
-        "recipes": recipe_names(),
-        "snippets": snippet_inventory().len(),
-        "project_config": cwd.join(".lode").join("project.toml").exists(),
-        "metrics": cwd.join(".lode").join("metrics.json").exists(),
-        "time_log": cwd.join(".lode").join("time-log.json").exists()
-    }))
-}
-
-pub(crate) fn mcp_time_today_value() -> Value {
-    let log = load_time_log().unwrap_or_default();
-    let today = today_utc();
-    let sessions = log
-        .sessions
-        .into_iter()
-        .filter(|session| session.started_at.starts_with(&today))
-        .collect::<Vec<_>>();
-    json!({
-        "date": today,
-        "seconds": total_seconds(&sessions),
-        "duration": format_seconds(total_seconds(&sessions)),
-        "sessions": sessions
-    })
+    Ok(
+        json!({"contents": [{"uri": uri, "mimeType": if uri == "lode://project/config" { "application/toml" } else { "application/json" }, "text": text}]}),
+    )
 }
 
 pub(crate) fn mcp_custom_command_value(slug: &str) -> lode_core::Result<Value> {

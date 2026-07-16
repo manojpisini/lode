@@ -55,6 +55,11 @@ pub fn run_in_sandbox(
     let sandbox_dir = create_sandbox(config)?;
 
     for (name, content) in files {
+        if name.contains('/') || name.contains('\\') || name.contains("..") {
+            return Err(crate::LodeError::Message(format!(
+                "sandbox file name contains path separator or traversal: {name}"
+            )));
+        }
         let file_path = sandbox_dir.join(name);
         if let Some(parent) = file_path.parent() {
             fs::create_dir_all(parent).map_err(|source| crate::LodeError::Io {
@@ -67,6 +72,8 @@ pub fn run_in_sandbox(
             source,
         })?;
     }
+
+    crate::process::validate_program(command)?;
 
     let start = Instant::now();
     let output = std::process::Command::new(command)
@@ -193,5 +200,27 @@ mod tests {
         let result = run_in_sandbox(&config, "cmd.exe", &["/c", "echo", "hello"], &[]).unwrap();
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("hello"));
+    }
+
+    #[test]
+    fn test_sandbox_rejects_path_like_command() {
+        let config = SandboxConfig::default();
+        let result = run_in_sandbox(&config, "../sh", &["-c", "echo hi"], &[]);
+        assert!(result.is_err(), "path-like command should be rejected");
+    }
+
+    #[test]
+    fn test_sandbox_rejects_file_traversal() {
+        let config = SandboxConfig::default();
+        let result = run_in_sandbox(
+            &config,
+            "cmd.exe",
+            &["/c", "echo", "hello"],
+            &[("../../escape.txt".to_string(), "pwned".to_string())],
+        );
+        assert!(
+            result.is_err(),
+            "file name with path traversal should be rejected"
+        );
     }
 }

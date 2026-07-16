@@ -5,7 +5,7 @@ use std::fs;
 use camino::Utf8PathBuf;
 use lode_core::{global_asset_dir, template_paths, LodeError, ValidatedRoot};
 
-use crate::{LibraryCommand, OutputFormat};
+use crate::LibraryCommand;
 
 pub(crate) fn library_command(
     root: &str,

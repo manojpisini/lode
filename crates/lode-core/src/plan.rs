@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 
-use crate::{LodeError, Result, ValidatedRoot};
+use crate::{process::validate_program, LodeError, Result, ValidatedRoot};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
@@ -201,6 +201,19 @@ impl Plan {
                         }
                     }
                 }
+                Operation::RunCommand { command, .. } => {
+                    if command.is_empty() {
+                        errors.push("run command is empty".to_string());
+                    }
+                    if command.contains('\0') {
+                        errors.push("run command contains null byte".to_string());
+                    }
+                    if let Some(prog) = command.split_whitespace().next() {
+                        if let Err(e) = validate_program(prog) {
+                            errors.push(format!("run command program: {e}"));
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -274,6 +287,18 @@ impl Plan {
                     if dry_run {
                         report.dry_run_ops.push(description);
                         continue;
+                    }
+                    if command.is_empty() || command.contains('\0') {
+                        report.errors.push(format!(
+                            "{description}: invalid command (empty or null byte)"
+                        ));
+                        continue;
+                    }
+                    if let Some(prog) = command.split_whitespace().next() {
+                        if let Err(e) = validate_program(prog) {
+                            report.errors.push(format!("{description}: {e}"));
+                            continue;
+                        }
                     }
                     let output = std::process::Command::new("sh")
                         .arg("-c")

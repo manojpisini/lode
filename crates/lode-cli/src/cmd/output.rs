@@ -85,10 +85,10 @@ pub fn table(headers: &[&str], rows: &[Vec<String>]) -> String {
 
     for (i, h) in headers.iter().enumerate() {
         if i == 0 {
-            out.push_str("│");
+            out.push('│');
         }
         out.push_str(&format!(" {:<width$} ", bold(h), width = col_widths[i]));
-        out.push_str("│");
+        out.push('│');
     }
     out.push('\n');
     out.push_str(&sep("├", "┼", "┤", "─"));
@@ -97,10 +97,10 @@ pub fn table(headers: &[&str], rows: &[Vec<String>]) -> String {
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
             if i == 0 {
-                out.push_str("│");
+                out.push('│');
             }
             out.push_str(&format!(" {:<width$} ", cell, width = col_widths[i]));
-            out.push_str("│");
+            out.push('│');
         }
         out.push('\n');
     }

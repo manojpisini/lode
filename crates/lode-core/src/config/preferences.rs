@@ -1,22 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PreferencesConfig {
     pub architecture: ArchitecturePrefs,
     pub testing: TestingPrefs,
     pub agents: AgentPrefs,
     pub git: GitPrefs,
-}
-
-impl Default for PreferencesConfig {
-    fn default() -> Self {
-        Self {
-            architecture: ArchitecturePrefs::default(),
-            testing: TestingPrefs::default(),
-            agents: AgentPrefs::default(),
-            git: GitPrefs::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

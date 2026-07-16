@@ -85,7 +85,7 @@ fn find_manifest_dir(path: &Path) -> PathBuf {
 }
 
 fn apply(
-    path: &PathBuf,
+    path: &Path,
     variables: Vec<String>,
     overwrite: &str,
     dry_run: bool,
@@ -115,8 +115,8 @@ fn apply(
 }
 
 fn capture(
-    source: &PathBuf,
-    dest: &PathBuf,
+    source: &Path,
+    dest: &Path,
     mode: Option<&str>,
     dry_run: bool,
     redact_secrets: bool,
@@ -139,7 +139,7 @@ fn capture(
         mode: capture_mode,
         template_id: name.map(|n| n.to_string()),
         template_name: name.map(|n| n.to_string()),
-        destination: Some(dest.clone()),
+        destination: Some(dest.to_path_buf()),
         project: false,
         dry_run,
         redact_secrets,
@@ -185,7 +185,7 @@ fn capture(
     Ok(())
 }
 
-fn preview(source: &PathBuf, mode: Option<&str>) -> lode_core::Result<()> {
+fn preview(source: &Path, mode: Option<&str>) -> lode_core::Result<()> {
     let capture_mode = match mode.unwrap_or("source") {
         "minimal" => lode_core::template_bundle_capture::CaptureMode::Minimal,
         "source" => lode_core::template_bundle_capture::CaptureMode::Source,
@@ -276,7 +276,7 @@ fn list(path: Option<&PathBuf>) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn show(path: &PathBuf) -> lode_core::Result<()> {
+fn show(path: &Path) -> lode_core::Result<()> {
     let bundle_dir = find_manifest_dir(path);
     let manifest = lode_core::template_bundle::load_template_bundle(&bundle_dir)?;
     let toml_str = toml::to_string_pretty(&manifest)
@@ -285,7 +285,7 @@ fn show(path: &PathBuf) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn validate(path: &PathBuf) -> lode_core::Result<()> {
+fn validate(path: &Path) -> lode_core::Result<()> {
     let bundle_dir = find_manifest_dir(path);
     let manifest = lode_core::template_bundle::load_template_bundle(&bundle_dir)?;
     let errors = manifest.validate(&bundle_dir);
@@ -313,7 +313,7 @@ fn validate(path: &PathBuf) -> lode_core::Result<()> {
     Ok(())
 }
 
-fn verify(path: &PathBuf) -> lode_core::Result<()> {
+fn verify(path: &Path) -> lode_core::Result<()> {
     let bundle_dir = find_manifest_dir(path);
     let manifest = lode_core::template_bundle::load_template_bundle(&bundle_dir)?;
     let errors = manifest.validate(&bundle_dir);

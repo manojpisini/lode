@@ -58,12 +58,8 @@ fn detect_maturity(path: &str) -> &'static str {
         "production"
     } else if path.starts_with("frontend/") || path.starts_with("backend/") {
         "stable"
-    } else if path.starts_with("python/") || path.starts_with("java/") {
-        "stable"
     } else if path.starts_with("desktop/") || path.starts_with("games/") {
         "beta"
-    } else if path.starts_with("challenge/") {
-        "stable"
     } else {
         "stable"
     }
@@ -101,7 +97,7 @@ fn compute_quality_score(path: &str, kind: &str, maturity: &str) -> Option<u32> 
     Some(score.min(100))
 }
 
-fn detect_languages(kind: &str, path: &str) -> Vec<String> {
+fn detect_languages(_kind: &str, path: &str) -> Vec<String> {
     let p = path.to_lowercase();
     if p.contains("rust") || p.contains("cargo") {
         vec!["rust".to_string()]
@@ -137,8 +133,6 @@ fn detect_languages(kind: &str, path: &str) -> Vec<String> {
             "python".to_string(),
             "java".to_string(),
         ]
-    } else if kind == "profile" {
-        vec!["*".to_string()]
     } else {
         vec!["*".to_string()]
     }
@@ -215,7 +209,7 @@ fn asset_intents(kind: &str, path: &str, summary: &str) -> Vec<String> {
 }
 
 fn profile_summary(path: &str) -> String {
-    let name = path.split('/').last().unwrap_or(path);
+    let name = path.split('/').next_back().unwrap_or(path);
     let parts: Vec<&str> = name.split('-').collect();
     let readable = parts
         .iter()
@@ -259,8 +253,8 @@ fn profile_tags(path: &str) -> Vec<String> {
 }
 
 fn template_summary(path: &str) -> String {
-    let name = path.split('/').last().unwrap_or(path);
-    let readable = name.replace('-', " ").replace('_', " ");
+    let name = path.split('/').next_back().unwrap_or(path);
+    let readable = name.replace(['-', '_'], " ");
     format!("{readable} template")
 }
 
@@ -274,19 +268,19 @@ fn template_tags(kind: &str, path: &str) -> Vec<String> {
 }
 
 fn command_summary(path: &str) -> String {
-    let name = path.split('/').last().unwrap_or(path);
-    let readable = name.replace('-', " ").replace('_', " ");
+    let name = path.split('/').next_back().unwrap_or(path);
+    let readable = name.replace(['-', '_'], " ");
     format!("{readable} command")
 }
 
 fn recipe_summary(path: &str) -> String {
-    let name = path.split('/').last().unwrap_or(path);
-    let readable = name.replace('-', " ").replace('_', " ");
+    let name = path.split('/').next_back().unwrap_or(path);
+    let readable = name.replace(['-', '_'], " ");
     format!("{readable} recipe")
 }
 
 fn snippet_summary(path: &str) -> String {
-    let name = path.split('/').last().unwrap_or(path);
+    let name = path.split('/').next_back().unwrap_or(path);
     format!("{name} snippet")
 }
 

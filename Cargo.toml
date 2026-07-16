@@ -5,6 +5,7 @@ members = [
     "crates/lode-daemon",
     "crates/lode-tui",
     "crates/lode-lsp",
+    "crates/lode-mcp",
 ]
 exclude = [
     "fuzz",

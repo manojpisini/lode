@@ -134,7 +134,8 @@ fn handle_method(
             });
             if let Some(params) = &msg.params {
                 if let Some(options) = params.get("initializationOptions") {
-                    if let Some(redact) = options.get("redactDiagnostics").and_then(|v| v.as_bool()) {
+                    if let Some(redact) = options.get("redactDiagnostics").and_then(|v| v.as_bool())
+                    {
                         state.redact_diagnostics = redact;
                     }
                 }

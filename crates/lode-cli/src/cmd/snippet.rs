@@ -6,8 +6,7 @@ use camino::Utf8PathBuf;
 use lode_core::{global_asset_dir, LodeError, ValidatedRoot};
 
 use crate::{
-    list_dir, open_editor, safe_relative_path, write_validated_output, OutputFormat, SnippetAsset,
-    SnippetCommand,
+    list_dir, open_editor, safe_relative_path, write_validated_output, SnippetAsset, SnippetCommand,
 };
 
 pub(crate) fn snippet_command(command: SnippetCommand) -> lode_core::Result<()> {

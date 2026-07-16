@@ -1,10 +1,11 @@
+#![deny(unsafe_code)]
+
 use std::fs;
 
 use camino::Utf8PathBuf;
 use lode_core::{global_asset_dir, LodeError, PluginInstallReceipt, PluginSecurity, ValidatedRoot};
 use serde::{Deserialize, Serialize};
 
-use crate::OutputFormat;
 use crate::PluginCommand;
 
 pub(crate) fn plugin_command(command: PluginCommand) -> lode_core::Result<()> {

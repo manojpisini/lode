@@ -5,7 +5,7 @@ use crate::OutputFormat;
 use lode_core::setup_defaults;
 use serde_json::json;
 
-pub fn doctor_with_output(fix: bool, output: OutputFormat) -> lode_core::Result<()> {
+pub(crate) fn doctor_with_output(fix: bool, output: OutputFormat) -> lode_core::Result<()> {
     let mut fixed = false;
     if fix {
         setup_defaults(false)?;

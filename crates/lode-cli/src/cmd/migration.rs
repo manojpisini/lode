@@ -3,7 +3,6 @@
 use lode_core::migration;
 
 use crate::MigrationCommand;
-use crate::OutputFormat;
 
 pub(crate) fn migration_command(command: MigrationCommand) -> lode_core::Result<()> {
     match command {

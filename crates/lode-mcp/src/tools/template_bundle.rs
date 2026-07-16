@@ -246,7 +246,7 @@ pub fn lode_template_bundle_apply(args: &Value) -> Result<Value, String> {
     let target = args
         .get("target")
         .and_then(|v| v.as_str())
-        .map(|s| validated(s))
+        .map(validated)
         .transpose()?
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 

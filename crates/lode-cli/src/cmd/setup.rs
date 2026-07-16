@@ -5,7 +5,7 @@ use crate::OutputFormat;
 use lode_core::setup_defaults;
 use serde_json::json;
 
-pub fn setup_with_output(output: OutputFormat) -> lode_core::Result<()> {
+pub(crate) fn setup_with_output(output: OutputFormat) -> lode_core::Result<()> {
     let report = setup_defaults(false)?;
     if output.should_use_json() {
         println!(

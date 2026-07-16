@@ -221,7 +221,7 @@ pub fn search_index_with(
     }
 
     match_ids.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    match_ids.truncate(query.limit.max(1).min(100));
+    match_ids.truncate(query.limit.clamp(1, 100));
 
     Ok(match_ids
         .into_iter()

@@ -7,7 +7,7 @@ use std::fs;
 
 use crate::{
     add_license, collect_file_names, current_dir, license_path, list_dir, project_license_id,
-    read_license, safe_relative_path, LicenseCommand, OutputFormat,
+    read_license, safe_relative_path, LicenseCommand,
 };
 use lode_core::load_global_config;
 

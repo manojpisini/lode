@@ -2,7 +2,6 @@
 
 use lode_core::secret_broker;
 
-use crate::OutputFormat;
 use crate::SecretVaultCommand;
 
 pub(crate) fn secret_vault_command(command: SecretVaultCommand) -> lode_core::Result<()> {

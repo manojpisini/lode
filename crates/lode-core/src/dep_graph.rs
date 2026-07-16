@@ -393,8 +393,7 @@ impl DepGraphBuilder {
 
         let mut resolutions: Vec<AssetResolution> = resolved_order
             .iter()
-            .enumerate()
-            .map(|(_, id)| {
+            .map(|id| {
                 let requires = self
                     .adj
                     .get(*id)

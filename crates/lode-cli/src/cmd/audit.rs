@@ -4,7 +4,7 @@ use crate::cmd::output;
 use crate::OutputFormat;
 use lode_core::{audit_project, load_global_config, save_metrics};
 
-pub fn health_with_output(output: OutputFormat) -> lode_core::Result<()> {
+pub(crate) fn health_with_output(output: OutputFormat) -> lode_core::Result<()> {
     let cwd = crate::current_dir()?;
     let config = load_global_config()?;
     let report = audit_project(&cwd, &config)?;

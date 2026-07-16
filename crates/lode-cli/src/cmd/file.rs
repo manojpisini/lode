@@ -127,28 +127,16 @@ fn file_check(output: OutputFormat) -> lode_core::Result<()> {
 
         println!();
         if ok_count > 0 {
-            println!("  {} {}", output::green("✔"), format!("{} ok", ok_count));
+            println!("  {} {} ok", output::green("✔"), ok_count);
         }
         if modified_count > 0 {
-            println!(
-                "  {} {}",
-                output::yellow("⚠"),
-                format!("{} modified", modified_count)
-            );
+            println!("  {} {} modified", output::yellow("⚠"), modified_count);
         }
         if missing_count > 0 {
-            println!(
-                "  {} {}",
-                output::red("✘"),
-                format!("{} missing", missing_count)
-            );
+            println!("  {} {} missing", output::red("✘"), missing_count);
         }
         if untracked_count > 0 {
-            println!(
-                "  {} {}",
-                output::cyan("ℹ"),
-                format!("{} not tracked", untracked_count)
-            );
+            println!("  {} {} not tracked", output::cyan("ℹ"), untracked_count);
         }
     }
     Ok(())

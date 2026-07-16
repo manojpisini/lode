@@ -4,7 +4,7 @@ use crate::cmd::output;
 use crate::OutputFormat;
 use lode_core::{command_names, global_dir, profile_names, template_paths};
 
-pub fn info_with_output(output: OutputFormat) -> lode_core::Result<()> {
+pub(crate) fn info_with_output(output: OutputFormat) -> lode_core::Result<()> {
     let dir = global_dir()?;
     if output.should_use_json() {
         println!(

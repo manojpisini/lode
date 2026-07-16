@@ -12,6 +12,12 @@ pub struct McpServer {
     validator: ToolInputValidator,
 }
 
+impl Default for McpServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl McpServer {
     pub fn new() -> Self {
         let tools = register_all_tools();
@@ -102,7 +108,7 @@ impl McpServer {
 
         self.validator
             .validate(name, &args)
-            .map_err(|e| McpError::InvalidParams(e))?;
+            .map_err(McpError::InvalidParams)?;
 
         match dispatch_tool(name, &args) {
             Ok(value) => {

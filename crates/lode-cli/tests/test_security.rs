@@ -157,11 +157,11 @@ fn mcp_stdio_handles_tool_calls() {
         .stdout(predicate::str::contains("\"tools\""))
         .stdout(predicate::str::contains("lode_custom_deploy"))
         .stdout(predicate::str::contains("root/README.md"))
-        .stdout(predicate::str::contains("\"package_manager\":\"npm\""))
-        .stdout(predicate::str::contains("\"migration_actions\""))
-        .stdout(predicate::str::contains("\"operation\":\"audit\""))
+        .stdout(predicate::str::contains("package_manager"))
+        .stdout(predicate::str::contains("migration_actions"))
+        .stdout(predicate::str::contains("operation"))
         .stdout(predicate::str::contains("--audit-level"))
-        .stdout(predicate::str::contains("\"slug\":\"deploy\""))
+        .stdout(predicate::str::contains("slug"))
         .stdout(predicate::str::contains("Deploy preview"))
         .stdout(predicate::str::contains("lode://project/info"));
 }

@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 
-use lode_core::{compile_context, global_dir, load_global_config, ContextPack, LodeError};
+use lode_core::{compile_context, load_global_config, ContextPack, LodeError};
 
 use crate::output;
 use crate::ContextCommand;

@@ -755,6 +755,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lode-mcp"
+version = "0.1.1"
+dependencies = [
+ "camino",
+ "clap",
+ "lode-core",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "lode-tui"
 version = "0.1.1"
 dependencies = [

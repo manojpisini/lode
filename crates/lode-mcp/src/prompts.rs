@@ -73,7 +73,7 @@ fn get_project_review(args: &Value) -> PromptResult<Value> {
         let raw = std::fs::read_to_string(&project_toml)?;
         sections.push(format!("## Project Configuration\n{raw}"));
 
-        let config = load_config(&root).map_err(|e| McpError::Internal(e))?;
+        let config = load_config(&root).map_err(McpError::Internal)?;
         let audit = lode_core::audit_project(&root, &config)?;
         sections.push(format!(
             "## Health\n- Score: {}/100\n- Convention violations: {}\n- Secret findings: {}\n- License: {}\n- README: {}",
@@ -141,7 +141,7 @@ fn get_convention_check(args: &Value) -> PromptResult<Value> {
 
     let project_toml = root.join(".lode").join("project.toml");
     if project_toml.exists() {
-        let config = load_config(&root).map_err(|e| McpError::Internal(e))?;
+        let config = load_config(&root).map_err(McpError::Internal)?;
 
         let report = lode_core::check_path(&root, &config)?;
 

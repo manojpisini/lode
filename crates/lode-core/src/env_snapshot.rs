@@ -108,7 +108,7 @@ fn compute_diff(a: &EnvSnapshot, b: &EnvSnapshot) -> EnvDiff {
             Some(bv) => changed.push((k.clone(), v.clone(), bv.clone())),
         }
     }
-    for (k, _) in &b.variables {
+    for k in b.variables.keys() {
         if !a.variables.contains_key(k) {
             added.push(k.clone());
         }

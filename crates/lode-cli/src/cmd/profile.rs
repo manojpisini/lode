@@ -5,7 +5,7 @@ use lode_core::{
     ValidatedRoot,
 };
 
-use crate::{LibraryCommand, OutputFormat, ProfileCommand};
+use crate::{LibraryCommand, ProfileCommand};
 
 pub(crate) fn profile_command(command: ProfileCommand) -> lode_core::Result<()> {
     match command {

@@ -76,10 +76,10 @@ pub fn cache_get(key: &str) -> Result<Option<String>> {
         save_cache(&cache)?;
         return Ok(None);
     }
-    cache.entries.get_mut(key).map(|entry| {
+    if let Some(entry) = cache.entries.get_mut(key) {
         entry.last_accessed = now;
         entry.hit_count += 1;
-    });
+    }
     let value = cache.entries[key].value.clone();
     save_cache(&cache)?;
     Ok(Some(value))
