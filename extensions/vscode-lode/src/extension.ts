@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext): void {
     backgroundColor: 'rgba(255, 100, 100, 0.12)',
     isWholeLine: true,
     overviewRulerColor: 'rgba(255, 100, 100, 0.6)',
-    overviewRulerLane: vscode.OverviewRulerAspect.Right,
+    overviewRulerLane: vscode.OverviewRulerLane.Right,
   });
   context.subscriptions.push(decorationType);
 
@@ -86,11 +86,12 @@ function registerEventHandlers(context: vscode.ExtensionContext): void {
 function execLode(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const binary = getBinaryPath();
-    const options: cp.ExecFileOptions = {
+    const options: cp.ExecFileOptionsWithStringEncoding = {
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       maxBuffer: 10 * 1024 * 1024,
+      encoding: 'utf8',
     };
-    cp.execFile(binary, args, options, (error, stdout, stderr) => {
+    cp.execFile(binary, args, options, (error: cp.ExecException | null, stdout: string, stderr: string) => {
       if (error && !stdout) {
         reject(new Error(stderr || error.message));
       } else {
@@ -295,17 +296,22 @@ function parseAndShowViolations(output: string): void {
   parseAndSetDiagnostics(output);
 }
 
+function isTextEditor(value: vscode.TextDocument | vscode.TextEditor): value is vscode.TextEditor {
+  return 'document' in value && 'setDecorations' in value;
+}
+
 function updateDecorations(documentOrEditor: vscode.TextDocument | vscode.TextEditor): void {
   const enabled = vscode.workspace.getConfiguration('lode').get<boolean>('enableDecorations', true);
   if (!enabled) return;
 
-  const document = documentOrEditor instanceof vscode.TextEditor ? documentOrEditor.document : documentOrEditor;
+  const document = isTextEditor(documentOrEditor) ? documentOrEditor.document : documentOrEditor;
   if (!document || document.uri.scheme !== 'file') return;
 
   const diags = diagnosticCollection.get(document.uri);
   if (!diags || diags.length === 0) {
-    if (vscode.window.activeTextEditor?.document === document) {
-      vscode.window.activeTextEditor.setDecorations(decorationType, []);
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor?.document === document) {
+      activeEditor.setDecorations(decorationType, []);
     }
     return;
   }

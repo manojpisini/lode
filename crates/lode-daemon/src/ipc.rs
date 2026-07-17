@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use lode_core::ipc::{port_path, socket_port};
+use lode_core::ipc::port_path;
+#[cfg(any(not(unix), test))]
+use lode_core::ipc::socket_port;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -291,7 +293,7 @@ pub async fn run_ipc_listener(
                     Ok(_) => {
                         if let Some(response) = process_ipc_line(&line, &token, &ctrl) {
                             if let Ok(json) = serde_json::to_string(&response) {
-                                let mut inner = reader.get_mut();
+                                let inner = reader.get_mut();
                                 if let Err(e) = inner.write_all(json.as_bytes()).await {
                                     eprintln!("lode-daemon: ipc write error: {e}");
                                 }
@@ -308,6 +310,7 @@ pub async fn run_ipc_listener(
     }
 }
 
+#[cfg(not(unix))]
 fn try_claim_lock(lock_path: &Path) -> Result<std::fs::File, IpcError> {
     std::fs::OpenOptions::new()
         .create_new(true)

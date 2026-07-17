@@ -52,7 +52,8 @@ fn test_scan_secrets_no_findings() {
 fn test_scan_secrets_detects_github_token() {
     let temp = tempfile::TempDir::new().unwrap();
     let path = camino::Utf8Path::from_path(temp.path()).unwrap();
-    fs::write(path.join("tokens.txt"), "ghp_abc123def456token").unwrap();
+    let token = format!("ghp_{}", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8");
+    fs::write(path.join("tokens.txt"), token).unwrap();
     let report = lode_core::scan_secrets(path).unwrap();
     let matching: Vec<_> = report
         .findings

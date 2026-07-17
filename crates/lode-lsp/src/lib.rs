@@ -602,13 +602,16 @@ mod lsp_unit_tests {
 
     #[test]
     fn scan_secrets_detects_multiple_secrets() {
-        let diagnostics = scan_secrets_via_core("API_KEY=secret123\nGITHUB_TOKEN=ghp_abc123\n");
+        let token = format!("ghp_{}", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8");
+        let text = format!("API_KEY=secret1234\nGITHUB_TOKEN={}\n", token);
+        let diagnostics = scan_secrets_via_core(&text);
         assert!(diagnostics.len() >= 2);
     }
 
     #[test]
     fn scan_secrets_diagnostics_have_expected_structure() {
-        let diagnostics = scan_secrets_via_core("SECRET_KEY=my-secret\n");
+        let token = format!("ghp_{}", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8");
+        let diagnostics = scan_secrets_via_core(&format!("GITHUB_TOKEN={}\n", token));
         let diag = &diagnostics[0];
         assert!(diag.get("range").is_some());
         assert!(diag.get("message").is_some());

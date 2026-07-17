@@ -17,3 +17,16 @@ debug = 1
 
 [profile.release]
 debug = 1
+[[bin]]
+name = "validated_root"
+path = "fuzz_targets/validated_root.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "process_validation"
+path = "fuzz_targets/process_validation.rs"
+test = false
+doc = false
+bench = false
