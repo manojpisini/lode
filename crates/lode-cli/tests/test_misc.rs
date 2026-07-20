@@ -618,6 +618,7 @@ fn commands_add_export_and_remove_local_macro() {
     let temp = tempfile::tempdir().expect("create temp dir");
     let config = isolated_config(&temp);
     let exported = temp.path().join("commands.json");
+    let exported_arg = std::path::Path::new("commands.json");
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -637,7 +638,7 @@ fn commands_add_export_and_remove_local_macro() {
         .env("LODE_CONFIG", &config)
         .current_dir(temp.path())
         .args(["commands", "export", "--out"])
-        .arg(&exported)
+        .arg(exported_arg)
         .assert()
         .success()
         .stdout(predicate::str::contains("exported"));

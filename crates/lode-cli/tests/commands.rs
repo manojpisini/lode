@@ -1,20 +1,15 @@
 use std::path::PathBuf;
 
-fn lode_binary() -> PathBuf {
-    if let Some(path) = std::env::var_os("CARGO_BIN_EXE_lode") {
-        return PathBuf::from(path);
-    }
+use assert_cmd::Command;
 
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("..");
-    path.push("..");
-    path.push("target");
-    path.push("debug");
-    path.push("lode.exe");
-    if !path.exists() {
-        path.set_extension("");
-    }
-    path
+fn lode_binary() -> PathBuf {
+    assert_cmd::cargo::cargo_bin("lode")
+}
+
+fn lode_command() -> Command {
+    let mut command = Command::new(lode_binary());
+    command.env("LODE_NO_CUSTOM_COMMANDS", "1");
+    command
 }
 
 fn assert_binary_exists() {
@@ -33,7 +28,7 @@ fn test_lode_binary_exists() {
 #[test]
 fn test_lode_version() {
     assert_binary_exists();
-    let output = std::process::Command::new(lode_binary())
+    let output = lode_command()
         .arg("--version")
         .output()
         .expect("failed to run lode --version");
@@ -45,7 +40,7 @@ fn test_lode_version() {
 #[test]
 fn test_lode_help() {
     assert_binary_exists();
-    let output = std::process::Command::new(lode_binary())
+    let output = lode_command()
         .arg("--help")
         .output()
         .expect("failed to run lode --help");
@@ -57,7 +52,7 @@ fn test_lode_help() {
 #[test]
 fn test_lode_config_command_help() {
     assert_binary_exists();
-    let output = std::process::Command::new(lode_binary())
+    let output = lode_command()
         .args(["config", "--help"])
         .output()
         .expect("failed to run lode config --help");
@@ -69,7 +64,7 @@ fn test_export_command_macros() {
     assert_binary_exists();
     let temp = tempfile::TempDir::new().unwrap();
     let out_path = temp.path().join("macros.lodepack");
-    let output = std::process::Command::new(lode_binary())
+    let output = lode_command()
         .args(["commands", "export", "--out", out_path.to_str().unwrap()])
         .current_dir(temp.path())
         .output()
@@ -82,7 +77,7 @@ fn test_export_command_macros() {
 #[test]
 fn test_lode_doctor() {
     assert_binary_exists();
-    let output = std::process::Command::new(lode_binary())
+    let output = lode_command()
         .args(["doctor", "--json"])
         .output()
         .expect("failed to run lode doctor --json");
@@ -97,7 +92,7 @@ fn test_lode_doctor() {
 fn test_lode_init_dry_run() {
     assert_binary_exists();
     let temp = tempfile::TempDir::new().unwrap();
-    let output = std::process::Command::new(lode_binary())
+    let output = lode_command()
         .args(["init", "test-project", "--dry-run", "--yes", "--no-check"])
         .current_dir(temp.path())
         .output()
