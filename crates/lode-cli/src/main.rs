@@ -36,7 +36,40 @@ pub(crate) const MCP_HTTP_PORT: u16 = 3333;
 
 pub(crate) use cmd::types::*;
 fn main() -> ExitCode {
-    match run() {
+    run_entrypoint()
+}
+
+#[cfg(windows)]
+fn run_entrypoint() -> ExitCode {
+    match thread::Builder::new()
+        .name("lode-cli".to_string())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(run)
+    {
+        Ok(handle) => match handle.join() {
+            Ok(result) => result_to_exit_code(result),
+            Err(_) => {
+                eprintln!("error: lode command panicked");
+                ExitCode::from(lode_core::ExitCode::Error as u8)
+            }
+        },
+        Err(error) => {
+            eprintln!(
+                "error: failed to start lode command: {}",
+                redact(&error.to_string())
+            );
+            ExitCode::from(lode_core::ExitCode::Error as u8)
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn run_entrypoint() -> ExitCode {
+    result_to_exit_code(run())
+}
+
+fn result_to_exit_code(result: lode_core::Result<()>) -> ExitCode {
+    match result {
         Ok(()) => ExitCode::from(lode_core::ExitCode::Ok as u8),
         Err(error) => {
             let msg = redact(&error.to_string());
