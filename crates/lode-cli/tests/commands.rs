@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
 fn lode_binary() -> PathBuf {
+    if let Some(path) = std::env::var_os("CARGO_BIN_EXE_lode") {
+        return PathBuf::from(path);
+    }
+
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("..");
     path.push("..");

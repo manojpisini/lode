@@ -37,8 +37,8 @@ fn hooks_run_executes_project_hook() {
     let hooks = temp.path().join(".lode").join("hooks");
     std::fs::create_dir_all(&hooks).expect("create directory");
     std::fs::write(
-        hooks.join("post-init.ps1"),
-        "Set-Content -NoNewline -Path hook-output.txt -Value ran\n",
+        hooks.join("post-init.py"),
+        "from pathlib import Path\nPath('hook-output.txt').write_text('ran')\n",
     )
     .expect("write file");
 
@@ -48,7 +48,7 @@ fn hooks_run_executes_project_hook() {
         .assert()
         .success()
         .stdout(predicate::str::contains("would run hook project"))
-        .stdout(predicate::str::contains("post-init.ps1"));
+        .stdout(predicate::str::contains("post-init.py"));
 
     lode()
         .current_dir(temp.path())
@@ -83,8 +83,7 @@ fn hooks_discover_plugin_global_and_project_sources() {
     .expect("write file");
     std::fs::write(plugin_hooks.join("post-init.sh"), "echo plugin\n").expect("write file");
     std::fs::write(global_hooks.join("post-init.py"), "print('global')\n").expect("write file");
-    std::fs::write(project_hooks.join("post-init.ps1"), "Write-Host project\n")
-        .expect("write file");
+    std::fs::write(project_hooks.join("post-init.py"), "print('project')\n").expect("write file");
 
     lode()
         .env("LODE_CONFIG", &config)
@@ -117,7 +116,7 @@ fn hooks_discover_plugin_global_and_project_sources() {
         .success()
         .stdout(predicate::str::contains("plugin:audit-pack\tsh"))
         .stdout(predicate::str::contains("global\tpython"))
-        .stdout(predicate::str::contains("project\tpowershell"));
+        .stdout(predicate::str::contains("project\tpython"));
 }
 
 #[test]
@@ -135,8 +134,8 @@ fn hooks_run_passes_plugin_permission_environment() {
     )
     .expect("write file");
     std::fs::write(
-        plugin_hooks.join("post-init.ps1"),
-        "$items = @($env:LODE_HOOK_EVENT, $env:LODE_PLUGIN_NAME, $env:LODE_PLUGIN_ALLOW_NETWORK, $env:LODE_PLUGIN_ALLOW_EXECUTE, $env:LODE_PLUGIN_FS_WRITE); Set-Content -NoNewline -Path hook-output.txt -Value ($items -join '|')\n",
+        plugin_hooks.join("post-init.py"),
+        "import os\nfrom pathlib import Path\nkeys = ['LODE_HOOK_EVENT', 'LODE_PLUGIN_NAME', 'LODE_PLUGIN_ALLOW_NETWORK', 'LODE_PLUGIN_ALLOW_EXECUTE', 'LODE_PLUGIN_FS_WRITE']\nPath('hook-output.txt').write_text('|'.join(os.environ.get(k, '') for k in keys))\n",
     )
     .expect("write file");
 
@@ -182,8 +181,8 @@ fn hooks_reject_plugin_writes_outside_declared_paths() {
     )
     .expect("write file");
     std::fs::write(
-        plugin_hooks.join("post-init.ps1"),
-        "Set-Content -NoNewline -Path blocked.txt -Value nope\n",
+        plugin_hooks.join("post-init.py"),
+        "from pathlib import Path\nPath('blocked.txt').write_text('nope')\n",
     )
     .expect("write file");
 
