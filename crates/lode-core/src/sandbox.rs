@@ -197,7 +197,10 @@ mod tests {
             inherit_env: true,
             ..SandboxConfig::default()
         };
+        #[cfg(windows)]
         let result = run_in_sandbox(&config, "cmd.exe", &["/c", "echo", "hello"], &[]).unwrap();
+        #[cfg(not(windows))]
+        let result = run_in_sandbox(&config, "echo", &["hello"], &[]).unwrap();
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("hello"));
     }
