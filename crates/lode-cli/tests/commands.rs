@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 
 use assert_cmd::Command;
+use predicates::prelude::*;
 
 fn lode_binary() -> PathBuf {
     assert_cmd::cargo::cargo_bin("lode")
 }
 
 fn lode_command() -> Command {
-    let mut command = Command::new(lode_binary());
+    let mut command = Command::cargo_bin("lode").expect("lode binary should be built by cargo");
     command.env("LODE_NO_CUSTOM_COMMANDS", "1");
     command
 }
@@ -28,35 +29,31 @@ fn test_lode_binary_exists() {
 #[test]
 fn test_lode_version() {
     assert_binary_exists();
-    let output = lode_command()
+    lode_command()
         .arg("--version")
-        .output()
-        .expect("failed to run lode --version");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("lode") || stdout.contains("0.") || stdout.contains("1."));
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("lode"));
 }
 
 #[test]
 fn test_lode_help() {
     assert_binary_exists();
-    let output = lode_command()
+    lode_command()
         .arg("--help")
-        .output()
-        .expect("failed to run lode --help");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Usage") || stdout.contains("Commands") || stdout.contains("init"));
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage").or(predicate::str::contains("Commands")));
 }
 
 #[test]
 fn test_lode_config_command_help() {
     assert_binary_exists();
-    let output = lode_command()
+    lode_command()
         .args(["config", "--help"])
-        .output()
-        .expect("failed to run lode config --help");
-    assert!(output.status.success());
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage").or(predicate::str::contains("Commands")));
 }
 
 #[test]

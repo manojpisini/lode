@@ -62,7 +62,12 @@ jobs:
           path-type: inherit
           update: false
       - uses: Swatinem/rust-cache@v2
-      - shell: bash
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
+        run: cargo test --workspace
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: cargo test --workspace
 
   clippy:
