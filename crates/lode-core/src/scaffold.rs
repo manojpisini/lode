@@ -536,7 +536,7 @@ fn render_project_template(
 fn content_hash(contents: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(contents.as_bytes());
-    format!("{:064x}", hasher.finalize())
+    crate::util::hex_lower(hasher.finalize())
 }
 
 fn preserve_user_content(existing: &str, generated: &str) -> String {

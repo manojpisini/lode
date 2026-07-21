@@ -15,11 +15,21 @@ pub fn isolated_config(temp: &TempDir) -> String {
         .into_owned()
 }
 
+fn hex_lower(bytes: impl AsRef<[u8]>) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = bytes.as_ref();
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
 pub fn test_content_hash(contents: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(contents.as_bytes());
-    format!("{:064x}", hasher.finalize())
+    hex_lower(hasher.finalize())
 }
 
 pub fn write_release_rollback(temp: &TempDir, before: &str, after: &str) {

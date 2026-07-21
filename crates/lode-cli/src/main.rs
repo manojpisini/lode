@@ -3008,11 +3008,21 @@ pub(crate) fn write_project_daemon_snapshot(
         .map(|_| ())
 }
 
+pub(crate) fn hex_lower(bytes: impl AsRef<[u8]>) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = bytes.as_ref();
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
 pub(crate) fn content_hash_bytes(contents: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(contents);
-    format!("{:064x}", hasher.finalize())
+    hex_lower(hasher.finalize())
 }
 
 pub(crate) fn count_dir_entries(path: &Utf8PathBuf) -> lode_core::Result<usize> {

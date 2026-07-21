@@ -65,6 +65,7 @@ pub mod template_sync;
 pub mod test_history;
 pub mod time_tracker;
 pub mod toolchain;
+mod util;
 pub mod workspace;
 
 pub use adopt::{

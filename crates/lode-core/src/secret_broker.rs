@@ -78,7 +78,7 @@ fn load_or_create_key() -> Result<[u8; 32]> {
     }
 
     let mut key = [0u8; 32];
-    getrandom::getrandom(&mut key).expect("getrandom failed");
+    crate::util::random_fill(&mut key).expect("getrandom failed");
 
     if let Some(parent) = key_path.parent() {
         fs::create_dir_all(parent).map_err(|source| LodeError::Io {
@@ -102,7 +102,7 @@ fn load_or_create_key() -> Result<[u8; 32]> {
 
 fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>> {
     let mut nonce_bytes = [0u8; 12];
-    getrandom::getrandom(&mut nonce_bytes)
+    crate::util::random_fill(&mut nonce_bytes)
         .map_err(|e| LodeError::Message(format!("rng error: {e}")))?;
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| LodeError::Message(format!("key error: {e}")))?;

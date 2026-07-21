@@ -105,7 +105,7 @@ pub fn compute_content_hash(content: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
-    format!("{:064x}", hasher.finalize())
+    crate::util::hex_lower(hasher.finalize())
 }
 
 fn chrono_now_date() -> String {

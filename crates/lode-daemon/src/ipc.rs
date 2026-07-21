@@ -155,7 +155,7 @@ impl IpcServer {
 
 fn generate_token() -> String {
     let mut buf = [0u8; 32];
-    getrandom::getrandom(&mut buf).expect("getrandom failed");
+    getrandom::fill(&mut buf).expect("getrandom failed");
     format!("lode-ipc-token-{}", hex_encode(&buf))
 }
 

@@ -272,7 +272,7 @@ fn compute_file_hash(path: &Utf8Path) -> Result<String> {
     })?;
     let mut hasher = Sha256::new();
     hasher.update(&data);
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(crate::util::hex_lower(hasher.finalize()))
 }
 
 fn relativize_path(root: &Utf8Path, path: &Utf8Path) -> Utf8PathBuf {

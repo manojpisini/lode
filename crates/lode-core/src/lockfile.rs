@@ -108,7 +108,7 @@ pub fn hash_file(path: &Utf8PathBuf) -> Result<String> {
     })?;
     let mut hasher = Sha256::new();
     hasher.update(&data);
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(crate::util::hex_lower(hasher.finalize()))
 }
 
 pub fn verify_lock(lock: &LodeLock) -> LockVerifyReport {
