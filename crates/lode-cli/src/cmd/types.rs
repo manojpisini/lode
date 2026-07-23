@@ -755,11 +755,82 @@ pub(crate) enum AssetsCommand {
         #[arg(long, value_enum, default_value = "table", help = "Output format")]
         output: OutputFormat,
     },
-    /// List all assets of a kind
-    List {
-        #[arg(long, value_enum, default_value = "table", help = "Output format")]
-        output: OutputFormat,
+    /// Add assets from a lode.json source
+    Add {
+        source: String,
+        #[arg(long, help = "Install one asset by manifest asset name")]
+        asset: Option<String>,
+        #[arg(long, help = "Install all assets from the source manifest")]
+        all: bool,
+        #[arg(
+            short = 'g',
+            long = "global",
+            help = "Install into the global LODE asset scope"
+        )]
+        global: bool,
+        #[arg(
+            short = 'p',
+            long = "project",
+            help = "Install into the current project's .lode asset scope"
+        )]
+        project: bool,
+        #[arg(short = 'y', long = "yes", help = "Skip confirmation prompts")]
+        yes: bool,
     },
+    /// List catalog assets, or installed assets when a scope flag is provided
+    List {
+        #[arg(
+            long,
+            alias = "format",
+            value_enum,
+            default_value = "table",
+            help = "Output format"
+        )]
+        output: OutputFormat,
+        #[arg(short = 'g', long = "global", help = "List globally installed assets")]
+        global: bool,
+        #[arg(short = 'p', long = "project", help = "List project-installed assets")]
+        project: bool,
+    },
+    /// Remove an installed asset from a scope
+    Remove {
+        name: String,
+        #[arg(
+            short = 'g',
+            long = "global",
+            help = "Remove from the global LODE asset scope"
+        )]
+        global: bool,
+        #[arg(
+            short = 'p',
+            long = "project",
+            help = "Remove from the current project's .lode asset scope"
+        )]
+        project: bool,
+        #[arg(short = 'y', long = "yes", help = "Confirm removal non-interactively")]
+        yes: bool,
+    },
+    /// Update installed assets from their original sources
+    Update {
+        #[arg(help = "Asset names to update; omit to update all installed assets")]
+        name: Vec<String>,
+        #[arg(
+            short = 'g',
+            long = "global",
+            help = "Update globally installed assets"
+        )]
+        global: bool,
+        #[arg(
+            short = 'p',
+            long = "project",
+            help = "Update project-installed assets"
+        )]
+        project: bool,
+        #[arg(short = 'y', long = "yes", help = "Confirm update non-interactively")]
+        yes: bool,
+    },
+    /// Create a starter lode.json asset manifest
+    Init { name: String },
     /// Export the asset catalog to a JSON file
     Catalog {
         #[arg(long, help = "Output file path")]

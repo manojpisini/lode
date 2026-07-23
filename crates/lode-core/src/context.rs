@@ -236,7 +236,7 @@ impl ContextPack {
         let cargo = project_dir.join("Cargo.toml");
         if cargo.exists() {
             if let Ok(content) = fs::read_to_string(&cargo) {
-                if let Ok(value) = content.parse::<toml::Value>() {
+                if let Ok(value) = toml::from_str::<toml::Value>(&content) {
                     if let Some(deps) = value.get("dependencies").and_then(|d| d.as_table()) {
                         for (name, detail) in deps {
                             let version = detail

@@ -1749,7 +1749,7 @@ pub(crate) fn package_dependencies() -> Vec<PackageDependency> {
 }
 
 fn parse_cargo_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
-    let value = match raw.parse::<toml::Value>() {
+    let value = match toml::from_str::<toml::Value>(raw) {
         Ok(value) => value,
         Err(_) => return Vec::new(),
     };
@@ -1836,7 +1836,7 @@ fn parse_node_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> 
 }
 
 fn parse_pyproject_dependencies(manifest: &str, raw: &str) -> Vec<PackageDependency> {
-    let value = match raw.parse::<toml::Value>() {
+    let value = match toml::from_str::<toml::Value>(raw) {
         Ok(value) => value,
         Err(_) => return Vec::new(),
     };

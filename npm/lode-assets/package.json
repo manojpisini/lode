@@ -1,0 +1,16 @@
+{
+  "name": "lode-assets",
+  "version": "0.1.1",
+  "description": "Thin npx shim for lode assets commands",
+  "bin": {
+    "lode-assets": "bin/lode-assets.js"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manojpisini/lode.git"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -22,6 +22,7 @@ sha2.workspace = true
 ratatui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

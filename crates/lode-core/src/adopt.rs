@@ -388,7 +388,7 @@ fn detect_frameworks(
     if manifests.iter().any(|f| f == "Cargo.toml") {
         let cargo_path = project_dir.join("Cargo.toml");
         if let Ok(raw) = fs::read_to_string(cargo_path.as_std_path()) {
-            if let Ok(cargo) = raw.parse::<toml::Value>() {
+            if let Ok(cargo) = toml::from_str::<toml::Value>(&raw) {
                 let deps = extract_toml_deps(&cargo);
                 let rust_frameworks: &[(&str, &[&str], f64)] = &[
                     ("Tauri", &["tauri"], 0.9),
@@ -424,7 +424,7 @@ fn detect_frameworks(
         if lang.name == "python" && manifests.iter().any(|f| f == "pyproject.toml") {
             let pyproject_path = project_dir.join("pyproject.toml");
             if let Ok(raw) = fs::read_to_string(pyproject_path.as_std_path()) {
-                if let Ok(pyproject) = raw.parse::<toml::Value>() {
+                if let Ok(pyproject) = toml::from_str::<toml::Value>(&raw) {
                     let deps = extract_toml_deps(&pyproject);
                     let py_frameworks: &[(&str, &[&str], f64)] = &[
                         ("FastAPI", &["fastapi"], 0.9),
@@ -457,7 +457,7 @@ fn detect_frameworks(
         let tauri_cargo = project_dir.join("src-tauri/Cargo.toml");
         if tauri_cargo.exists() {
             if let Ok(raw) = fs::read_to_string(tauri_cargo.as_std_path()) {
-                if let Ok(cargo) = raw.parse::<toml::Value>() {
+                if let Ok(cargo) = toml::from_str::<toml::Value>(&raw) {
                     let deps = extract_toml_deps(&cargo);
                     if deps.iter().any(|d| d == "tauri") {
                         frameworks.push(FrameworkInfo {
