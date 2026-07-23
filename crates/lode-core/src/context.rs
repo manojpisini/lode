@@ -497,7 +497,11 @@ pub fn compile_context(
 
     let total_estimated: usize = entries.iter().map(|e| e.estimated_tokens).sum();
 
-    entries.sort_by_key(|a| a.priority);
+    entries.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| a.path.cmp(&b.path))
+    });
 
     let mut budget_remaining = budget;
     let mut included_count = 0;
@@ -568,7 +572,11 @@ pub fn compile_context(
     root.create_dir_all(Utf8Path::new(".lode/context"))?;
     root.write_atomic(&output_rel, &compiled)?;
 
-    entries.sort_by_key(|a| a.priority);
+    entries.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| a.path.cmp(&b.path))
+    });
 
     let _ = add_managed_file(
         project_dir,
